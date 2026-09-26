@@ -63,12 +63,15 @@ def _f(x, default=0.0):
         return default
 
 
-def _get(path, params=None):
+DATA_URL = "https://data.alpaca.markets"
+
+
+def _get(path, params=None, base=None):
     key = _env("APCA_API_KEY_ID", "ALPACA_API_KEY", "ALPACA_KEY_ID")
     sec = _env("APCA_API_SECRET_KEY", "ALPACA_SECRET_KEY", "ALPACA_API_SECRET")
     if not key or not sec:
         raise RuntimeError("Alpaca API keys are not in the environment")
-    url = _base_url() + path
+    url = (base or _base_url()) + path
     if params:
         url += "?" + urllib.parse.urlencode(params)
     req = urllib.request.Request(url, headers={"APCA-API-KEY-ID": key, "APCA-API-SECRET-KEY": sec})
@@ -258,6 +261,83 @@ def overview():
         data = _build()
         _CACHE.update(t=time.time(), data=data)
         return data
+
+
+# ---------- market data for the ticker strip and the candle "tape" ----------
+
+INDEX_PROXIES = [("SPY", "S&P 500"), ("DIA", "Dow"), ("QQQ", "Nasdaq 100"), ("IWM", "Russell 2000")]
+TAPE_STOCKS = ["SPY", "QQQ", "IWM"]
+TAPE_CRYPTO = ["BTC/USD", "ETH/USD"]
+_MCACHE = {}
+MARKET_CACHE_SECONDS = 60
+BARS_KEPT = 60
+
+
+def _ts(iso):
+    return int(datetime.fromisoformat(iso.replace("Z", "+00:00")).timestamp())
+
+
+def _bars(path, symbols, extra):
+    start = datetime.fromtimestamp(time.time() - 10 * 86400, timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    out, token = {}, None
+    for _ in range(4):
+        params = {"symbols": ",".join(symbols), "timeframe": "1Hour", "start": start, "limit": 10000, **extra}
+        if token:
+            params["page_token"] = token
+        page = _get(path, params, base=DATA_URL)
+        for sym, rows in (page.get("bars") or {}).items():
+            out.setdefault(sym, []).extend([_ts(b["t"]), b["o"], b["h"], b["l"], b["c"]] for b in rows)
+        token = page.get("next_page_token")
+        if not token:
+            break
+    return {k: sorted(v)[-BARS_KEPT:] for k, v in out.items()}
+
+
+def _build_market(held):
+    errors = []
+    symbols = [s for s, _ in INDEX_PROXIES] + [h for h in held if h not in dict(INDEX_PROXIES)]
+    quotes = []
+    try:
+        snaps = _get("/v2/stocks/snapshots", {"symbols": ",".join(symbols), "feed": "iex"}, base=DATA_URL)
+        labels = dict(INDEX_PROXIES)
+        for sym in symbols:
+            snap = snaps.get(sym) or {}
+            price = _f((snap.get("latestTrade") or {}).get("p")) or _f((snap.get("dailyBar") or {}).get("c"))
+            prev = _f((snap.get("prevDailyBar") or {}).get("c"))
+            quotes.append({"symbol": sym, "label": labels.get(sym, "held"), "price": price or None,
+                           "prev_close": prev or None,
+                           "change_pct": ((price / prev - 1) * 100) if price and prev else None})
+    except Exception as e:
+        errors.append(f"Quotes: {str(e)[:160]}")
+    bars = {}
+    try:
+        bars.update(_bars("/v2/stocks/bars", TAPE_STOCKS, {"feed": "iex"}))
+    except Exception as e:
+        errors.append(f"Stock candles: {str(e)[:160]}")
+    try:
+        bars.update(_bars("/v1beta3/crypto/us/bars", TAPE_CRYPTO, {}))
+    except Exception as e:
+        errors.append(f"Crypto candles: {str(e)[:160]}")
+    return {"generated_at": datetime.now(timezone.utc).isoformat(), "feed": "iex",
+            "quotes": quotes, "bars": bars, "errors": errors}
+
+
+@router.get("/api/market")
+def market(held: str = ""):
+    """Read-only market data. `held` = comma-separated US tickers to quote besides the index ETFs."""
+    extra = sorted({h.strip().upper() for h in held.split(",")
+                    if h.strip() and len(h.strip()) <= 6 and h.strip().isalpha()})[:6]
+    key = ",".join(extra)
+    with _LOCK:
+        hit = _MCACHE.get(key)
+        if hit and time.time() - hit[0] < MARKET_CACHE_SECONDS:
+            return hit[1]
+    data = _build_market(extra)
+    with _LOCK:
+        if len(_MCACHE) > 20:
+            _MCACHE.clear()
+        _MCACHE[key] = (time.time(), data)
+    return data
 
 
 @router.get("/", response_class=HTMLResponse)
