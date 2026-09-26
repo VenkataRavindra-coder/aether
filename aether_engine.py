@@ -899,12 +899,13 @@ def fetch_us_prices(symbols) -> dict:
 
 
 def us_market_state():
-    """(is_open, now_et). Alpaca's clock knows holidays; the fallback is a plain weekday/hours check."""
+    """(is_open, now_et). Alpaca's clock knows holidays; without it the market is treated as closed."""
     clk = broker.get_clock()
     if clk is not None:
         return bool(clk.is_open), clk.timestamp.astimezone(NY)
     now = datetime.now(timezone.utc).astimezone(NY)
-    return (now.weekday() < 5 and (9, 30) <= (now.hour, now.minute) < (16, 0)), now
+    logger.warning("Broker clock unavailable: treating the US market as closed (no trading on a guessed calendar).")
+    return False, now
 
 
 def us_signals(fetch_daily, today_str: str) -> dict:
@@ -954,8 +955,16 @@ def _us_execute_shadow(orders, prices, holdings, cash):
     return results, holdings, cash
 
 
-def _us_execute_paper(orders, prices, cash):
+_US_FINAL_STATES = {"filled", "canceled", "expired", "rejected", "done_for_day"}
+
+
+def _us_execute_paper(orders, prices, cash, holdings_before=None):
+    """Sends orders and books only broker-confirmed fills. An order still open at the poll timeout is
+    cancelled and re-read, so a late fill cannot leave cash stale. An order that still cannot be
+    reconciled is marked 'unreconciled' (the engine then freezes). If positions cannot be read after
+    the fills, the confirmed fills are booked onto the known holdings and the rebalance stays incomplete."""
     results = []
+    book = dict(holdings_before or {})
     for o in orders:
         sym = o["symbol"]
         if o["side"] == "SELL":
@@ -966,15 +975,29 @@ def _us_execute_paper(orders, prices, cash):
             results.append({**o, "state": "error", "detail": r.get("message")})
             continue
         f = us_broker.wait_for_fill(r["order_id"])
+        if f["state"] not in _US_FINAL_STATES:
+            us_broker.cancel_order(r["order_id"])
+            f = us_broker.wait_for_fill(r["order_id"], timeout=60.0)
+        qty = float(f.get("filled_qty") or 0.0)
         px = f["avg_price"] or prices[sym]
-        value = f["filled_qty"] * px
-        cash += value if o["side"] == "SELL" else -value
-        results.append({**o, "state": f["state"], "filled_qty": f["filled_qty"], "avg_price": px, "order_id": r["order_id"]})
-    pos = us_broker.get_positions_map() or {}
+        cash += qty * px if o["side"] == "SELL" else -qty * px
+        book[sym] = book.get(sym, 0.0) + (qty if o["side"] == "BUY" else -qty)
+        state = f["state"] if f["state"] in _US_FINAL_STATES else "unreconciled"
+        results.append({**o, "state": state, "filled_qty": qty, "avg_price": px, "order_id": r["order_id"]})
+    book = {s: q for s, q in book.items() if q > 1e-9}
+    pos = us_broker.get_positions_map()
+    if pos is None:
+        results.append({"symbol": "*", "side": "CHECK", "qty": 0.0, "notional": 0.0, "state": "positions_unreadable"})
+        return results, book, cash
     return results, {s: q for s, q in pos.items() if s in us_strategy.UNIVERSE and q > 1e-9}, cash
 
 
 def _us_rebalance(us: dict, today: str, mkey: str, now_et: datetime, fetch_daily, fetch_prices):
+    if us.get("frozen"):
+        US_STATUS["note"] = f"US engine frozen: {us['frozen']}"
+        notify.send(f"[ALERT] US ETF engine is frozen and will not trade: {us['frozen']}",
+                    key="us-frozen", cooldown=6 * 3600)
+        return
     if time.time() < US_STATUS["retry_after"]:
         US_STATUS["note"] = "waiting to retry a failed rebalance"
         return
@@ -1022,7 +1045,7 @@ def _us_rebalance(us: dict, today: str, mkey: str, now_et: datetime, fetch_daily
     if _us_gate_active() and not _us_live_gate(orders, sig, mkey, today, now_et, equity_before):
         return
     if US_EXECUTE:
-        results, holdings, cash = _us_execute_paper(orders, prices, cash)
+        results, holdings, cash = _us_execute_paper(orders, prices, cash, holdings)
     else:
         results, holdings, cash = _us_execute_shadow(orders, prices, holdings, cash)
     failed = [r for r in results if r["state"] not in ("filled", "simulated")]
@@ -1036,6 +1059,9 @@ def _us_rebalance(us: dict, today: str, mkey: str, now_et: datetime, fetch_daily
         if not failed:
             u["last_rebalance_month"] = mkey
             u["last_rebalance_at"] = utcnow_str()
+        stuck = [r.get("order_id") for r in results if r["state"] == "unreconciled"]
+        if stuck:
+            u["frozen"] = f"unreconciled order(s) {stuck}: check the broker, then clear us.frozen"
         u["history"].append({
             "date": today, "month": mkey, "signal_date": sig["signal_date"], "mode": _us_mode(),
             "weights": sig["weights"], "equity": round(equity_after, 2), "complete": not failed,
@@ -1087,8 +1113,15 @@ def _us_live_gate(orders, sig, mkey, today, now_et, equity_before) -> bool:
                                      reason="live client unavailable", month=mkey)
             return False
         buys = sum(o.get("notional", 0.0) for o in orders if o["side"] == "BUY")
-        if US_LIVE_MAX_USD <= 0 or equity_before > US_LIVE_MAX_USD or buys > US_LIVE_MAX_USD:
-            why = f"equity ${equity_before:,.2f}, buys ${buys:,.2f}, cap US_LIVE_MAX_USD=${US_LIVE_MAX_USD:,.2f}"
+        bal = us_broker.get_account_balance() or {}
+        try:
+            acct_eq = float(bal.get("portfolio_value")) if bal.get("source") == "live" else float("nan")
+        except (TypeError, ValueError):
+            acct_eq = float("nan")
+        cap = US_LIVE_MAX_USD
+        if not (0 < cap < float("inf") and equity_before <= cap and buys <= cap and acct_eq <= cap):
+            why = (f"strategy equity ${equity_before:,.2f}, buys ${buys:,.2f}, account equity ${acct_eq:,.2f}, "
+                   f"cap US_LIVE_MAX_USD=${cap:,.2f} (must be a positive number at least as large as all three)")
             US_STATUS["note"] = "LIVE blocked by dollar cap"
             notify.send(f"[ALERT] US LIVE rebalance blocked by the dollar cap ({why}). No orders sent.",
                         key=f"us-live-cap:{today}", cooldown=6 * 3600)
@@ -1097,7 +1130,14 @@ def _us_live_gate(orders, sig, mkey, today, now_et, equity_before) -> bool:
             return False
     if not orders:
         return True
-    key = json.dumps({"month": mkey, "weights": {k: round(v, 4) for k, v in sorted(sig["weights"].items())},
+    account = us_broker.account_id()
+    if US_LIVE and not account:
+        US_STATUS["note"] = "LIVE blocked: live account id unreadable"
+        decision_log.log_changed("us:gate", ("account", today), engine="us", event="live_blocked", mode=mode,
+                                 reason="live account id unreadable", month=mkey)
+        return False
+    key = json.dumps({"month": mkey, "mode": mode, "account": account or "unknown",
+                      "weights": {k: round(v, 4) for k, v in sorted(sig["weights"].items())},
                       "orders": sorted([o["symbol"], o["side"]] for o in orders)}, sort_keys=True)
     after_cutoff = (now_et.hour, now_et.minute) >= US_EXEC_AFTER_ET
     with STATE_LOCK:
@@ -1110,7 +1150,7 @@ def _us_live_gate(orders, sig, mkey, today, now_et, equity_before) -> bool:
             if p["status"] == "REJECTED":
                 US_STATUS["note"] = f"proposal {p['id']} rejected; next attempt on the next trading day"
                 return False
-            if p["status"] == "APPROVED":
+            if p["status"] == "APPROVED" and _us_within_approval(orders, p.get("orders") or []):
                 if not after_cutoff:
                     US_STATUS["note"] = f"proposal {p['id']} approved; orders go out after 15:30 ET"
                     return False
@@ -1135,12 +1175,34 @@ def _us_live_gate(orders, sig, mkey, today, now_et, equity_before) -> bool:
         amt = f"${o['notional']:,.2f}" if o["side"] == "BUY" else f"{o['qty']:.4f} sh"
         lines.append(f"  {o['side']} {o['symbol']} {amt}")
     lines.append(f"Approve: /approve_{pid}    Reject: /reject_{pid}")
+    if now_et.day > 4:
+        lines.append("Note: catch-up rebalance (later than the month's first trading days).")
     lines.append("Valid today only. If approved, orders go out after 15:30 ET.")
     notify.send("\n".join(lines))
     decision_log.log("us", "proposal", mode=mode, decision="PENDING", reason=f"proposal {pid}", month=mkey,
-                     orders=orders, weights=sig["weights"])
+                     orders=orders, weights=sig["weights"], catch_up=now_et.day > 4)
     US_STATUS["note"] = f"awaiting Telegram approval of proposal {pid}"
     return False
+
+
+US_APPROVAL_TOLERANCE = 0.02
+
+
+def _us_within_approval(orders, approved) -> bool:
+    """True if every order matches an approved order (same symbol and side) and is no larger than approved
+    (+2% for price moves), and total buying is within the approved total. Smaller orders are fine."""
+    ok = {(a["symbol"], a["side"]): a for a in approved}
+    tol = 1 + US_APPROVAL_TOLERANCE
+    for o in orders:
+        a = ok.get((o["symbol"], o["side"]))
+        if a is None:
+            return False
+        if o["side"] == "BUY" and o.get("notional", 0.0) > a.get("notional", 0.0) * tol + 0.01:
+            return False
+        if o["side"] == "SELL" and o.get("qty", 0.0) > a.get("qty", 0.0) * tol + 1e-6:
+            return False
+    buys = sum(o.get("notional", 0.0) for o in orders if o["side"] == "BUY")
+    return buys <= sum(a.get("notional", 0.0) for a in approved if a["side"] == "BUY") * tol + 0.01
 
 
 def _us_live_decide(cmd: str) -> str:

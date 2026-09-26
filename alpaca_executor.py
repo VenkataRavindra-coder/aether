@@ -193,6 +193,30 @@ class AlpacaExecutionClient:
             logger.error(f"Failed to submit market order for {symbol}: {str(e)}")
             return {"status": "error", "message": str(e)}
 
+    def cancel_order(self, order_id: str) -> bool:
+        """Cancels an open order. False if it could not be cancelled (e.g. it already filled)."""
+        if not self.client:
+            return False
+        try:
+            self.client.cancel_order_by_id(order_id)
+            return True
+        except Exception as e:
+            logger.warning(f"Cancel failed for {order_id}: {str(e)}")
+            return False
+
+    def account_id(self):
+        """Broker account number (cached). None if unavailable."""
+        if getattr(self, "_account_id", None):
+            return self._account_id
+        if not self.client:
+            return None
+        try:
+            self._account_id = str(self.client.get_account().account_number)
+            return self._account_id
+        except Exception as e:
+            logger.warning(f"Could not read account id: {str(e)}")
+            return None
+
     def wait_for_fill(self, order_id: str, timeout: float = 90.0, poll: float = 2.0):
         """Polls until the order reaches a final state (or times out). Returns
         {'state', 'filled_qty', 'avg_price'} using the broker's own figures."""
