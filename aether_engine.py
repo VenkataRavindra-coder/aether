@@ -529,19 +529,64 @@ def _login(password: str = _Form(default="")):
     if not secrets.compare_digest(password.encode(), DASHBOARD_PASSWORD.encode()):
         _time.sleep(1)
         raise HTTPException(status_code=401, detail="Wrong password")
-    sid = secrets.token_urlsafe(32)
-    _SESSIONS.add(sid)
+    sid = _session_token()
     resp = _RedirectResponse("/", status_code=303)
-    resp.set_cookie(_SESSION_COOKIE, sid, httponly=True, samesite="strict", max_age=86400)
+    resp.set_cookie(_SESSION_COOKIE, sid, httponly=True, samesite="strict", max_age=_SESSION_DAYS * 86400)
     return resp
 
 
 @app.get("/logout")
 def _logout(request: _Request):
-    _SESSIONS.discard(request.cookies.get(_SESSION_COOKIE, ""))
+    _rotate_session_key()
     resp = _RedirectResponse("/login", status_code=303)
     resp.delete_cookie(_SESSION_COOKIE)
     return resp
+
+
+import hmac as _hmac
+import hashlib as _hashlib
+import os as _os
+import pathlib as _pathlib
+
+_SESSION_DAYS = 7
+_SESSION_KEY_FILE = _pathlib.Path.home() / ".aether_session_key"
+
+
+def _rotate_session_key():
+    """New signing key: every existing login cookie stops working."""
+    key = secrets.token_bytes(32)
+    tmp = _SESSION_KEY_FILE.with_name(_SESSION_KEY_FILE.name + ".tmp")
+    tmp.write_bytes(key)
+    _os.chmod(tmp, 0o600)
+    tmp.replace(_SESSION_KEY_FILE)
+    return key
+
+
+def _session_key():
+    try:
+        key = _SESSION_KEY_FILE.read_bytes()
+        if len(key) >= 32:
+            return key
+    except FileNotFoundError:
+        pass
+    return _rotate_session_key()
+
+
+def _session_token():
+    expires = str(int(_time.time()) + _SESSION_DAYS * 86400)
+    sig = _hmac.new(_session_key(), expires.encode(), _hashlib.sha256).hexdigest()
+    return expires + "." + sig
+
+
+def _session_ok(token):
+    try:
+        expires, sig = token.split(".", 1)
+        if int(expires) < _time.time():
+            return False
+        good = _hmac.new(_session_key(), expires.encode(), _hashlib.sha256).hexdigest()
+        return _hmac.compare_digest(sig, good)
+    except Exception:
+        return False
 
 
 from starlette.responses import JSONResponse as _JSONResponse
@@ -555,7 +600,7 @@ async def _dashboard_auth(request: _Request, call_next):
     Fails closed: unknown paths (including /docs and /openapi.json) are refused too."""
     path = request.url.path
     sid = request.cookies.get(_SESSION_COOKIE, "")
-    if path in _PUBLIC_PATHS or (sid and sid in _SESSIONS):
+    if path in _PUBLIC_PATHS or (sid and _session_ok(sid)):
         return await call_next(request)
     if request.method == "GET" and path == "/":
         return _RedirectResponse("/login", status_code=303)
