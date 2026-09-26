@@ -226,13 +226,19 @@ def _build():
                  holdings=len(positions))
     if closed is not None:
         s.update(realized=sum(c["pnl"] for c in closed), closed_count=len(closed),
-                 wins=sum(1 for c in closed if c["pnl"] > 0))
+                 wins=sum(1 for c in closed if c["pnl"] > 0),
+                 losses=sum(1 for c in closed if c["pnl"] < 0),
+                 winning_gains=sum(c["pnl"] for c in closed if c["pnl"] > 0),
+                 losing_losses=sum(c["pnl"] for c in closed if c["pnl"] < 0),
+                 trade_count=len(orders))
     if all(k in s for k in ("total_pl", "realized", "unrealized")):
         s["other"] = s["total_pl"] - s["realized"] - s["unrealized"]
 
     return {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "account_mode": "LIVE" if _is_live() else "PAPER",
+        "dashboard_safety": {"us_live_max_usd": _f(os.getenv("US_LIVE_MAX_USD")) if os.getenv("US_LIVE_MAX_USD") else None,
+                             "read_only": True},
         "engines": {
             "crypto": {"enabled": _flag("STRATEGY_ENABLED"), "live": _is_live()},
             "us": {"enabled": _flag("US_ENABLED"), "execute": _flag("US_EXECUTE")},
@@ -343,3 +349,9 @@ def market(held: str = ""):
 @router.get("/", response_class=HTMLResponse)
 def page():
     return _PAGE.read_text()
+
+
+@router.get("/dashboard/classic", response_class=HTMLResponse)
+def classic_page():
+    """Original detailed view; protected by the existing dashboard middleware."""
+    return _PAGE.with_name("dashboard_classic.html").read_text()
