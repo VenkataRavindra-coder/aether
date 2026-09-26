@@ -498,7 +498,7 @@ async def _dashboard_session(request: _Request, call_next):
     path = request.url.path
     if path not in _OPEN_PATHS:
         sid = request.cookies.get(_SESSION_COOKIE, "")
-        if sid and sid in _SESSIONS:
+        if sid and _session_ok(sid):
             raw = request.scope.get("query_string", b"").decode()
             pairs = [(k, v) for k, v in _parse_qsl(raw, keep_blank_values=True) if k != "secret"]
             pairs.append(("secret", WEBHOOK_SECRET))
