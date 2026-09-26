@@ -984,6 +984,10 @@ def _us_execute_paper(orders, prices, cash, holdings_before=None):
         book[sym] = book.get(sym, 0.0) + (qty if o["side"] == "BUY" else -qty)
         state = f["state"] if f["state"] in _US_FINAL_STATES else "unreconciled"
         results.append({**o, "state": state, "filled_qty": qty, "avg_price": px, "order_id": r["order_id"]})
+        if state == "unreconciled":
+            for rest in orders[orders.index(o) + 1:]:
+                results.append({**rest, "state": "skipped_after_unreconciled"})
+            break
     book = {s: q for s, q in book.items() if q > 1e-9}
     pos = us_broker.get_positions_map()
     if pos is None:
@@ -1119,7 +1123,8 @@ def _us_live_gate(orders, sig, mkey, today, now_et, equity_before) -> bool:
         except (TypeError, ValueError):
             acct_eq = float("nan")
         cap = US_LIVE_MAX_USD
-        if not (0 < cap < float("inf") and equity_before <= cap and buys <= cap and acct_eq <= cap):
+        if not (0 < cap < float("inf") and 0 <= equity_before <= cap and 0 <= buys <= cap
+                and 0 <= acct_eq <= cap):
             why = (f"strategy equity ${equity_before:,.2f}, buys ${buys:,.2f}, account equity ${acct_eq:,.2f}, "
                    f"cap US_LIVE_MAX_USD=${cap:,.2f} (must be a positive number at least as large as all three)")
             US_STATUS["note"] = "LIVE blocked by dollar cap"
