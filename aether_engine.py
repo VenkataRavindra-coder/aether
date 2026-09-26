@@ -18,6 +18,7 @@ from alpaca_executor import AlpacaExecutionClient
 import strategy as strat
 import us_strategy
 import notify
+import decision_log
 from zoneinfo import ZoneInfo
 
 load_dotenv()
@@ -304,6 +305,8 @@ def _strategy_order(state, symbol, side, qty, price, is_closing, available_long,
     executed = result.get("qty", 0.0)
     detail = f"strategy:{note}" + (f" ({result.get('reason') or result.get('message') or result.get('order_id')})")
     record_trade_history(state, symbol, side, qty, executed, price, status_, detail)
+    decision_log.log("crypto", "order", symbol=symbol, decision=side, reason=note, price=price, mode=_mode(),
+                     status=status_, requested_qty=qty, executed_qty=executed, is_closing=is_closing, detail=detail)
     ok = status_ in ("success", "shadow_recorded")
     if ok:
         apply_fill(state, symbol, side, executed)
@@ -332,6 +335,7 @@ def _process_symbol(state: dict, symbol: str, bars: list, equity: float, killed:
                 rsi=ind["rsi"][i], atr=ind["atr"][i], trend_ok=closed[i]["c"] > ind["ema_trend"][i])
     pos = sd["positions"].get(symbol)
     bar_t = closed[i]["t"]
+    info["bar_t"] = bar_t
     now_ts = now.timestamp()
 
     if pos:
@@ -385,6 +389,31 @@ def _process_symbol(state: dict, symbol: str, bars: list, equity: float, killed:
     return info
 
 
+def _crypto_event(note: str) -> str:
+    if note == "entered":
+        return "entry"
+    if note.startswith("exited"):
+        return "exit"
+    if note.startswith("entry signal blocked"):
+        return "blocked"
+    if note.startswith("entry signal skipped"):
+        return "skipped"
+    if note in ("entry order rejected",) or note.startswith("exit failed"):
+        return "order_failed"
+    return "evaluate"
+
+
+def _log_crypto_decision(info: dict):
+    """Decision log: one row per new closed bar per symbol, plus any change of state or note."""
+    note = info.get("note") or ""
+    keys = ("ema_fast", "ema_slow", "ema_trend", "rsi", "atr", "trend_ok", "stop", "entry", "qty", "bars")
+    decision_log.log_changed(
+        f"crypto:{info.get('symbol')}", (info.get("bar_t"), info.get("state"), note),
+        engine="crypto", event=_crypto_event(note), mode=_mode(), symbol=info.get("symbol"),
+        bar_time=info.get("bar_t"), decision=info.get("state"), reason=note or None, price=info.get("price"),
+        **{k: info[k] for k in keys if k in info})
+
+
 def strategy_cycle(fetch=None):
     fetch = fetch or fetch_bars
     now = datetime.now(timezone.utc)
@@ -406,6 +435,10 @@ def strategy_cycle(fetch=None):
         notify.send(f"[ALERT] Daily-loss kill-switch ACTIVE: equity ${equity:,.2f} is more than "
                     f"{STRATEGY_MAX_DAILY_LOSS * 100:g}% below today's start (${day['start_equity']:,.2f}). "
                     f"New entries are blocked until UTC midnight; exits still work.", key=f"kill:{today}", cooldown=86400)
+    if killed != was_killed:
+        decision_log.log("crypto", "kill_switch", decision="active" if killed else "cleared", mode=_mode(),
+                         reason=f"daily loss limit {STRATEGY_MAX_DAILY_LOSS * 100:g}%",
+                         equity=equity, start_equity=day["start_equity"])
 
     for symbol in sorted(TRACKED_SYMBOLS):
         try:
@@ -417,9 +450,12 @@ def strategy_cycle(fetch=None):
                 info = _process_symbol(state, symbol, bars, equity, killed, now)
                 save_state(state)
             STRATEGY_STATUS["symbols"][symbol] = info
+            _log_crypto_decision(info)
         except Exception as e:
             logger.error(f"Strategy error for {symbol}: {str(e)}")
             notify.send(f"[ALERT] Strategy error for {symbol}: {str(e)[:300]}", key=f"err:{symbol}", cooldown=3600)
+            decision_log.log_changed(f"crypto:{symbol}", ("error", str(e)[:120]), engine="crypto", event="error",
+                                     mode=_mode(), symbol=symbol, reason=str(e)[:300])
             STRATEGY_STATUS["symbols"][symbol] = {"symbol": symbol, "state": "ERROR", "note": str(e),
                                                   "updated": utcnow_str()}
 
@@ -941,6 +977,9 @@ def _us_rebalance(us: dict, today: str, mkey: str, now_et: datetime, fetch_daily
         US_STATUS["note"] = "no rebalance: signals unavailable"
         notify.send(f"[ALERT] US ETF engine could not compute signals: {str(e)[:250]}", key="us-signal", cooldown=6 * 3600)
         return
+    decision_log.log("us", "signals", mode=_us_mode(), decision=",".join(sig["selected"]),
+                     reason=f"signals as of {sig['signal_date']}", month=mkey,
+                     scores=sig["scores"], weights=sig["weights"])
     holdings = _us_holdings(us)
     if holdings is None:
         US_STATUS["note"] = "no rebalance: broker positions unavailable"
@@ -996,6 +1035,11 @@ def _us_rebalance(us: dict, today: str, mkey: str, now_et: datetime, fetch_daily
         u["history"] = u["history"][-24:]
         save_state(state)
 
+    decision_log.log("us", "rebalance", mode=_us_mode(), decision="complete" if not failed else "incomplete",
+                     reason=f"{len(results)} order(s), {len(failed)} failed", month=mkey,
+                     equity_before=round(equity_before, 2), equity_after=round(equity_after, 2),
+                     orders=[{k: r.get(k) for k in ("symbol", "side", "state", "qty", "notional", "filled_qty", "avg_price")}
+                             for r in results])
     US_STATUS["note"] = "rebalanced" if not failed else "rebalance incomplete; will retry"
     US_STATUS["last_error"] = None if not failed else f"{len(failed)} order(s) failed"
     if failed:
@@ -1035,6 +1079,15 @@ def _us_snapshot(fetch_prices, today: str):
 
 
 def us_cycle(fetch_daily=None, fetch_prices=None, market=None):
+    try:
+        return _us_cycle_inner(fetch_daily, fetch_prices, market)
+    finally:
+        decision_log.log_changed("us:status", US_STATUS.get("note"), engine="us", event="status",
+                                 mode=_us_mode(), reason=US_STATUS.get("note"),
+                                 last_error=US_STATUS.get("last_error"))
+
+
+def _us_cycle_inner(fetch_daily=None, fetch_prices=None, market=None):
     fetch_daily = fetch_daily or fetch_us_daily
     fetch_prices = fetch_prices or fetch_us_prices
     with US_LOCK:
