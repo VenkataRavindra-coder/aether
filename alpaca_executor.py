@@ -16,9 +16,11 @@ def status_value(status) -> str:
 
 
 class AlpacaExecutionClient:
-    def __init__(self, paper: bool = True):
-        self.api_key = os.getenv("APCA_API_KEY_ID")
-        self.api_secret = os.getenv("APCA_API_SECRET_KEY")
+    def __init__(self, paper: bool = True, key_env: str = "APCA_API_KEY_ID",
+                 secret_env: str = "APCA_API_SECRET_KEY"):
+        self.paper = paper
+        self.api_key = os.getenv(key_env)
+        self.api_secret = os.getenv(secret_env)
         self.live_trading = os.getenv("LIVE_TRADING", "false").lower() == "true"
 
         if not self.api_key or not self.api_secret:
@@ -27,7 +29,8 @@ class AlpacaExecutionClient:
         else:
             try:
                 self.client = TradingClient(self.api_key, self.api_secret, paper=paper)
-                logger.info(f"Alpaca Trading Client initialized. LIVE_TRADING mode: {self.live_trading}")
+                logger.info(f"Alpaca Trading Client initialized ({'PAPER' if paper else 'LIVE MONEY'} account). "
+                            f"LIVE_TRADING flag: {self.live_trading}")
             except Exception as e:
                 logger.error(f"Failed to initialize Alpaca Trading Client: {str(e)}")
                 self.client = None
