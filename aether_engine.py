@@ -63,12 +63,6 @@ app.add_middleware(
 )
 
 broker = AlpacaExecutionClient(paper=True)
-# US engine only: a separate LIVE-money connection, used only when US_LIVE=true AND US_EXECUTE=true.
-US_LIVE = os.getenv("US_LIVE", "false").lower() == "true"
-US_LIVE_MAX_USD = float(os.getenv("US_LIVE_MAX_USD", "0"))
-US_REQUIRE_APPROVAL = US_LIVE or os.getenv("US_REQUIRE_APPROVAL", "false").lower() == "true"
-us_broker = (AlpacaExecutionClient(paper=False, key_env="APCA_LIVE_API_KEY_ID",
-                                   secret_env="APCA_LIVE_API_SECRET_KEY") if US_LIVE else broker)
 
 STATE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "aether_state.json")
 STATE_LOCK = threading.Lock()
@@ -671,8 +665,6 @@ def build_positions_text() -> str:
 
 
 def handle_command(cmd: str):
-    if cmd.startswith("/approve_") or cmd.startswith("/reject_"):
-        return _us_live_decide(cmd)
     if cmd == "/status":
         return build_status_text()
     if cmd == "/positions":
@@ -863,7 +855,7 @@ _stock_client = None
 
 
 def _us_mode() -> str:
-    return ("LIVE" if US_LIVE else "PAPER") if US_EXECUTE else "SHADOW"
+    return "PAPER" if US_EXECUTE else "SHADOW"
 
 
 def uae_str(dt: datetime = None) -> str:
@@ -927,7 +919,7 @@ def us_signals(fetch_daily, today_str: str) -> dict:
 def _us_holdings(us: dict):
     """Holdings of the strategy ETFs: the broker's truth in paper mode, the simulated book in shadow mode."""
     if US_EXECUTE:
-        pos = us_broker.get_positions_map()
+        pos = broker.get_positions_map()
         if pos is None:
             return None
         return {s: q for s, q in pos.items() if s in us_strategy.UNIVERSE and q > 1e-9}
@@ -959,18 +951,18 @@ def _us_execute_paper(orders, prices, cash):
     for o in orders:
         sym = o["symbol"]
         if o["side"] == "SELL":
-            r = us_broker.submit_market_order(sym, "SELL", qty=o["qty"])
+            r = broker.submit_market_order(sym, "SELL", qty=o["qty"])
         else:
-            r = us_broker.submit_market_order(sym, "BUY", notional=o["notional"])
+            r = broker.submit_market_order(sym, "BUY", notional=o["notional"])
         if r.get("status") != "submitted":
             results.append({**o, "state": "error", "detail": r.get("message")})
             continue
-        f = us_broker.wait_for_fill(r["order_id"])
+        f = broker.wait_for_fill(r["order_id"])
         px = f["avg_price"] or prices[sym]
         value = f["filled_qty"] * px
         cash += value if o["side"] == "SELL" else -value
         results.append({**o, "state": f["state"], "filled_qty": f["filled_qty"], "avg_price": px, "order_id": r["order_id"]})
-    pos = us_broker.get_positions_map() or {}
+    pos = broker.get_positions_map() or {}
     return results, {s: q for s, q in pos.items() if s in us_strategy.UNIVERSE and q > 1e-9}, cash
 
 
@@ -994,7 +986,7 @@ def _us_rebalance(us: dict, today: str, mkey: str, now_et: datetime, fetch_daily
         notify.send("[ALERT] US ETF engine could not read broker positions; skipping this check.", key="us-pos", cooldown=6 * 3600)
         return
     if US_EXECUTE:
-        open_syms = us_broker.open_order_symbols()
+        open_syms = broker.open_order_symbols()
         if open_syms is None or (open_syms & set(us_strategy.UNIVERSE)):
             US_STATUS["note"] = "no rebalance: open orders pending or unreadable"
             notify.send("[ALERT] US ETF engine found open orders on its ETFs; waiting instead of rebalancing.", key="us-open", cooldown=6 * 3600)
@@ -1019,8 +1011,6 @@ def _us_rebalance(us: dict, today: str, mkey: str, now_et: datetime, fetch_daily
     cash = us["cash"] if us["cash"] is not None else US_ALLOCATION_USD
     equity_before = cash + sum(q * prices[x] for x, q in holdings.items())
     orders = us_strategy.plan_orders(holdings, prices, sig["weights"], equity_before)
-    if _us_gate_active() and not _us_live_gate(orders, sig, mkey, today, now_et, equity_before):
-        return
     if US_EXECUTE:
         results, holdings, cash = _us_execute_paper(orders, prices, cash)
     else:
@@ -1066,106 +1056,6 @@ def _us_rebalance(us: dict, today: str, mkey: str, now_et: datetime, fetch_daily
     if failed:
         notify.send(f"[ALERT] {len(failed)} US ETF order(s) did not fill: " +
                     ", ".join(f"{r['symbol']} {r['state']}" for r in failed) + ". Will retry.", key="us-fail", cooldown=3600)
-
-
-def _us_gate_active() -> bool:
-    return US_EXECUTE and (US_LIVE or US_REQUIRE_APPROVAL)
-
-
-def _us_live_gate(orders, sig, mkey, today, now_et, equity_before) -> bool:
-    """Approval gate: always on in LIVE mode, optional in PAPER (US_REQUIRE_APPROVAL=true).
-    Returns True only when this exact plan was approved on Telegram today and it is past 15:30 ET.
-    Otherwise it creates or keeps a proposal and returns False, so nothing is sent."""
-    mode = _us_mode()
-    if US_LIVE:
-        if us_broker.client is None:
-            US_STATUS["note"] = "LIVE blocked: live Alpaca connection unavailable"
-            notify.send("[ALERT] US LIVE mode is on but the live Alpaca connection is unavailable "
-                        "(check APCA_LIVE_API_KEY_ID / APCA_LIVE_API_SECRET_KEY). No orders sent.",
-                        key="us-live-client", cooldown=6 * 3600)
-            decision_log.log_changed("us:gate", ("client", today), engine="us", event="live_blocked", mode=mode,
-                                     reason="live client unavailable", month=mkey)
-            return False
-        buys = sum(o.get("notional", 0.0) for o in orders if o["side"] == "BUY")
-        if US_LIVE_MAX_USD <= 0 or equity_before > US_LIVE_MAX_USD or buys > US_LIVE_MAX_USD:
-            why = f"equity ${equity_before:,.2f}, buys ${buys:,.2f}, cap US_LIVE_MAX_USD=${US_LIVE_MAX_USD:,.2f}"
-            US_STATUS["note"] = "LIVE blocked by dollar cap"
-            notify.send(f"[ALERT] US LIVE rebalance blocked by the dollar cap ({why}). No orders sent.",
-                        key=f"us-live-cap:{today}", cooldown=6 * 3600)
-            decision_log.log_changed("us:gate", ("cap", today), engine="us", event="live_blocked", mode=mode,
-                                     reason=why, month=mkey)
-            return False
-    if not orders:
-        return True
-    key = json.dumps({"month": mkey, "weights": {k: round(v, 4) for k, v in sorted(sig["weights"].items())},
-                      "orders": sorted([o["symbol"], o["side"]] for o in orders)}, sort_keys=True)
-    after_cutoff = (now_et.hour, now_et.minute) >= US_EXEC_AFTER_ET
-    with STATE_LOCK:
-        state = load_state()
-        p = state["us"].get("live_proposal")
-        if p and p.get("key") == key and p.get("date") == today:
-            if p["status"] == "PENDING":
-                US_STATUS["note"] = f"awaiting Telegram approval of proposal {p['id']}"
-                return False
-            if p["status"] == "REJECTED":
-                US_STATUS["note"] = f"proposal {p['id']} rejected; next attempt on the next trading day"
-                return False
-            if p["status"] == "APPROVED":
-                if not after_cutoff:
-                    US_STATUS["note"] = f"proposal {p['id']} approved; orders go out after 15:30 ET"
-                    return False
-                p["status"] = "USED"
-                p["used_at"] = utcnow_str()
-                save_state(state)
-                decision_log.log("us", "approval_used", mode=mode, decision="execute",
-                                 reason=f"proposal {p['id']}", month=mkey)
-                return True
-        if p and p.get("status") in ("PENDING", "APPROVED"):
-            p["status"] = "EXPIRED"
-            decision_log.log("us", "proposal_expired", mode=mode,
-                             reason=f"proposal {p['id']} replaced (plan or day changed)", month=mkey)
-        pid = os.urandom(3).hex()
-        state["us"]["live_proposal"] = {"id": pid, "key": key, "date": today, "month": mkey, "status": "PENDING",
-                                        "created_at": utcnow_str(), "orders": orders, "weights": sig["weights"]}
-        save_state(state)
-    lines = [f"[US {mode}] Rebalance proposal {pid} for {mkey}",
-             "Targets: " + ", ".join(f"{k} {v * 100:.0f}%" for k, v in sorted(sig["weights"].items())),
-             f"Equity about ${equity_before:,.2f}"]
-    for o in orders:
-        amt = f"${o['notional']:,.2f}" if o["side"] == "BUY" else f"{o['qty']:.4f} sh"
-        lines.append(f"  {o['side']} {o['symbol']} {amt}")
-    lines.append(f"Approve: /approve_{pid}    Reject: /reject_{pid}")
-    lines.append("Valid today only. If approved, orders go out after 15:30 ET.")
-    notify.send("\n".join(lines))
-    decision_log.log("us", "proposal", mode=mode, decision="PENDING", reason=f"proposal {pid}", month=mkey,
-                     orders=orders, weights=sig["weights"])
-    US_STATUS["note"] = f"awaiting Telegram approval of proposal {pid}"
-    return False
-
-
-def _us_live_decide(cmd: str) -> str:
-    """Telegram /approve_<id> or /reject_<id>. Only the configured chat can reach this (see notify.py)."""
-    action, _, pid = cmd.lstrip("/").partition("_")
-    today = datetime.now(timezone.utc).astimezone(NY).strftime("%Y-%m-%d")
-    with STATE_LOCK:
-        state = load_state()
-        p = state["us"].get("live_proposal")
-        if not p or p.get("id") != pid:
-            return "No matching US proposal. It may have expired or been replaced; check the latest message."
-        if p["status"] != "PENDING":
-            return f"Proposal {pid} is already {p['status']}; nothing changed."
-        if p["date"] != today:
-            p["status"] = "EXPIRED"
-            save_state(state)
-            return f"Proposal {pid} was for {p['date']} and has expired. A new one will be sent."
-        p["status"] = "APPROVED" if action == "approve" else "REJECTED"
-        p["decided_at"] = utcnow_str()
-        save_state(state)
-        status, month = p["status"], p["month"]
-    decision_log.log("us", "approval", mode=_us_mode(), decision=status, reason=f"proposal {pid}", month=month)
-    if status == "APPROVED":
-        return f"US proposal {pid} APPROVED. Orders go out after 15:30 ET if the plan is unchanged."
-    return f"US proposal {pid} REJECTED. No US orders today."
 
 
 def _us_snapshot(fetch_prices, today: str):
@@ -1224,7 +1114,7 @@ def _us_cycle_inner(fetch_daily=None, fetch_prices=None, market=None):
         if us["last_rebalance_month"] == mkey:
             US_STATUS["note"] = f"already rebalanced for {mkey}"
             return
-        if (now_et.hour, now_et.minute) < US_EXEC_AFTER_ET and not _us_gate_active():
+        if (now_et.hour, now_et.minute) < US_EXEC_AFTER_ET:
             US_STATUS["note"] = "waiting until 15:30 ET to rebalance"
             return
         _us_rebalance(us, today, mkey, now_et, fetch_daily, fetch_prices)
