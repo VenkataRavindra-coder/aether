@@ -544,10 +544,28 @@ def _logout(request: _Request):
     return resp
 
 
+from starlette.responses import JSONResponse as _JSONResponse
+
+_PUBLIC_PATHS = {"/login", "/logout", "/webhook/tradingview"}
+
+
+@app.middleware("http")
+async def _dashboard_auth(request: _Request, call_next):
+    """Every path except login/logout and the TradingView webhook needs a dashboard session.
+    Fails closed: unknown paths (including /docs and /openapi.json) are refused too."""
+    path = request.url.path
+    sid = request.cookies.get(_SESSION_COOKIE, "")
+    if path in _PUBLIC_PATHS or (sid and sid in _SESSIONS):
+        return await call_next(request)
+    if request.method == "GET" and path == "/":
+        return _RedirectResponse("/login", status_code=303)
+    return _JSONResponse({"detail": "Not logged in."}, status_code=401)
+
+
 @app.get("/api/strategy")
 async def get_strategy_status(secret: str = Query(default="")):
     """Live strategy engine status: per-symbol indicators, open strategy positions, guards."""
-    verify_access(secret=secret)
+    pass  # auth: _dashboard_auth session middleware
     with STATE_LOCK:
         state = load_state()
     return {
@@ -572,7 +590,7 @@ def run_backtest(symbol: str = Query(default="BTC/USD"), days: int = Query(defau
                  secret: str = Query(default="")):
     """Backtests the exact live strategy rules on Alpaca's historical hourly bars.
     Sync endpoint on purpose: FastAPI runs it in a worker thread so it can't block the server."""
-    verify_access(secret=secret)
+    pass  # auth: _dashboard_auth session middleware
     if symbol not in TRACKED_SYMBOLS:
         raise HTTPException(status_code=400, detail=f"Symbol must be one of {sorted(TRACKED_SYMBOLS)}.")
     days = max(90, min(days, 1460))
@@ -1313,7 +1331,7 @@ def us_loop():
 @app.get("/api/us")
 async def get_us_status(secret: str = Query(default="")):
     """US ETF momentum engine: signals, targets, holdings, equity curve and rebalance history."""
-    verify_access(secret=secret)
+    pass  # auth: _dashboard_auth session middleware
     with STATE_LOCK:
         us = load_state()["us"]
     prev = US_STATUS.get("preview") or {}
@@ -1336,7 +1354,7 @@ async def get_us_status(secret: str = Query(default="")):
     }
 
 
-@app.get("/", response_class=HTMLResponse)
+@app.get("/classic", response_class=HTMLResponse)
 async def visual_pipeline_dashboard(secret: str = Query(default="")):
     """Renders the secure visual AETHER operations dashboard UI."""
     verify_access(secret=secret)
@@ -1657,7 +1675,13 @@ async def visual_pipeline_dashboard(secret: str = Query(default="")):
         <script>
             const urlParams = new URLSearchParams(window.location.search);
             const secretToken = urlParams.get('secret') || '';
-            const qs = 'secret=' + encodeURIComponent(secretToken);
+            const qs = '';  // auth is the session cookie now
+            const _origFetch = window.fetch.bind(window);
+            window.fetch = async (...args) => {
+                const r = await _origFetch(...args);
+                if (r.status === 401) window.location.href = '/login';
+                return r;
+            };
 
             function logLine(msg) {
                 const box = document.getElementById('test-log');
@@ -2141,7 +2165,7 @@ async def tradingview_webhook(alert: TradeAlertPayload, x_webhook_secret: str = 
 @app.get("/account")
 async def account_telemetry(secret: str = Query(default="")):
     """Returns authenticated real-time account balances and aggregate inventory state."""
-    verify_access(secret=secret)
+    pass  # auth: _dashboard_auth session middleware
     with STATE_LOCK:
         state = load_state()
     balances = broker.get_account_balance()
@@ -2160,14 +2184,14 @@ async def account_telemetry(secret: str = Query(default="")):
 @app.get("/api/stocks")
 async def get_tracked_stocks(secret: str = Query(default="")):
     """Returns active crypto trading pairs monitored by AETHER."""
-    verify_access(secret=secret)
+    pass  # auth: _dashboard_auth session middleware
     return {"status": "success", "tracked_symbols": sorted(TRACKED_SYMBOLS)}
 
 
 @app.get("/api/history")
 async def get_trade_history(secret: str = Query(default="")):
     """Returns the persisted trade history log, newest entries first."""
-    verify_access(secret=secret)
+    pass  # auth: _dashboard_auth session middleware
     with STATE_LOCK:
         state = load_state()
     return {"status": "success", "trade_history": list(reversed(state.get("trade_history", [])))}
@@ -2176,7 +2200,7 @@ async def get_trade_history(secret: str = Query(default="")):
 @app.get("/api/portfolio-history")
 async def get_portfolio_history(secret: str = Query(default="")):
     """Returns the sampled portfolio-value time series backing the dashboard chart."""
-    verify_access(secret=secret)
+    pass  # auth: _dashboard_auth session middleware
     with STATE_LOCK:
         state = load_state()
     return {"status": "success", "portfolio_history": state.get("portfolio_history", [])}
@@ -2190,7 +2214,7 @@ async def get_system_snapshot(secret: str = Query(default="")):
     Also opportunistically samples the current portfolio value into the persisted
     chart history, throttled to once per PORTFOLIO_SAMPLE_INTERVAL_SECONDS so a
     dashboard polling every 5 seconds doesn't flood the history with redundant points."""
-    verify_access(secret=secret)
+    pass  # auth: _dashboard_auth session middleware
     balances = broker.get_account_balance()
     broker_positions = broker.get_open_positions()
     is_live = os.getenv("LIVE_TRADING", "false").lower() == "true"
@@ -2280,3 +2304,8 @@ async def get_system_snapshot(secret: str = Query(default="")):
         }
 
     return response
+
+
+# New dashboard at /, old one kept at /classic.
+import dashboard_v2 as _dashboard_v2  # noqa: E402
+app.include_router(_dashboard_v2.router)
