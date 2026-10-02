@@ -17,7 +17,7 @@ os.environ["STRATEGY_ENABLED"] = "false"
 os.environ["TELEGRAM_BOT_TOKEN"] = ""
 os.environ["TELEGRAM_CHAT_ID"] = ""
 
-PATH = "/home/azureuser/aether_engine.uslive_candidate.py"
+PATH = "/home/azureuser/aether_engine.py"
 
 spec = importlib.util.spec_from_file_location(
     "aether_engine_uslive_candidate", PATH

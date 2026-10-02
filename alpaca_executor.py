@@ -1,3 +1,4 @@
+import risk_controller
 import os
 import logging
 from dotenv import load_dotenv
@@ -22,6 +23,7 @@ class AlpacaExecutionClient:
         self.api_key = os.getenv(key_env)
         self.api_secret = os.getenv(secret_env)
         self.live_trading = os.getenv("LIVE_TRADING", "false").lower() == "true"
+        self.paper = paper
 
         if not self.api_key or not self.api_secret:
             logger.warning("Alpaca API credentials missing. Running in simulation/stub mode.")
@@ -73,6 +75,12 @@ class AlpacaExecutionClient:
         effective_qty = min(qty, available_long) if (side_upper == "SELL" and is_closing) else qty
         if effective_qty <= 0:
             return {"status": "rejected", "reason": "zero_quantity", "filled": False, "qty": 0.0}
+
+        allowed, risk_reason = risk_controller.check(
+            "crypto", symbol, side_upper, effective_qty * float(limit_price), is_closing,
+            real_money=(not self.paper) and self.live_trading)
+        if not allowed:
+            return {"status": "rejected", "reason": f"risk:{risk_reason}", "filled": False, "qty": 0.0}
 
         if not self.live_trading:
             logger.info(
@@ -175,6 +183,12 @@ class AlpacaExecutionClient:
 
     def submit_market_order(self, symbol: str, side: str, qty: float = None, notional: float = None):
         """Fractional-capable DAY market order for stocks/ETFs (paper account only: client is paper=True)."""
+        side_upper = side.upper()
+        # US engine is long-only: SELLs only reduce holdings, so they count as closing.
+        allowed, risk_reason = risk_controller.check(
+            "us", symbol, side_upper, notional, side_upper == "SELL", real_money=not self.paper)
+        if not allowed:
+            return {"status": "error", "message": f"risk:{risk_reason}"}
         if not self.client:
             return {"status": "error", "message": "Alpaca client uninitialized."}
         try:
