@@ -19,6 +19,7 @@ import strategy as strat
 import us_strategy
 import notify
 import decision_log
+import risk_controller
 from zoneinfo import ZoneInfo
 
 load_dotenv()
@@ -492,6 +493,7 @@ def strategy_cycle(fetch=None):
         killed = equity < day["start_equity"] * (1 - STRATEGY_MAX_DAILY_LOSS)
     was_killed = STRATEGY_STATUS["kill_switch"]
     STRATEGY_STATUS["kill_switch"] = killed
+    risk_controller.set_kill("crypto", killed)
     if killed and not was_killed:
         notify.send(f"[ALERT] Daily-loss kill-switch ACTIVE: equity ${equity:,.2f} is more than "
                     f"{STRATEGY_MAX_DAILY_LOSS * 100:g}% below today's start (${day['start_equity']:,.2f}). "
