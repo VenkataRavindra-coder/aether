@@ -4,6 +4,20 @@ import json
 import tempfile
 import importlib.util
 from datetime import datetime
+
+
+def _decide_at(m, now, cmd):
+    """Run _us_live_decide as if the wall clock were `now` (the engine reads datetime.now())."""
+    real = m.datetime
+    class Frozen(real):
+        @classmethod
+        def now(cls, tz=None):
+            return now.astimezone(tz) if tz else now
+    m.datetime = Frozen
+    try:
+        return m._us_live_decide(cmd)
+    finally:
+        m.datetime = real
 from zoneinfo import ZoneInfo
 
 # Force every execution mode OFF before module import.
@@ -293,7 +307,7 @@ with tempfile.TemporaryDirectory() as td:
 
     pid = proposal["id"]
 
-    response = m._us_live_decide(
+    response = _decide_at(m, now, 
         f"/approve_{pid}"
     )
 
@@ -362,7 +376,7 @@ with tempfile.TemporaryDirectory() as td:
     )
 
     p = m.load_state()["us_live"]["live_proposal"]
-    m._us_live_decide(f"/approve_{p['id']}")
+    _decide_at(m, now, f"/approve_{p['id']}")
 
     changed_result = m._us_live_gate(
         changed_orders,
