@@ -1,0 +1,8 @@
+[Unit]
+Description=AETHER nightly backup (state, decision log, research trials)
+
+[Service]
+Type=oneshot
+User=azureuser
+WorkingDirectory=/home/azureuser
+ExecStart=/home/azureuser/backup.sh

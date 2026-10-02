@@ -6,3 +6,7 @@
 !deploy/
 !deploy/aether.service
 !requirements.txt
+!deploy/aether-backup.service
+!deploy/aether-backup.timer
+!backup.sh
+!backup_alert.py
