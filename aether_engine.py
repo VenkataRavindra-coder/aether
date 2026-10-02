@@ -141,6 +141,34 @@ def utcnow_str() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
 
 
+def default_us_state() -> dict:
+    return {
+        "cash": None,
+        "holdings": {},
+        "last_rebalance_month": None,
+        "last_rebalance_at": None,
+        "signal_date": None,
+        "targets": {},
+        "scores": {},
+        "selected": [],
+        "history": [],
+        "equity_history": [],
+        "last_snapshot_date": None,
+        "last_prices": {},
+        "live_proposal": None,
+        "frozen": None,
+    }
+
+
+def _us_state_key() -> str:
+    """Paper and live portfolios must never share persistent state."""
+    return "us_live" if US_LIVE else "us_paper"
+
+
+def _us_state(state: dict) -> dict:
+    return state[_us_state_key()]
+
+
 def default_state() -> dict:
     return {
         "positions": {sym: {"long": 0.0, "short": 0.0} for sym in TRACKED_SYMBOLS},
@@ -153,39 +181,66 @@ def default_state() -> dict:
         "last_execution_time": "Never",
         "last_webhook_received_at": None,
         "active_grid": {},
-        "strategy": {"positions": {}, "day": {}, "last_signal_bar": {}, "last_trade_ts": {}, "last_exit_attempt": {}},
-        "us": {"cash": None, "holdings": {}, "last_rebalance_month": None, "last_rebalance_at": None,
-               "signal_date": None, "targets": {}, "scores": {}, "selected": [], "history": [],
-               "equity_history": [], "last_snapshot_date": None, "last_prices": {}},
+        "strategy": {
+            "positions": {},
+            "day": {},
+            "last_signal_bar": {},
+            "last_trade_ts": {},
+            "last_exit_attempt": {},
+        },
+
+        # Completely independent US portfolios.
+        "us_paper": default_us_state(),
+        "us_live": default_us_state(),
     }
 
 
 def load_state() -> dict:
-    """Loads persistent state from disk, defensively merged onto the default schema so an
-    older/partial state file (or one missing newly added keys) never causes a KeyError.
-    Must be called while holding STATE_LOCK when the caller intends to read-modify-write it."""
+    """Load persistent state with automatic legacy-US migration."""
     state = default_state()
+
     for path in (STATE_FILE, STATE_FILE + ".bak"):
         if not os.path.exists(path):
             continue
+
         try:
             with open(path, "r") as f:
                 loaded = json.load(f)
+
             state.update(loaded)
+
             positions = state.get("positions") or {}
             for sym in TRACKED_SYMBOLS:
                 positions.setdefault(sym, {"long": 0.0, "short": 0.0})
             state["positions"] = positions
+
             for k, v in default_state()["strategy"].items():
                 state["strategy"].setdefault(k, v)
-            for k, v in default_state()["us"].items():
-                state["us"].setdefault(k, v)
+
+            # Existing installations stored paper state under "us".
+            # Copy it to us_paper once. Never copy it to us_live.
+            if "us_paper" not in loaded and isinstance(loaded.get("us"), dict):
+                state["us_paper"] = json.loads(json.dumps(loaded["us"]))
+
+            for state_name in ("us_paper", "us_live"):
+                if not isinstance(state.get(state_name), dict):
+                    state[state_name] = {}
+
+                defaults = default_us_state()
+                for k, v in defaults.items():
+                    if k not in state[state_name]:
+                        state[state_name][k] = json.loads(json.dumps(v))
+
             if path != STATE_FILE:
-                logger.error(f"State file unreadable; recovered from backup {path}.")
+                logger.error(
+                    f"State file unreadable; recovered from backup {path}."
+                )
+
             return state
+
         except Exception as e:
             logger.error(f"Failed to read state file {path}: {str(e)}")
-            state = default_state()
+
     return state
 
 
@@ -703,7 +758,7 @@ def build_status_text(header: str = "AETHER status") -> str:
     with STATE_LOCK:
         state = load_state()
     if US_ENABLED:
-        us = state["us"]
+        us = _us_state(state)
         held = ", ".join(f"{x} {w * 100:.0f}%" for x, w in sorted(us["targets"].items())) or "not invested yet"
         eq = ""
         if us["cash"] is not None:
@@ -1090,9 +1145,15 @@ def _us_rebalance(us: dict, today: str, mkey: str, now_et: datetime, fetch_daily
             notify.send("[ALERT] US ETF engine found open orders on its ETFs; waiting instead of rebalancing.", key="us-open", cooldown=6 * 3600)
             return
         if us["cash"] is None and holdings:
-            US_STATUS["note"] = "no rebalance: account already holds these ETFs"
-            notify.send("[ALERT] The paper account already holds strategy ETFs (" + ", ".join(sorted(holdings)) +
-                        "). Clear them or leave US_EXECUTE=false; refusing to take over unknown positions.", key="us-preexisting", cooldown=12 * 3600)
+            mode_name = "LIVE" if US_LIVE else "paper"
+            US_STATUS["note"] = f"no rebalance: {mode_name} account already holds strategy ETFs"
+            notify.send(
+                f"[ALERT] The {mode_name} account already holds strategy ETFs ("
+                + ", ".join(sorted(holdings))
+                + "). AETHER refuses to take over unknown positions.",
+                key="us-preexisting",
+                cooldown=12 * 3600,
+            )
             return
     symbols = sorted(set(sig["weights"]) | set(holdings) | {"SPY"})
     try:
@@ -1106,8 +1167,72 @@ def _us_rebalance(us: dict, today: str, mkey: str, now_et: datetime, fetch_daily
         notify.send(f"[ALERT] US ETF engine has no live price for {', '.join(missing)}; skipping.", key="us-price", cooldown=6 * 3600)
         return
 
-    cash = us["cash"] if us["cash"] is not None else US_ALLOCATION_USD
-    equity_before = cash + sum(q * prices[x] for x, q in holdings.items())
+    if US_LIVE:
+        bal = us_broker.get_account_balance() or {}
+
+        try:
+            account_equity = (
+                float(bal.get("portfolio_value"))
+                if bal.get("source") == "live"
+                else float("nan")
+            )
+            broker_cash = (
+                float(bal.get("cash"))
+                if bal.get("source") == "live"
+                else float("nan")
+            )
+        except (TypeError, ValueError):
+            account_equity = float("nan")
+            broker_cash = float("nan")
+
+        cap = US_LIVE_MAX_USD
+
+        if not (
+            0 < cap < float("inf")
+            and 0 < account_equity < float("inf")
+            and 0 <= broker_cash < float("inf")
+        ):
+            US_STATUS["note"] = "LIVE blocked: invalid account/capital data"
+            notify.send(
+                "[ALERT] US LIVE blocked because broker balance or "
+                "US_LIVE_MAX_USD is invalid. No orders sent.",
+                key="us-live-balance",
+                cooldown=6 * 3600,
+            )
+            return
+
+        # Only capital available to this strategy counts.
+        # Unrelated account assets must not increase AETHER authority.
+        strategy_holdings_value = sum(
+            q * prices.get(sym, 0.0)
+            for sym, q in holdings.items()
+        )
+
+        strategy_available = broker_cash + strategy_holdings_value
+
+        equity_before = min(
+            cap,
+            account_equity,
+            strategy_available,
+        )
+
+        if equity_before <= 0:
+            US_STATUS["note"] = "LIVE blocked: no strategy capital available"
+            notify.send(
+                "[ALERT] US LIVE blocked because no deployable strategy "
+                "capital is available. No orders sent.",
+                key="us-live-no-capital",
+                cooldown=6 * 3600,
+            )
+            return
+
+        cash = broker_cash
+
+    else:
+        cash = us["cash"] if us["cash"] is not None else US_ALLOCATION_USD
+        equity_before = cash + sum(
+            q * prices[x] for x, q in holdings.items()
+        )
     orders = us_strategy.plan_orders(holdings, prices, sig["weights"], equity_before)
     if _us_gate_active() and not _us_live_gate(orders, sig, mkey, today, now_et, equity_before):
         return
@@ -1120,7 +1245,7 @@ def _us_rebalance(us: dict, today: str, mkey: str, now_et: datetime, fetch_daily
 
     with STATE_LOCK:
         state = load_state()
-        u = state["us"]
+        u = _us_state(state)
         u.update(cash=cash, holdings=holdings, targets=sig["weights"], scores=sig["scores"],
                  selected=sig["selected"], signal_date=sig["signal_date"], last_prices=prices)
         if not failed:
@@ -1186,10 +1311,18 @@ def _us_live_gate(orders, sig, mkey, today, now_et, equity_before) -> bool:
         except (TypeError, ValueError):
             acct_eq = float("nan")
         cap = US_LIVE_MAX_USD
-        if not (0 < cap < float("inf") and 0 <= equity_before <= cap and 0 <= buys <= cap
-                and 0 <= acct_eq <= cap):
-            why = (f"strategy equity ${equity_before:,.2f}, buys ${buys:,.2f}, account equity ${acct_eq:,.2f}, "
-                   f"cap US_LIVE_MAX_USD=${cap:,.2f} (must be a positive number at least as large as all three)")
+        if not (
+            0 < cap < float("inf")
+            and 0 <= equity_before <= cap
+            and 0 <= buys <= cap
+            and 0 < acct_eq < float("inf")
+        ):
+            why = (
+                f"strategy authority ${equity_before:,.2f}, "
+                f"buys ${buys:,.2f}, "
+                f"account equity ${acct_eq:,.2f}, "
+                f"US_LIVE_MAX_USD=${cap:,.2f}"
+            )
             US_STATUS["note"] = "LIVE blocked by dollar cap"
             notify.send(f"[ALERT] US LIVE rebalance blocked by the dollar cap ({why}). No orders sent.",
                         key=f"us-live-cap:{today}", cooldown=6 * 3600)
@@ -1210,7 +1343,7 @@ def _us_live_gate(orders, sig, mkey, today, now_et, equity_before) -> bool:
     after_cutoff = (now_et.hour, now_et.minute) >= US_EXEC_AFTER_ET
     with STATE_LOCK:
         state = load_state()
-        p = state["us"].get("live_proposal")
+        p = _us_state(state).get("live_proposal")
         if p and p.get("key") == key and p.get("date") == today:
             if p["status"] == "PENDING":
                 US_STATUS["note"] = f"awaiting Telegram approval of proposal {p['id']}"
@@ -1233,7 +1366,7 @@ def _us_live_gate(orders, sig, mkey, today, now_et, equity_before) -> bool:
             decision_log.log("us", "proposal_expired", mode=mode,
                              reason=f"proposal {p['id']} replaced (plan or day changed)", month=mkey)
         pid = os.urandom(3).hex()
-        state["us"]["live_proposal"] = {"id": pid, "key": key, "date": today, "month": mkey, "status": "PENDING",
+        _us_state(state)["live_proposal"] = {"id": pid, "key": key, "date": today, "month": mkey, "status": "PENDING",
                                         "created_at": utcnow_str(), "orders": orders, "weights": sig["weights"]}
         save_state(state)
     lines = [f"[US {mode}] Rebalance proposal {pid} for {mkey}",
@@ -1279,7 +1412,7 @@ def _us_live_decide(cmd: str) -> str:
     today = datetime.now(timezone.utc).astimezone(NY).strftime("%Y-%m-%d")
     with STATE_LOCK:
         state = load_state()
-        p = state["us"].get("live_proposal")
+        p = _us_state(state).get("live_proposal")
         if not p or p.get("id") != pid:
             return "No matching US proposal. It may have expired or been replaced; check the latest message."
         if p["status"] != "PENDING":
@@ -1300,7 +1433,7 @@ def _us_live_decide(cmd: str) -> str:
 
 def _us_snapshot(fetch_prices, today: str):
     with STATE_LOCK:
-        us = load_state()["us"]
+        us = _us_state(load_state())
     holdings = _us_holdings(us)
     if holdings is None or us["cash"] is None:
         return
@@ -1310,7 +1443,7 @@ def _us_snapshot(fetch_prices, today: str):
     equity = us["cash"] + sum(q * prices[x] for x, q in holdings.items())
     with STATE_LOCK:
         state = load_state()
-        u = state["us"]
+        u = _us_state(state)
         u["equity_history"].append({"d": today, "v": round(equity, 2), "spy": prices["SPY"]})
         u["equity_history"] = u["equity_history"][-800:]
         u["last_snapshot_date"] = today
@@ -1335,7 +1468,7 @@ def _us_cycle_inner(fetch_daily=None, fetch_prices=None, market=None):
         today, mkey = now_et.strftime("%Y-%m-%d"), now_et.strftime("%Y-%m")
         US_STATUS["last_check"] = utcnow_str()
         with STATE_LOCK:
-            us = load_state()["us"]
+            us = _us_state(load_state())
         if (not is_open) and now_et.weekday() < 5 and now_et.hour >= 16 and us["cash"] is not None \
                 and us["last_snapshot_date"] != today:
             try:
@@ -1361,7 +1494,7 @@ def _us_cycle_inner(fetch_daily=None, fetch_prices=None, market=None):
 
 
 def us_loop():
-    logger.info(f"US ETF momentum engine started ({_us_mode()} mode, allocation ${US_ALLOCATION_USD:,.0f}, "
+    logger.info(f"US ETF momentum engine started ({_us_mode()} mode, allocation ${(US_LIVE_MAX_USD if US_LIVE else US_ALLOCATION_USD):,.0f}, "
                 f"checks every {US_CHECK_INTERVAL}s).")
     while not US_STOP.is_set():
         try:
@@ -1378,7 +1511,7 @@ async def get_us_status(secret: str = Query(default="")):
     """US ETF momentum engine: signals, targets, holdings, equity curve and rebalance history."""
     pass  # auth: _dashboard_auth session middleware
     with STATE_LOCK:
-        us = load_state()["us"]
+        us = _us_state(load_state())
     prev = US_STATUS.get("preview") or {}
     scores = us["scores"] or prev.get("scores") or {}
     ranked = sorted(scores, key=lambda x: (-scores[x], x))
@@ -1390,7 +1523,7 @@ async def get_us_status(secret: str = Query(default="")):
                      "target": us["targets"].get(sym, 0.0), "qty": qty, "value": qty * prices.get(sym, 0.0)})
     equity = (us["cash"] + sum(r["value"] for r in rows)) if us["cash"] is not None else None
     return {
-        "status": "success", "enabled": US_ENABLED, "mode": _us_mode(), "allocation_usd": US_ALLOCATION_USD,
+        "status": "success", "enabled": US_ENABLED, "mode": _us_mode(), "allocation_usd": (US_LIVE_MAX_USD if US_LIVE else US_ALLOCATION_USD),
         "last_check": US_STATUS["last_check"], "last_error": US_STATUS["last_error"], "note": US_STATUS["note"],
         "last_rebalance_month": us["last_rebalance_month"], "last_rebalance_at": us["last_rebalance_at"],
         "signal_date": us["signal_date"], "preview": prev if not us["scores"] else None,
