@@ -586,7 +586,7 @@ def _login(password: str = _Form(default="")):
         raise HTTPException(status_code=401, detail="Wrong password")
     sid = _session_token()
     resp = _RedirectResponse("/", status_code=303)
-    resp.set_cookie(_SESSION_COOKIE, sid, httponly=True, samesite="lax", max_age=_SESSION_DAYS * 86400)
+    resp.set_cookie(_SESSION_COOKIE, sid, httponly=True, secure=True, samesite="lax", max_age=_SESSION_DAYS * 86400)
     return resp
 
 
