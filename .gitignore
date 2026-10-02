@@ -3,3 +3,6 @@
 !*.py
 !*.sh
 !.env.example
+!deploy/
+!deploy/aether.service
+!requirements.txt
