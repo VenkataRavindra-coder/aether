@@ -207,6 +207,24 @@ is genuinely down.
   out for 5 minutes after 5 wrong passwords in a row (tracked per client IP, alerts on Telegram
   when it trips) -- previously a failed attempt only cost the attacker a 1s sleep, which did
   nothing against many parallel connections.
+- **Cloudflare Access JWT validation (`cf_access.py`), added 2026-10-04, not yet activated.**
+  Previously the app trusted Cloudflare Access entirely from the network side: any request that
+  reached the origin was assumed to have passed the Access policy, with nothing in the app
+  itself able to tell. A second hostname or CNAME pointed at the same origin, a too-wide Access
+  path pattern, or stale DNS would have exposed `/login` and every `/api/*` route with no
+  in-app check to catch it. The app now verifies the `Cf-Access-Jwt-Assertion` header's
+  signature, audience and expiry against Cloudflare's own JWKS for any request that doesn't
+  arrive via the loopback SSH-tunnel fallback (that path bypasses Access by design, so it's
+  exempted by `Host` header instead of by trusting an absent JWT on every path -- trusting an
+  absent header everywhere would silently defeat the whole point).
+  **To activate it:** set two values in `.env`, from Cloudflare Zero Trust dashboard -> Access ->
+  Applications -> the `ops.ratelark.app` application:
+  - `CF_ACCESS_TEAM_DOMAIN` -- your team domain, e.g. `yourteam.cloudflareaccess.com`
+  - `CF_ACCESS_AUD` -- the Application Audience (AUD) tag shown on that application's page
+
+  Until both are set, `cf_access.verify()` always returns `True` (logged once at startup) and
+  nothing changes from today's behavior -- this is additive, not a replacement for the Access
+  policy itself, so it was safe to ship before those two values were available.
 - **The old `/classic` dashboard (and its `/account`, `/api/stocks`, `/api/history`,
   `/api/portfolio-history`, `/api/snapshot` endpoints) was removed 2026-10-03.** It was the
   pre-rebuild dashboard, superseded by `dashboard_v2.html`, unlinked from any page the dashboard

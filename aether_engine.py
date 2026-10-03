@@ -20,6 +20,7 @@ import us_strategy
 import notify
 import decision_log
 import risk_controller
+import cf_access
 from zoneinfo import ZoneInfo
 
 load_dotenv()
@@ -762,15 +763,33 @@ def _session_ok(token):
 from starlette.responses import JSONResponse as _JSONResponse
 
 _PUBLIC_PATHS = {"/login", "/webhook/tradingview"}
+# Hosts the app treats as "reached directly, not through the Cloudflare Tunnel" -- the
+# documented SSH-tunnel fallback (ssh -N -L 8000:127.0.0.1:8000 then http://127.0.0.1:8000)
+# connects straight to the loopback address, bypassing Cloudflare Access by design. Traffic that
+# arrives with any OTHER Host header reached the app through some hostname/routing path, which
+# must mean Cloudflare Access (if the app's own DNS/tunnel config is correct) -- so that's
+# exactly the traffic the Access JWT check below applies to.
+_LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1"}
 
 
 @app.middleware("http")
 async def _dashboard_auth(request: _Request, call_next):
-    """Every path except login/logout and the TradingView webhook needs a dashboard session.
+    """Every path except the TradingView webhook needs a dashboard session. Traffic that did not
+    arrive via the loopback fallback also needs a valid Cloudflare Access JWT, once
+    CF_ACCESS_TEAM_DOMAIN/CF_ACCESS_AUD are configured (see cf_access.py) -- an in-app check that
+    a request actually passed through Access, independent of the edge policy. A second hostname
+    or CNAME pointed at this origin, or a too-wide Access path pattern, would show up here as a
+    request with no valid JWT and get refused instead of silently reaching /login or /api/*.
     Fails closed: unknown paths (including /docs and /openapi.json) are refused too."""
     path = request.url.path
+    if path == "/webhook/tradingview":
+        return await call_next(request)
+    host = (request.headers.get("host") or "").split(":")[0].strip().lower()
+    if host not in _LOOPBACK_HOSTS:
+        if not cf_access.verify(request.headers.get("cf-access-jwt-assertion", "")):
+            return _JSONResponse({"detail": "Access verification failed."}, status_code=401)
     sid = request.cookies.get(_SESSION_COOKIE, "")
-    if path in _PUBLIC_PATHS or (sid and _session_ok(sid)):
+    if path == "/login" or (sid and _session_ok(sid)):
         return await call_next(request)
     if request.method == "GET" and path == "/":
         return _RedirectResponse("/login", status_code=303)
