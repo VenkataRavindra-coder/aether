@@ -146,6 +146,7 @@
       <span class="pill" id="paperAcct" title="Paper account: practice money, not real">…</span>
       <span class="pill" id="liveAcct" title="Live account: real money">…</span>
       <span class="kill" id="kill" title="The engine's own kill switch. It trips automatically when the daily loss limit is hit.">Kill switch …</span>
+      <div class="tabs" role="group" aria-label="Which engine" id="engineTabs"><button type="button" data-engine="us" aria-pressed="true">US</button><button type="button" data-engine="crypto" aria-pressed="false">Crypto</button></div>
       <button class="hlink" id="logoutBtn" type="button">Log out</button>
     </div>
   </header>
@@ -187,7 +188,7 @@
       <div id="blotter"></div>
       <h2 class="h gap">Engine</h2>
       <div id="engine"></div>
-      <h2 class="h gap">US ETF ranks</h2>
+      <h2 class="h gap" id="ranksHeading">US ETF ranks</h2>
       <div id="ranks"></div>
     </section>
   </main>
@@ -202,6 +203,10 @@
   const $ = (id) => document.getElementById(id);
   const DEMO = location.protocol === "file:";
   let overview = null, strategy = null, usStatus = null, market = null, lastOk = 0, tape = "equity", chart = null;
+  let engineTab = "us", lastProblems = [];
+  const CRYPTO_SYMS = new Set(["BTC/USD", "ETH/USD", "SOL/USD"]);
+  const isUsSymbol = (sym) => !CRYPTO_SYMS.has(sym);
+  const engineMatch = (sym) => engineTab === "us" ? isUsSymbol(sym) : !isUsSymbol(sym);
 
   // ---------- formatting (plain numbers, like a trading desk) ----------
   const isNum = (v) => typeof v === "number" && isFinite(v);
@@ -256,6 +261,7 @@
   }
 
   function render(problems) {
+    lastProblems = problems;
     const all = problems.concat((overview && overview.errors) || [], (market && market.errors) || []);
     const b = $("banner");
     b.hidden = !all.length;
@@ -327,22 +333,25 @@
     const cells = [];
     const quotes = (market && market.quotes) || [];
     const q = (sym) => quotes.find((x) => x.symbol === sym);
-    [["SPY", "S&P 500 \u00b7 SPY"], ["DIA", "Dow \u00b7 DIA"], ["QQQ", "Nasdaq \u00b7 QQQ"], ["IWM", "Russell \u00b7 IWM"]].forEach(([sym, name]) => {
-      const x = q(sym);
-      cells.push({ n: name + (heldUs().includes(sym) ? " \u00b7 held" : ""), p: x ? px(x.price) : "n/a", c: x ? pc(x.change_pct) : "", cls: x ? tone(x.change_pct) : "", t: sym + " ETF price, IEX feed; change vs previous close" });
-    });
-    const m = marketClock();
-    const at = new Date(m.next).toLocaleString("en-GB", { weekday: "short", hour: "2-digit", minute: "2-digit" });
-    cells.push({ n: "US market", p: m.open ? "Open" : "Closed", c: (m.open ? "closes " : "opens ") + at + " \u00b7 " + duration((m.next - Date.now()) / 1000), cls: m.open ? "up" : "warn",
-      t: "Regular session 9:30 to 16:00 New York time (shown in your local time). Exchange holidays are not counted." });
-    heldUs().filter((sym) => !["SPY", "DIA", "QQQ", "IWM"].includes(sym)).forEach((sym) => {
-      const x = q(sym);
-      cells.push({ n: sym + " held", p: x ? px(x.price) : "n/a", c: x ? pc(x.change_pct) : "", cls: x ? tone(x.change_pct) : "", t: sym + ": one of your holdings" });
-    });
-    ["BTC/USD", "ETH/USD"].forEach((sym) => {
-      const x = crypto24h(sym);
-      cells.push({ n: sym, p: x ? px(x.price) : "n/a", c: x ? pc(x.chg) + " 24h" : "", cls: x ? tone(x.chg) : "", t: sym + " from Alpaca crypto; change over 24 hours" });
-    });
+    if (engineTab === "us") {
+      [["SPY", "S&P 500 \u00b7 SPY"], ["DIA", "Dow \u00b7 DIA"], ["QQQ", "Nasdaq \u00b7 QQQ"], ["IWM", "Russell \u00b7 IWM"]].forEach(([sym, name]) => {
+        const x = q(sym);
+        cells.push({ n: name + (heldUs().includes(sym) ? " \u00b7 held" : ""), p: x ? px(x.price) : "n/a", c: x ? pc(x.change_pct) : "", cls: x ? tone(x.change_pct) : "", t: sym + " ETF price, IEX feed; change vs previous close" });
+      });
+      const m = marketClock();
+      const at = new Date(m.next).toLocaleString("en-GB", { weekday: "short", hour: "2-digit", minute: "2-digit" });
+      cells.push({ n: "US market", p: m.open ? "Open" : "Closed", c: (m.open ? "closes " : "opens ") + at + " \u00b7 " + duration((m.next - Date.now()) / 1000), cls: m.open ? "up" : "warn",
+        t: "Regular session 9:30 to 16:00 New York time (shown in your local time). Exchange holidays are not counted." });
+      heldUs().filter((sym) => !["SPY", "DIA", "QQQ", "IWM"].includes(sym)).forEach((sym) => {
+        const x = q(sym);
+        cells.push({ n: sym + " held", p: x ? px(x.price) : "n/a", c: x ? pc(x.change_pct) : "", cls: x ? tone(x.change_pct) : "", t: sym + ": one of your holdings" });
+      });
+    } else {
+      ["BTC/USD", "ETH/USD", "SOL/USD"].forEach((sym) => {
+        const x = crypto24h(sym);
+        cells.push({ n: sym, p: x ? px(x.price) : "n/a", c: x ? pc(x.chg) + " 24h" : "", cls: x ? tone(x.chg) : "", t: sym + " from Alpaca crypto; change over 24 hours" });
+      });
+    }
     const shown = cells.slice(0, 8);
     const el = $("ticker");
     el.style.gridTemplateColumns = "repeat(" + shown.length + ", minmax(0, 1fr))";
@@ -358,30 +367,38 @@
     sub.textContent = isNum(s.total_pl) ? s2(s.total_pl) + " \u00b7 " + pc(s.total_pl_pct) + " from " + n2(s.start_equity, 0) : "starting value unavailable";
     const wk = (overview.history || {}).week || [];
     const w7 = wk.length >= 2 ? wk[wk.length - 1][1] - wk[0][1] : null;
+    const engClosed = ((overview.closed || [])).filter((c) => engineMatch(c.symbol));
+    const engWins = engClosed.filter((c) => c.pnl > 0).length;
     $("eqkv").innerHTML =
       kv("Cash", n2(s.cash)) + kv("Invested", n2(s.invested)) +
       kv("Open P/L", s2(s.unrealized), tone(s.unrealized)) + kv("Fees", s2(s.other), tone(s.other)) +
       kv("7-day", s2(w7), tone(w7)) + kv("Today", s2(s.today_pl), tone(s.today_pl)) +
-      kv("Closed wins", isNum(s.closed_count) ? s.wins + " of " + s.closed_count : "n/a", isNum(s.closed_count) && s.closed_count && s.wins * 2 < s.closed_count ? "dn" : "");
-    const pos = overview.positions;
+      kv("Closed wins (this engine)", engClosed.length ? engWins + " of " + engClosed.length : "none yet", engClosed.length && engWins * 2 < engClosed.length ? "dn" : "");
+    const allPos = overview.positions;
+    const pos = Array.isArray(allPos) ? allPos.filter((p) => engineMatch(p.symbol)) : allPos;
     const el = $("lots");
     if (!pos) { el.innerHTML = "<p class=\"empty\">Holdings unavailable.</p>"; return; }
-    if (!pos.length) { el.innerHTML = "<p class=\"empty\">No open lots. Everything is in cash.</p>"; return; }
+    if (!pos.length) { el.innerHTML = "<p class=\"empty\">No open lots" + (engineTab === "us" ? " in US Markets." : " in Crypto.") + "</p>"; return; }
     el.innerHTML = "<table><thead><tr><th>Asset</th><th class=\"r\">Qty</th><th class=\"r\">Avg</th><th class=\"r\">Last</th><th class=\"r\">P/L</th></tr></thead><tbody>" +
       pos.map((p) => "<tr title=\"" + esc(p.engine + ": paid " + n2(p.cost) + ", worth " + n2(p.value)) + "\"><td>" + esc(p.symbol) + "</td><td class=\"r\">" + n2(p.qty, Math.abs(p.qty) < 1 ? 6 : 2) +
         "</td><td class=\"r\">" + px(p.avg_entry) + "</td><td class=\"r\">" + px(p.price) + "</td><td class=\"r " + tone(p.upl) + "\">" + s2(p.upl) + "</td></tr>").join("") + "</tbody></table>";
   }
   function renderResult() {
     const s = overview.summary || {};
-    $("result").innerHTML = kv("Finished", s2(s.realized), tone(s.realized)) + kv("Open", s2(s.unrealized), tone(s.unrealized)) +
-      kv("Fees", s2(s.other), tone(s.other)) + kv("Since start", s2(s.total_pl), tone(s.total_pl));
+    const engClosed = (overview.closed || []).filter((c) => engineMatch(c.symbol));
+    const engPos = (overview.positions || []).filter((p) => engineMatch(p.symbol));
+    const engRealized = engClosed.reduce((a, c) => a + c.pnl, 0);
+    const engUnrealized = engPos.reduce((a, p) => a + (p.upl || 0), 0);
+    $("result").innerHTML = kv("Finished", s2(engRealized), tone(engRealized)) + kv("Open", s2(engUnrealized), tone(engUnrealized)) +
+      kv("Fees (whole account)", s2(s.other), tone(s.other)) + kv("Since start (whole account)", s2(s.total_pl), tone(s.total_pl));
   }
   function renderBlotter() {
-    const act = overview.activity, el = $("blotter");
-    if (!act) { el.innerHTML = "<p class=\"empty\">Order history unavailable.</p>"; return; }
-    if (!act.length) { el.innerHTML = "<p class=\"empty\">No fills yet.</p>"; return; }
+    const allAct = overview.activity, el = $("blotter");
+    if (!allAct) { el.innerHTML = "<p class=\"empty\">Order history unavailable.</p>"; return; }
+    const act = allAct.filter((a) => engineMatch(a.symbol));
+    if (!act.length) { el.innerHTML = "<p class=\"empty\">No fills yet" + (engineTab === "us" ? " in US Markets." : " in Crypto.") + "</p>"; return; }
     const pnlAt = {};
-    (overview.closed || []).forEach((c) => { pnlAt[c.closed] = (pnlAt[c.closed] || 0) + c.pnl; });
+    (overview.closed || []).filter((c) => engineMatch(c.symbol)).forEach((c) => { pnlAt[c.closed] = (pnlAt[c.closed] || 0) + c.pnl; });
     const groups = [];
     act.forEach((a) => {
       const t = Date.parse(a.t), g = groups[groups.length - 1];
@@ -398,8 +415,11 @@
   function renderEngine() {
     const u = usStatus, e = overview.engines || {};
     let h = "";
-    h += kv("Crypto bot", strategy && strategy.mode === "LIVE" ? "LIVE orders" : e.crypto && e.crypto.enabled === false ? "off" : "signals only", strategy && strategy.mode === "LIVE" ? "dn" : "");
-    if (u) {
+    if (engineTab === "crypto") {
+      h += kv("Crypto bot", strategy && strategy.mode === "LIVE" ? "LIVE orders" : e.crypto && e.crypto.enabled === false ? "off" : "signals only", strategy && strategy.mode === "LIVE" ? "dn" : "");
+      const err = strategy && strategy.last_error;
+      h += kv("Error", err ? esc(String(err).slice(0, 80)) : "none", err ? "dn" : "");
+    } else if (u) {
       h += kv("US ETF bot", esc((u.enabled === false ? "off" : u.mode || "") + " \u00b7 " + n2(num(pick(u, "allocation_usd", "allocation")), 0)));
       const eq = num(u.equity), alloc = num(pick(u, "allocation_usd", "allocation"));
       if (eq != null && alloc) h += kv("US bot value", n2(eq) + " <span class=\"" + tone(eq - alloc) + "\">" + s2(eq - alloc) + "</span>");
@@ -412,13 +432,15 @@
       const next = mm ? MON[(+mm[2]) % 12] + " " + (+mm[2] === 12 ? +mm[1] + 1 : mm[1]) : "";
       h += kv("Rebalanced", esc(when(u.last_rebalance_at) + (next ? " \u00b7 next " + next : "")));
       h += kv("Checked", esc(when(u.last_check)));
+      h += kv("Error", u.last_error ? esc(String(u.last_error).slice(0, 80)) : "none", u.last_error ? "dn" : "");
     } else h += kv("US ETF bot", "n/a");
-    const err = (u && u.last_error) || (strategy && strategy.last_error);
-    h += kv("Error", err ? esc(String(err).slice(0, 80)) : "none", err ? "dn" : "");
     $("engine").innerHTML = h;
   }
   function renderRanks() {
-    const el = $("ranks"), rows = ((usStatus && usStatus.rows) || []).slice().sort((a, b) => (a.rank == null ? 99 : a.rank) - (b.rank == null ? 99 : b.rank));
+    const el = $("ranks"), heading = $("ranksHeading");
+    if (engineTab === "crypto") { heading.hidden = true; el.hidden = true; return; }
+    heading.hidden = false; el.hidden = false;
+    const rows = ((usStatus && usStatus.rows) || []).slice().sort((a, b) => (a.rank == null ? 99 : a.rank) - (b.rank == null ? 99 : b.rank));
     if (!rows.length) { el.innerHTML = "<p class=\"empty\">No rankings reported.</p>"; return; }
     el.innerHTML = rows.map((r) => {
       const val = num(r.value) || 0, tgt = num(r.target) || 0, sc = num(r.score);
@@ -432,6 +454,7 @@
   function renderBots() {
     const el = $("bots");
     let h = "";
+    if (engineTab === "crypto") {
     if (!strategy) h += "<article class=\"bot\"><h3>Crypto bot</h3><p>Strategy status unavailable.</p></article>";
     else {
       const rsiMax = num((strategy.params || {}).rsi_max) || 70, openPos = strategy.positions || {};
@@ -452,6 +475,7 @@
           "<p class=\"checks\">" + checks.map((c) => "<span class=\"" + (c[0] ? "up" : "dn") + "\">" + (c[0] ? "\u2713 " : "\u2715 ") + esc(c[1]) + "</span>").join(" &nbsp;") + "</p></article>";
       }).join("");
     }
+    } else {
     const u = usStatus;
     if (u) {
       const last = (u.history || []).slice(-1)[0];
@@ -461,6 +485,7 @@
         "<p>" + (picks.length ? "HOLDS " + esc(picks.join(" \u00b7 ")) : "NO_HOLDINGS") + (eq != null && alloc ? " \u00b7 <span class=\"" + tone(eq - alloc) + "\">" + s2(eq - alloc) + "</span>" : "") + "</p>" +
         "<p class=\"checks\">" + esc(u.last_error ? "error: " + u.last_error : u.note || "") + "</p></article>";
     } else h += "<article class=\"bot\"><h3>US ETF bot</h3><p>Status unavailable.</p></article>";
+    }
     el.innerHTML = h;
   }
 
@@ -518,6 +543,11 @@
   }));
   document.querySelectorAll(".chip button").forEach((b) => b.addEventListener("click", () => refresh(true)));
   $("logoutBtn").addEventListener("click", async () => { try { await fetch("/logout", { method: "POST", credentials: "same-origin" }); } catch (e) {} location.href = "/login"; });
+  document.querySelectorAll("#engineTabs [data-engine]").forEach((b) => b.addEventListener("click", () => {
+    engineTab = b.dataset.engine;
+    document.querySelectorAll("#engineTabs [data-engine]").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+    if (overview) render(lastProblems);
+  }));
 
   function demoData(url) {
     if (url.indexOf("/api/market") === 0) return demoMarket();
