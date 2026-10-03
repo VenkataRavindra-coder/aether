@@ -76,8 +76,38 @@ def _sd_notify(message: str) -> None:
     except Exception as e:
         logger.warning(f"sd_notify({message!r}) failed: {type(e).__name__}")
 
+
+LOCK_FILE = os.getenv("AETHER_LOCK_FILE", os.path.join(os.path.expanduser("~"), ".aether.lock"))
+_lock_fd = None
+
+
+def _acquire_singleton_lock() -> None:
+    """Refuses to start a second AETHER process against the same state files. Nothing before
+    this stopped two copies running at once -- e.g. a stuck systemd stop during a slow shutdown
+    overlapping with Restart=always bringing up a new one, or someone running the engine by hand
+    while the service is also up -- and two processes both reading/writing aether_state.json and
+    both submitting orders is a real risk, not a theoretical one. Uses a POSIX advisory lock
+    (flock) on a dedicated file, held for the life of the process; released automatically when
+    the process exits, whether cleanly or not, since the kernel owns the lock, not the file."""
+    global _lock_fd
+    import fcntl
+    _lock_fd = open(LOCK_FILE, "w")
+    try:
+        fcntl.flock(_lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        logger.critical(f"Another AETHER process already holds {LOCK_FILE} -- refusing to start "
+                        f"a second instance against the same state files.")
+        raise SystemExit(1)
+    _lock_fd.write(str(os.getpid()))
+    _lock_fd.flush()
+    logger.info(f"Singleton lock acquired ({LOCK_FILE}, pid {os.getpid()}).")
+
+
 @asynccontextmanager
 async def lifespan(_app):
+    # First: refuse to start at all if another instance already holds the lock. Must happen
+    # before any state is read or any thread started.
+    _acquire_singleton_lock()
     # Decide WHY we started before any background thread exists: the monitor thread rewrites the
     # heartbeat file the moment it runs, which would erase the evidence this check reads.
     report = startup_report()
@@ -118,6 +148,13 @@ async def lifespan(_app):
             logger.warning(f"US thread did not stop within {JOIN_TIMEOUT}s of shutdown request.")
     write_heartbeat(clean_stop=True)
     notify.STOP.set()
+    if _lock_fd is not None:
+        try:
+            import fcntl
+            fcntl.flock(_lock_fd, fcntl.LOCK_UN)
+            _lock_fd.close()
+        except Exception as e:
+            logger.warning(f"Could not explicitly release the singleton lock: {e}")
 
 
 app = FastAPI(title="AETHER Autonomous Trading Engine", version="5.0.0", lifespan=lifespan)

@@ -208,6 +208,14 @@ daily-loss baseline with nothing to notice) -- it halts the same way `touch ~/AE
 already does (blocks new entries everywhere, never blocks exits) and sends a critical Telegram
 alert. The halt does not clear itself; see the recovery steps above.
 
+**Singleton lock, added 2026-10-04.** Nothing previously stopped two AETHER processes running
+at once against the same state files -- a stuck shutdown overlapping a `Restart=always` restart,
+or someone running the engine by hand while the service is also up, and both would read/write
+`aether_state.json` and could both submit orders. The app now takes an advisory file lock
+(`flock` on `~/.aether.lock`, override with `AETHER_LOCK_FILE`) at the very start of startup,
+before reading any state or starting any thread. A second instance that can't acquire it logs a
+critical error and exits immediately (`raise SystemExit(1)`) rather than running anyway.
+
 ---
 
 ## 7. Operations
