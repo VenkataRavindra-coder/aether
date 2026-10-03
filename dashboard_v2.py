@@ -464,3 +464,26 @@ async def save_alpaca_settings(request: Request):
         return _settings_reply({"ok": True, "restart_required": True, "message": "Keys verified and saved. A service restart is required to load them. Trading modes and approvals were not changed."})
 
     return await run_in_threadpool(verify_and_save)
+
+
+@router.get("/api/safety")
+def safety():
+    """Read-only safety snapshot: live mode, manual halt, live buy budget, last backup."""
+    import glob, json, time
+    from pathlib import Path
+    home = Path.home()
+    halt = Path(os.getenv("AETHER_HALT_FILE", str(home / "AETHER_HALT"))).exists()
+    spent = 0.0
+    try:
+        s = json.loads(Path(os.getenv("AETHER_RISK_STATE", str(home / ".aether_risk_state.json"))).read_text())
+        if s.get("day") == time.strftime("%Y-%m-%d", time.gmtime()):
+            spent = float(s.get("usd", 0.0))
+    except FileNotFoundError:
+        pass
+    except Exception:
+        spent = None
+    archives = sorted(glob.glob(str(home / "backups" / "aether-*.tar.gz")))
+    last = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(os.path.getmtime(archives[-1]))) if archives else None
+    return {"us_live": _flag("US_LIVE"), "halt": halt,
+            "live_budget_usd": _f(os.getenv("RISK_MAX_DAILY_BUY_USD_LIVE") or 100),
+            "live_spent_today_usd": spent, "last_backup_utc": last}

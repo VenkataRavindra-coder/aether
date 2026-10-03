@@ -1275,7 +1275,7 @@ def _us_rebalance(us: dict, today: str, mkey: str, now_et: datetime, fetch_daily
     if failed:
         US_STATUS["retry_after"] = time.time() + US_RETRY_SECONDS
     held = ", ".join(f"{x} {w * 100:.0f}%" for x, w in sorted(sig["weights"].items()))
-    lines = [f"[US] Monthly rebalance ({_us_mode()}) {uae_str()}", f"Signals as of {sig['signal_date']}: holding {held}"]
+    lines = [f"[US] Monthly rebalance ({_us_mode()}){' INCOMPLETE, will retry' if failed else ''} {uae_str()}", f"Signals as of {sig['signal_date']}: holding {held}"]
     for r in results:
         amt = f"${r['notional']:,.2f}" if r["side"] == "BUY" else f"{r['qty']:.4f} sh"
         lines.append(f"  {r['side']} {r['symbol']} {amt} -> {r['state']}")
