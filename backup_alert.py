@@ -17,5 +17,10 @@ except OSError:
 import notify  # noqa: E402
 
 detail = sys.argv[1] if len(sys.argv) > 1 else "unknown error"
-notify.send(f"[ALERT] AETHER nightly backup FAILED: {detail}. Check: journalctl -u aether-backup",
-            key="backup-fail", cooldown=3600)
+# send_sync, not send(): this script exits right after this call, which used to kill send()'s
+# background worker thread before it ever got a chance to actually reach Telegram -- a failed
+# nightly backup was alerting nobody. See notify.send_sync's docstring.
+ok = notify.send_sync(f"[ALERT] AETHER nightly backup FAILED: {detail}. Check: journalctl -u aether-backup")
+if not ok:
+    print(f"backup_alert: could not notify (Telegram disabled or unreachable). Backup failure: {detail}",
+          file=sys.stderr)

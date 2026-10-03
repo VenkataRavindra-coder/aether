@@ -1036,10 +1036,33 @@ def check_services():
             notify.send(f"[ALERT] Service {unit} is {state} on the VM.", key=f"svc:{unit}", cooldown=3600)
 
 
+_BACKUPS_DIR = os.path.join(os.path.expanduser("~"), "backups")
+
+
+def _last_backup_age_hours(now: datetime) -> float:
+    """Age of the newest local backup archive in hours, or None if there isn't one yet.
+    Mirrors dashboard_v2.py's own /api/safety check (same glob, same directory) so the two
+    never disagree about what "last backup" means."""
+    import glob
+    archives = sorted(glob.glob(os.path.join(_BACKUPS_DIR, "aether-*.tar.gz")))
+    if not archives:
+        return None
+    return (now.timestamp() - os.path.getmtime(archives[-1])) / 3600
+
+
 def monitor_cycle(now: datetime = None):
     now = now or datetime.now(timezone.utc)
     write_heartbeat()
     check_services()
+    # The nightly backup alerts on its OWN failure (backup_alert.py), but nothing previously
+    # caught the backup not running at all -- the timer silently disabled, the script crashing
+    # before it could even call backup_alert.py, etc. This actively checks staleness instead of
+    # only showing it passively on the dashboard for whenever someone happens to look.
+    age = _last_backup_age_hours(now)
+    if age is not None and age > 26:
+        notify.send(f"[ALERT] No successful AETHER backup in {age:.0f}h (last one is that old). "
+                    f"Check: systemctl status aether-backup.timer, journalctl -u aether-backup.",
+                    key="backup-stale", cooldown=6 * 3600)
     m = notify.vm_metrics()
     if m.get("disk_used_pct", 0) >= 85:
         notify.send(f"[ALERT] VM disk is {m['disk_used_pct']:g}% full ({m['disk_free_gb']:g} GB free).", key="disk", cooldown=6 * 3600)

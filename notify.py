@@ -107,6 +107,26 @@ def send(text: str, key: str = None, cooldown: float = 0) -> bool:
         return False
 
 
+def send_sync(text: str, timeout: float = 20) -> bool:
+    """Like send(), but actually transmits before returning instead of queuing for a background
+    thread. send()'s queue-and-return design is correct for the long-running engine (sending
+    must never block a trading cycle), but it silently drops the message for a one-shot script
+    (e.g. backup_alert.py, run once by a systemd timer): the daemon worker thread it starts is
+    killed the instant the script's main thread exits, almost always before it gets to dequeue
+    and actually call Telegram. No retry here (the caller is about to exit anyway) -- a bad
+    network blip just means one missed alert, logged locally either way."""
+    if not enabled():
+        return False
+    _, chat = _config()
+    try:
+        _call("sendMessage", {"chat_id": chat, "text": text[:MAX_LEN], "disable_web_page_preview": True},
+              timeout=timeout)
+        return True
+    except Exception as e:
+        logger.warning(f"Telegram send_sync failed: {_scrub(str(e))}")
+        return False
+
+
 def start_command_poller(handler):
     """Long-polls for commands like /status. `handler(command) -> str | None`.
     Messages from any chat other than TELEGRAM_CHAT_ID are ignored."""
