@@ -48,8 +48,12 @@ def _code_version():
     global _version
     if _version is None:
         try:
+            # Strip NOTIFY_SOCKET: aether_engine.py runs as a Type=notify systemd service, and a
+            # subprocess that inherits that env var triggers a harmless but noisy
+            # "Got notification message ... rejected" log line from systemd.
+            env = {k: v for k, v in os.environ.items() if k != "NOTIFY_SOCKET"}
             out = subprocess.run(["git", "-C", _HERE, "rev-parse", "--short", "HEAD"],
-                                 capture_output=True, text=True, timeout=3)
+                                 capture_output=True, text=True, timeout=3, env=env)
             _version = out.stdout.strip() or "unknown"
         except Exception:
             _version = "unknown"

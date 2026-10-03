@@ -989,6 +989,14 @@ def startup_report() -> str:
             f"Last seen alive {seen}, down about {gap}. {tail}")
 
 
+# Type=notify means $NOTIFY_SOCKET is set in our own environment so sd_notify() can reach
+# systemd. subprocess.run() inherits the environment by default, and `systemctl` itself turns
+# out to probe that socket when it sees it set -- harmless (systemd just rejects the message,
+# since it isn't from our main PID), but it spams a "Got notification message ... rejected" log
+# line every monitor cycle. Stripping it from the child's environment stops that at the source.
+_SUBPROCESS_ENV = {k: v for k, v in os.environ.items() if k != "NOTIFY_SOCKET"}
+
+
 def service_states() -> dict:
     """systemd state of each entry in MONITOR_SERVICES ({} when systemd is unavailable).
     An entry may list alternatives with '|' (e.g. 'ssh|ssh.socket'); it counts as active if
@@ -998,7 +1006,8 @@ def service_states() -> dict:
         states = []
         for unit in spec.split("|"):
             try:
-                r = subprocess.run(["systemctl", "is-active", unit], capture_output=True, text=True, timeout=5)
+                r = subprocess.run(["systemctl", "is-active", unit], capture_output=True, text=True,
+                                   timeout=5, env=_SUBPROCESS_ENV)
                 states.append(r.stdout.strip() or "unknown")
             except FileNotFoundError:
                 return {}
