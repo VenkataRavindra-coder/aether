@@ -148,8 +148,11 @@ Real-money US orders require ALL of:
   current, account funded with $50–100, `US_LIVE=true`, first rebalance approved by hand.
 - **Before scaling above micro-live:** walk-forward validation, Key Vault for secrets,
   a full restore drill, and at least several months of live results matching paper.
-- **Strategy retirement rule:** TO DECIDE (e.g. disable when rolling profit factor stays below a
-  set threshold for N trades). No LLM in this decision.
+- **Strategy retirement rule (2026-10-03):** retire (stop new entries + alert) when EITHER
+  (a) profit factor over the last 20 closed trades < 1.0 (checked once 20 exist), or
+  (b) drawdown from peak (live or shadow) > 2x the out-of-sample backtest's worst
+  (US momentum: -13.5% -> retire at -27%). Exits continue. Re-enable only after a written
+  review in this file. No LLM in this decision. Manual monthly check until automated.
 
 ---
 
