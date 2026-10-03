@@ -285,9 +285,86 @@ def default_state() -> dict:
     }
 
 
+def _fsync_dir(path: str) -> None:
+    """Fsyncs the directory containing `path` so a rename into place is durable across a power
+    loss too, not just the file's own content. Best-effort: some filesystems don't support
+    directory fsync, so failures here are logged, not raised."""
+    try:
+        dir_fd = os.open(os.path.dirname(os.path.abspath(path)) or ".", os.O_RDONLY)
+        try:
+            os.fsync(dir_fd)
+        finally:
+            os.close(dir_fd)
+    except Exception as e:
+        logger.warning(f"Directory fsync failed for {path}: {type(e).__name__}: {e}")
+
+
+def _quarantine_bad_state_file(path: str) -> None:
+    """Moves a corrupt state file aside instead of leaving it in place, where the next
+    save_state() would otherwise copy it over the one good backup (see save_state's docstring
+    for the exact scenario this prevents). Never raises -- this runs inside an already-degraded
+    path and must not itself become a new failure."""
+    if not os.path.exists(path):
+        return
+    try:
+        quarantined = f"{path}.corrupt.{int(time.time())}"
+        os.replace(path, quarantined)
+        logger.error(f"Quarantined corrupt state file: {path} -> {quarantined}")
+    except Exception as e:
+        logger.error(f"Could not quarantine corrupt state file {path}: {e}")
+
+
+def _repair_primary_from(good_content: dict) -> None:
+    """After recovering from .bak, immediately rewrites the primary with that same good content.
+    Without this, the primary stays missing/corrupt until the next save_state() call, during
+    which .bak would be overwritten with whatever (if anything) is at the primary path at that
+    moment -- closing that window is the actual fix for A4.2."""
+    try:
+        tmp = STATE_FILE + ".tmp"
+        with open(tmp, "w") as f:
+            json.dump(good_content, f, indent=4)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, STATE_FILE)
+        _fsync_dir(STATE_FILE)
+        logger.error("Primary state file repaired from backup.")
+    except Exception as e:
+        logger.error(f"Could not repair primary state file from backup: {e}")
+
+
+def _enter_state_corruption_safe_mode(bad_paths: list) -> None:
+    """Both the primary and .bak state files were unreadable. Returning a fresh, empty
+    default_state() silently here would wipe every open position and reset the daily-loss
+    baseline with nothing to notice -- risk_controller's own budget file deliberately fails
+    closed instead for exactly this reason (see risk_controller.py's _live_buys_today). This
+    uses the SAME manual halt already used everywhere else (touch ~/AETHER_HALT): blocks new
+    entries across both engines, never blocks exits, and does not clear itself -- a human has to
+    look at what happened and clear it on purpose."""
+    try:
+        risk_controller.HALT_FILE.touch(exist_ok=True)
+    except Exception as e:
+        logger.critical(f"Could not create halt file after state corruption: {e}")
+    msg = (f"[ALERT] AETHER state corruption: {bad_paths} unreadable. Halted (new entries "
+          f"blocked everywhere; exits still work) instead of silently resetting positions and "
+          f"the daily-loss baseline. Restore from backups, then: rm ~/AETHER_HALT")
+    logger.critical(msg)
+    notify.send(msg, key="state-corruption", cooldown=3600)
+
+
 def load_state() -> dict:
-    """Load persistent state with automatic legacy-US migration."""
+    """Load persistent state with automatic legacy-US migration.
+
+    If the primary is unreadable but .bak is good: recovers from .bak, quarantines the corrupt
+    primary (done in the except branch below), and immediately repairs the primary from that
+    good content so the next save_state() doesn't copy a still-corrupt (or missing) primary over
+    the one good backup -- that used to destroy the only good copy (A4.2).
+
+    If BOTH are unreadable, this does NOT silently return a fresh, empty default_state(): it
+    enters the halt-based safe mode above and alerts, instead of quietly wiping every position
+    and the daily-loss baseline (A4.3).
+    """
     state = default_state()
+    bad_paths = []
 
     for path in (STATE_FILE, STATE_FILE + ".bak"):
         if not os.path.exists(path):
@@ -325,26 +402,40 @@ def load_state() -> dict:
                 logger.error(
                     f"State file unreadable; recovered from backup {path}."
                 )
+                _repair_primary_from(loaded)
 
             return state
 
         except Exception as e:
             logger.error(f"Failed to read state file {path}: {str(e)}")
+            bad_paths.append(path)
+            _quarantine_bad_state_file(path)
 
+    if bad_paths:
+        _enter_state_corruption_safe_mode(bad_paths)
     return state
 
 
 def save_state(state: dict):
     """Atomic write: a crash or power loss mid-write can never leave a truncated state file.
-    The previous good copy is kept as .bak, and load_state falls back to it if needed."""
+    The previous good copy is kept as .bak -- also written atomically (tmp file + fsync +
+    rename) rather than shutil.copyfile straight onto the live .bak path, which could leave .bak
+    itself truncated if the process died mid-copy. load_state() falls back to .bak if the
+    primary is ever unreadable, and repairs the primary immediately when that happens so this
+    same copy-step can't overwrite .bak with a still-bad primary on the next save (A4.2)."""
     tmp = STATE_FILE + ".tmp"
     with open(tmp, "w") as f:
         json.dump(state, f, indent=4)
         f.flush()
         os.fsync(f.fileno())
     if os.path.exists(STATE_FILE):
-        shutil.copyfile(STATE_FILE, STATE_FILE + ".bak")
+        bak_tmp = STATE_FILE + ".bak.tmp"
+        shutil.copyfile(STATE_FILE, bak_tmp)
+        with open(bak_tmp, "rb") as f:
+            os.fsync(f.fileno())
+        os.replace(bak_tmp, STATE_FILE + ".bak")
     os.replace(tmp, STATE_FILE)
+    _fsync_dir(STATE_FILE)
 
 
 def verify_access(secret: str = "", x_webhook_secret: str = ""):

@@ -195,6 +195,18 @@ is genuinely down.
 | Crypto kill switch fired | Wait for UTC midnight; review the decision log first |
 | Secret leaked | Rotate immediately (section 7), restart, update TradingView |
 | Backup failed alert | `journalctl -u aether-backup`; check SAS expiry and disk space |
+| **State corruption alert** (`aether_state.json` *and* `.bak` both unreadable) | AETHER already halted itself (see below); look in `~/*.corrupt.<timestamp>` for the quarantined bad files, check `~/backups` for a usable older copy, restore it to `aether_state.json`, verify it loads, then `rm ~/AETHER_HALT` |
+
+**State file recovery, added 2026-10-04.** If `aether_state.json` is unreadable but `.bak` is
+good, `load_state()` recovers from `.bak`, quarantines the corrupt primary
+(`aether_state.json.corrupt.<timestamp>`), and immediately repairs the primary from that same
+good content. This closes a real bug: previously, recovering from `.bak` without repairing the
+primary meant the *next* `save_state()` would copy the still-corrupt primary over the one good
+backup, destroying it. If *both* the primary and `.bak` are unreadable, AETHER no longer returns
+a silent, empty default state (which would have wiped every open position and reset the
+daily-loss baseline with nothing to notice) -- it halts the same way `touch ~/AETHER_HALT`
+already does (blocks new entries everywhere, never blocks exits) and sends a critical Telegram
+alert. The halt does not clear itself; see the recovery steps above.
 
 ---
 
