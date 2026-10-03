@@ -1,7 +1,7 @@
 """Deflated Sharpe report over the AETHER trial log. Read-only.
 
-    python3 dsr_report.py                 # assumes daily_kurtosis is EXCESS (pandas .kurt())
-    python3 dsr_report.py --raw-kurtosis  # if your metrics store raw kurtosis
+    python3 dsr_report.py                 # assumes daily_kurtosis is RAW (pandas .kurt() + 3, as our metrics() store it)
+    python3 dsr_report.py --excess-kurtosis  # only for a script that stores pandas .kurt() as-is
 
 Method (Bailey & Lopez de Prado): the best Sharpe out of N tries is expected to be
 high by luck alone. SR0 is that luck threshold, from N (logged + backfilled trials)
@@ -43,7 +43,7 @@ def verdict(p):
 
 
 def main(argv):
-    raw = "--raw-kurtosis" in argv
+    raw = "--excess-kurtosis" not in argv
     db = os.path.join(os.path.dirname(os.path.abspath(__file__)), "research.sqlite")
     con = sqlite3.connect(db)
     rows = con.execute("SELECT id, strategy, symbol, oos_sharpe, oos_json FROM research_trials ORDER BY id").fetchall()
