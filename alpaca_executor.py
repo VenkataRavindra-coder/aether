@@ -181,8 +181,15 @@ class AlpacaExecutionClient:
             logger.error(f"Failed to fetch open orders: {str(e)}")
             return None
 
-    def submit_market_order(self, symbol: str, side: str, qty: float = None, notional: float = None):
-        """Fractional-capable DAY market order for stocks/ETFs (paper account only: client is paper=True)."""
+    def submit_market_order(self, symbol: str, side: str, qty: float = None, notional: float = None,
+                             client_order_id: str = None):
+        """Fractional-capable DAY market order for stocks/ETFs (paper account only: client is paper=True).
+
+        client_order_id makes a retry idempotent. If we submit, the request reaches Alpaca, but the
+        response is lost (timeout, reset, crash before we read it), a naive retry would place a
+        SECOND order. With client_order_id set, a submit that errors out is followed by a lookup of
+        that same id: if the first attempt actually landed, we return its order instead of trying
+        again and doubling the position."""
         side_upper = side.upper()
         # US engine is long-only: SELLs only reduce holdings, so they count as closing.
         allowed, risk_reason = risk_controller.check(
@@ -200,10 +207,21 @@ class AlpacaExecutionClient:
                 kwargs["qty"] = qty
             else:
                 kwargs["notional"] = round(float(notional), 2)
+            if client_order_id:
+                kwargs["client_order_id"] = client_order_id
             order = self.client.submit_order(order_data=MarketOrderRequest(**kwargs))
             logger.info(f"ETF ORDER PLACED: {order.id} | {side.upper()} {symbol} | {status_value(order.status)}")
             return {"status": "submitted", "order_id": str(order.id)}
         except Exception as e:
+            if client_order_id:
+                try:
+                    existing = self.client.get_order_by_client_id(client_order_id)
+                    logger.warning(f"Submit for {symbol} errored ({e}); an order already exists under "
+                                   f"client_order_id={client_order_id} (id {existing.id}) -- treating it "
+                                   f"as already submitted instead of retrying.")
+                    return {"status": "submitted", "order_id": str(existing.id), "recovered": True}
+                except Exception:
+                    pass
             logger.error(f"Failed to submit market order for {symbol}: {str(e)}")
             return {"status": "error", "message": str(e)}
 

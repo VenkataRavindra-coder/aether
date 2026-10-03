@@ -84,6 +84,28 @@ t("halt blocks a rotation's buy leg", not rc.preflight("us", [("BUY", 10, False,
 t("halt does not block the exit leg", rc.preflight("us", [("SELL", 10, True, False)])[0])
 (d / "HALT").unlink()
 
+# release_live_buy: returns budget that check() reserved but was never actually spent (the
+# order errored after the risk check passed, or filled for less than requested). Without this
+# a failed or partial live buy keeps counting against the daily budget for the rest of the day.
+(d / "risk.json").unlink(missing_ok=True)
+t("a recorded live buy shows up in the daily total", ok("us", "SPY", "BUY", 40, False, True) and rc._live_buys_today() == 40)
+rc.release_live_buy(15)
+t("releasing part of it reduces the daily total", rc._live_buys_today() == 25)
+rc.release_live_buy(1000)
+t("releasing more than was spent floors at zero, never negative", rc._live_buys_today() == 0)
+t("a zero/negative release is a no-op", rc._live_buys_today() == 0)
+rc.release_live_buy(0)
+rc.release_live_buy(-5)
+t("...confirmed: still zero after no-op releases", rc._live_buys_today() == 0)
+(d / "risk.json").unlink(missing_ok=True)
+t("a buy that would have been blocked by an unreleased reservation is allowed after release",
+  ok("us", "SPY", "BUY", 60, False, True) and rc._live_buys_today() == 60)
+rc.release_live_buy(60)
+t("...full release clears the day back to zero", rc._live_buys_today() == 0)
+t("...so the same $60 buy is allowed again, not blocked by a phantom reservation",
+  ok("us", "SPY", "BUY", 60, False, True))
+(d / "risk.json").unlink(missing_ok=True)
+
 # US kill switch (new): the engine that can spend real money
 rc.set_kill("us", True)
 t("US kill switch blocks new entries", not ok("us", "SPY", "BUY", 10, False, False))

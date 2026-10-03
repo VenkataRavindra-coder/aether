@@ -89,6 +89,27 @@ def _record_live_buy(usd: float) -> None:
     tmp.replace(p)
 
 
+def release_live_buy(usd: float) -> None:
+    """Returns budget that check() reserved but was never actually spent: the order was
+    rejected by the broker after the risk check passed, or it filled for less than the
+    requested notional. Without this, a failed or partial live buy keeps counting against
+    RISK_MAX_DAILY_BUY_USD_LIVE for the rest of the day even though the money was never spent.
+    Never goes negative; a bad release amount just floors at the already-recorded total."""
+    try:
+        usd = float(usd)
+    except (TypeError, ValueError):
+        return
+    if not math.isfinite(usd) or usd <= 0:
+        return
+    with _LOCK:
+        total = max(0.0, _live_buys_today() - usd)
+        p = _state_path()
+        tmp = p.with_name(p.name + ".tmp")
+        tmp.write_text(json.dumps({"day": _today(), "usd": round(total, 2)}))
+        os.chmod(tmp, 0o600)
+        tmp.replace(p)
+
+
 def _log(engine, symbol, side, notional, real_money, allowed, reason):
     if os.getenv("RISK_LOG", "1") == "0":
         return

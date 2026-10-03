@@ -68,7 +68,7 @@ Crypto live trading is **hard-blocked** in the Risk Controller regardless of set
 | Webhook order size | $100, max 5% of equity | `TRADE_NOTIONAL_USD`, `MAX_ORDER_PCT` |
 | US live dollar cap | $100 on strategy equity, buys and account equity | `US_LIVE_MAX_USD` |
 | Live order cap | $100 per order | `RISK_MAX_ORDER_USD_LIVE` (default) |
-| Live daily buy budget | $100 per UTC day, persisted to disk | `RISK_MAX_DAILY_BUY_USD_LIVE` (default) |
+| Live daily buy budget | $100 per UTC day, persisted to disk; **reserve-and-release**: an order errors after the check passed, or fills for less than requested, releases the unspent part back the same day instead of leaving it counted as spent | `RISK_MAX_DAILY_BUY_USD_LIVE` (default) + `risk_controller.release_live_buy()` |
 | **US daily-loss kill switch** | 3% below day-start equity → no new US entries | `US_MAX_DAILY_LOSS_PCT` + Risk Controller |
 | **US peak-drawdown kill switch** | 27% below peak equity history → no new US entries. This automates the §8 retirement level (-13.5% worst out-of-sample → retire at -27%) instead of relying on a manual monthly check | `US_MAX_DRAWDOWN_PCT` + Risk Controller |
 | Approval tolerance | executed plan may differ ≤ 2% from the approved one | `US_APPROVAL_TOLERANCE` |
@@ -78,6 +78,20 @@ Crypto live trading is **hard-blocked** in the Risk Controller regardless of set
 `US_LIVE_MAX_USD`. `plan_orders` splits the cap across up to 3 ETFs, so each buy is roughly
 `US_LIVE_MAX_USD / 3`. Keep `RISK_MAX_ORDER_USD_LIVE >= US_LIVE_MAX_USD` (and the daily budget
 no smaller), otherwise a plan is refused by pre-flight once the cap is raised above ~$300.
+**This is now checked automatically**: on startup, if `US_LIVE=true` and either cap is below
+`US_LIVE_MAX_USD`, AETHER logs an error and sends a Telegram alert (it does not refuse to
+start, so the paper engine and dashboard keep working either way).
+
+Every US live order also carries a deterministic `client_order_id`
+(`us-<rebalance-month>-<symbol>-<side>`). If a submit times out or the connection drops after
+Alpaca already accepted the order, the retry looks the order up by that id instead of placing a
+second one — the duplicate-order class this closes is the same shape as a crashed TradingView
+webhook retry, just on the US side.
+
+Every numeric `.env` value that used to be read with a bare `float()`/`int()` (`US_LIVE_MAX_USD`,
+`TRADE_NOTIONAL_USD`, `MAX_ORDER_PCT`, the strategy/US interval and loss-limit settings) now
+fails closed to its documented default instead of crashing the whole process at import — a
+single malformed value used to take down uvicorn entirely (no engine, no dashboard, no Telegram).
 
 Retired/unused `.env` names (do not rely on them): `MAX_OPEN_POSITIONS`,
 `MAX_NOTIONAL_PER_POSITION_PCT`, `RISK_PER_TRADE_PCT`, `MAX_DAILY_LOSS_PCT`, `TRADING_MODE`,
@@ -148,7 +162,9 @@ Real-money US orders require ALL of:
 ## 7. Operations
 
 - **Access:** `https://ops.ratelark.app` (Cloudflare Access email code + `DASHBOARD_PASSWORD`).
-  Fallback: `ssh -N -L 8000:127.0.0.1:8000 aether` then `http://127.0.0.1:8000`.
+  Fallback: `ssh -N -L 8000:127.0.0.1:8000 aether` then `http://127.0.0.1:8000`. `/logout` requires
+  a valid session and only accepts `POST` (it used to be a public `GET`, so anyone on the internet
+  could call it and force every operator session to log out, repeatedly).
 - **Code:** private repo `VenkataRavindra-coder/aether`, deploy key on the VM.
 - **Backups:** nightly 03:15 UTC (`aether-backup.timer`): state, decision log, research trials;
   integrity-checked; 14 local copies in `~/backups`; offsite to Azure `aetherbkp/aether-backups`

@@ -146,7 +146,7 @@
       <span class="pill" id="paperAcct" title="Paper account: practice money, not real">…</span>
       <span class="pill" id="liveAcct" title="Live account: real money">…</span>
       <span class="kill" id="kill" title="The engine's own kill switch. It trips automatically when the daily loss limit is hit.">Kill switch …</span>
-      <a class="hlink" href="/logout">Log out</a>
+      <button class="hlink" id="logoutBtn" type="button">Log out</button>
     </div>
   </header>
 
@@ -517,6 +517,7 @@
     if (overview) drawTape();
   }));
   document.querySelectorAll(".chip button").forEach((b) => b.addEventListener("click", () => refresh(true)));
+  $("logoutBtn").addEventListener("click", async () => { try { await fetch("/logout", { method: "POST", credentials: "same-origin" }); } catch (e) {} location.href = "/login"; });
 
   function demoData(url) {
     if (url.indexOf("/api/market") === 0) return demoMarket();

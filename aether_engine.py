@@ -27,6 +27,30 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("AETHER_CORE")
 
+
+def _env_float(name: str, default: str) -> float:
+    """float(os.getenv(...)) that fails closed to `default` instead of crashing the whole
+    process at import time. A malformed .env value (e.g. a trailing blank) used to take down
+    uvicorn entirely -- no engine, no dashboard, no Telegram -- for a single bad number."""
+    raw = os.getenv(name, default)
+    try:
+        v = float(raw)
+        if v != v or v in (float("inf"), float("-inf")):  # NaN / inf guard
+            raise ValueError(raw)
+        return v
+    except (TypeError, ValueError):
+        logger.error(f"{name}={raw!r} is not a valid number; using default {default!r}")
+        return float(default)
+
+
+def _env_int(name: str, default: str) -> int:
+    raw = os.getenv(name, default)
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        logger.error(f"{name}={raw!r} is not a valid integer; using default {default!r}")
+        return int(default)
+
 @asynccontextmanager
 async def lifespan(_app):
     # Decide WHY we started before any background thread exists: the monitor thread rewrites the
@@ -66,10 +90,32 @@ app.add_middleware(
 broker = AlpacaExecutionClient(paper=True)
 # US engine only: a separate LIVE-money connection, used only when US_LIVE=true AND US_EXECUTE=true.
 US_LIVE = os.getenv("US_LIVE", "false").lower() == "true"
-US_LIVE_MAX_USD = float(os.getenv("US_LIVE_MAX_USD", "0"))
+US_LIVE_MAX_USD = _env_float("US_LIVE_MAX_USD", "0")
 US_REQUIRE_APPROVAL = US_LIVE or os.getenv("US_REQUIRE_APPROVAL", "false").lower() == "true"
 us_broker = (AlpacaExecutionClient(paper=False, key_env="APCA_LIVE_API_KEY_ID",
                                    secret_env="APCA_LIVE_API_SECRET_KEY") if US_LIVE else broker)
+
+
+def _check_us_live_caps() -> None:
+    """When US_LIVE is on, RISK_MAX_ORDER_USD_LIVE and RISK_MAX_DAILY_BUY_USD_LIVE must each be
+    at least US_LIVE_MAX_USD, or risk_controller.preflight() safely refuses every live rebalance
+    plan near the cap (no orders sent -- but also no visible reason unless you check the logs).
+    This only warns loudly; it doesn't block startup, since the paper engine and dashboard must
+    keep working even with a live-only misconfiguration."""
+    if not US_LIVE:
+        return
+    order_cap = risk_controller._env_usd("RISK_MAX_ORDER_USD_LIVE", "100")
+    daily_cap = risk_controller._env_usd("RISK_MAX_DAILY_BUY_USD_LIVE", "100")
+    if order_cap < US_LIVE_MAX_USD or daily_cap < US_LIVE_MAX_USD:
+        msg = (f"US_LIVE_MAX_USD=${US_LIVE_MAX_USD:,.2f} but RISK_MAX_ORDER_USD_LIVE=${order_cap:,.2f} / "
+               f"RISK_MAX_DAILY_BUY_USD_LIVE=${daily_cap:,.2f} -- a live rebalance plan will be refused "
+               f"by risk pre-flight (safely, no orders sent) instead of executing. Raise both caps to "
+               f"at least US_LIVE_MAX_USD in .env.")
+        logger.error(msg)
+        notify.send(f"[ALERT] AETHER live caps misaligned: {msg}", key="us-live-caps-misaligned", cooldown=24 * 3600)
+
+
+_check_us_live_caps()
 
 STATE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "aether_state.json")
 STATE_LOCK = threading.Lock()
@@ -78,8 +124,8 @@ STARTED_AT = datetime.now(timezone.utc)
 WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "")
 # Webhook BUY size is a dollar amount (converted to quantity at the alert price), never a raw
 # unit count, and any order above MAX_ORDER_PCT of account equity is rejected outright.
-TRADE_NOTIONAL_USD = float(os.getenv("TRADE_NOTIONAL_USD", "100"))
-MAX_ORDER_PCT = float(os.getenv("MAX_ORDER_PCT", "5")) / 100
+TRADE_NOTIONAL_USD = _env_float("TRADE_NOTIONAL_USD", "100")
+MAX_ORDER_PCT = _env_float("MAX_ORDER_PCT", "5") / 100
 
 TRACKED_SYMBOLS = {"BTC/USD", "ETH/USD", "SOL/USD"}
 
@@ -301,10 +347,10 @@ def record_trade_history(state: dict, symbol: str, side: str, requested_qty: flo
 
 
 STRATEGY_ENABLED = os.getenv("STRATEGY_ENABLED", "false").lower() == "true"
-STRATEGY_INTERVAL = int(os.getenv("STRATEGY_INTERVAL_SECONDS", "60"))
-STRATEGY_COOLDOWN = int(os.getenv("STRATEGY_COOLDOWN_SECONDS", "7200"))
-STRATEGY_MAX_DAILY_LOSS = float(os.getenv("STRATEGY_MAX_DAILY_LOSS_PCT", "3")) / 100
-STRATEGY_SHADOW_EQUITY = float(os.getenv("STRATEGY_SHADOW_EQUITY", "100000"))
+STRATEGY_INTERVAL = _env_int("STRATEGY_INTERVAL_SECONDS", "60")
+STRATEGY_COOLDOWN = _env_int("STRATEGY_COOLDOWN_SECONDS", "7200")
+STRATEGY_MAX_DAILY_LOSS = _env_float("STRATEGY_MAX_DAILY_LOSS_PCT", "3") / 100
+STRATEGY_SHADOW_EQUITY = _env_float("STRATEGY_SHADOW_EQUITY", "100000")
 STRATEGY_PARAMS = strat.Params(risk_pct=float(os.getenv("STRATEGY_RISK_PCT", "1")) / 100)
 STRATEGY_BAR_SECONDS = 3600
 STRATEGY_MIN_NOTIONAL = 10.0
@@ -579,7 +625,7 @@ def _login(password: str = _Form(default="")):
     return resp
 
 
-@app.get("/logout")
+@app.post("/logout")
 def _logout(request: _Request):
     _rotate_session_key()
     resp = _RedirectResponse("/login", status_code=303)
@@ -635,7 +681,7 @@ def _session_ok(token):
 
 from starlette.responses import JSONResponse as _JSONResponse
 
-_PUBLIC_PATHS = {"/login", "/logout", "/webhook/tradingview"}
+_PUBLIC_PATHS = {"/login", "/webhook/tradingview"}
 
 
 @app.middleware("http")
@@ -699,7 +745,7 @@ def run_backtest(symbol: str = Query(default="BTC/USD"), days: int = Query(defau
     return result
 
 
-DIGEST_HOUR_UTC = int(os.getenv("DIGEST_HOUR_UTC", "6"))
+DIGEST_HOUR_UTC = _env_int("DIGEST_HOUR_UTC", "6")
 HEALTHCHECK_PING_URL = os.getenv("HEALTHCHECK_PING_URL", "")
 MONITOR_INTERVAL = 60
 _monitor = {"alpaca_fail_streak": 0, "alpaca_alerted": False, "digest_date": None}
@@ -956,8 +1002,8 @@ def monitor_loop():
 
 US_ENABLED = os.getenv("US_ENABLED", "false").lower() == "true"
 US_EXECUTE = os.getenv("US_EXECUTE", "false").lower() == "true"       # false = simulated (shadow); true = orders on the Alpaca PAPER account
-US_ALLOCATION_USD = float(os.getenv("US_ALLOCATION_USD", "5000"))
-US_CHECK_INTERVAL = int(os.getenv("US_CHECK_INTERVAL_SECONDS", "300"))
+US_ALLOCATION_USD = _env_float("US_ALLOCATION_USD", "5000")
+US_CHECK_INTERVAL = _env_int("US_CHECK_INTERVAL_SECONDS", "300")
 US_EXEC_AFTER_ET = (15, 30)
 US_SLIPPAGE = 0.0005
 US_RETRY_SECONDS = 900
@@ -965,8 +1011,8 @@ US_RETRY_SECONDS = 900
 # loss limits, evaluated every cycle from the equity history. The drawdown default matches the
 # retirement level already written down in strategy.md section 8 (US momentum: -13.5%
 # out-of-sample worst -> retire at -27%), turning that manual monthly rule into an automatic one.
-US_MAX_DAILY_LOSS = float(os.getenv("US_MAX_DAILY_LOSS_PCT", "3")) / 100
-US_MAX_DRAWDOWN = float(os.getenv("US_MAX_DRAWDOWN_PCT", "27")) / 100
+US_MAX_DAILY_LOSS = _env_float("US_MAX_DAILY_LOSS_PCT", "3") / 100
+US_MAX_DRAWDOWN = _env_float("US_MAX_DRAWDOWN_PCT", "27") / 100
 NY = ZoneInfo("America/New_York")
 UAE_TZ = timezone(timedelta(hours=4))
 US_STOP = threading.Event()
@@ -1072,21 +1118,31 @@ def _us_execute_shadow(orders, prices, holdings, cash):
 _US_FINAL_STATES = {"filled", "canceled", "expired", "rejected", "done_for_day"}
 
 
-def _us_execute_paper(orders, prices, cash, holdings_before=None):
+def _us_execute_paper(orders, prices, cash, holdings_before=None, mkey=""):
     """Sends orders and books only broker-confirmed fills. An order still open at the poll timeout is
     cancelled and re-read, so a late fill cannot leave cash stale. An order that still cannot be
     reconciled is marked 'unreconciled' (the engine then freezes). If positions cannot be read after
-    the fills, the confirmed fills are booked onto the known holdings and the rebalance stays incomplete."""
+    the fills, the confirmed fills are booked onto the known holdings and the rebalance stays incomplete.
+
+    Each order gets a deterministic client_order_id (one per symbol+side+rebalance-month), so a
+    submit that times out client-side but actually landed at the broker is recovered instead of
+    duplicated on a later retry. For real-money BUYs, any part of the daily budget that
+    risk_controller.check() reserved but wasn't actually spent -- an order that errored after the
+    check passed, or filled for less than requested -- is released back so it isn't double-counted
+    for the rest of the day."""
     results = []
     book = dict(holdings_before or {})
     for o in orders:
         sym = o["symbol"]
+        coid = f"us-{mkey}-{sym}-{o['side']}"[:48] if mkey else None
         if o["side"] == "SELL":
-            r = us_broker.submit_market_order(sym, "SELL", qty=o["qty"])
+            r = us_broker.submit_market_order(sym, "SELL", qty=o["qty"], client_order_id=coid)
         else:
-            r = us_broker.submit_market_order(sym, "BUY", notional=o["notional"])
+            r = us_broker.submit_market_order(sym, "BUY", notional=o["notional"], client_order_id=coid)
         if r.get("status") != "submitted":
             results.append({**o, "state": "error", "detail": r.get("message")})
+            if o["side"] == "BUY" and not us_broker.paper and not str(r.get("message", "")).startswith("risk:"):
+                risk_controller.release_live_buy(o["notional"])
             continue
         f = us_broker.wait_for_fill(r["order_id"])
         if f["state"] not in _US_FINAL_STATES:
@@ -1095,6 +1151,10 @@ def _us_execute_paper(orders, prices, cash, holdings_before=None):
         qty = float(f.get("filled_qty") or 0.0)
         px = f["avg_price"] or prices[sym]
         cash += qty * px if o["side"] == "SELL" else -qty * px
+        if o["side"] == "BUY" and not us_broker.paper:
+            actual = qty * px
+            if actual < o["notional"]:
+                risk_controller.release_live_buy(o["notional"] - actual)
         book[sym] = book.get(sym, 0.0) + (qty if o["side"] == "BUY" else -qty)
         state = f["state"] if f["state"] in _US_FINAL_STATES else "unreconciled"
         results.append({**o, "state": state, "filled_qty": qty, "avg_price": px, "order_id": r["order_id"]})
@@ -1264,7 +1324,7 @@ def _us_rebalance(us: dict, today: str, mkey: str, now_et: datetime, fetch_daily
     if _us_gate_active() and not _us_live_gate(orders, sig, mkey, today, now_et, equity_before):
         return
     if US_EXECUTE:
-        results, holdings, cash = _us_execute_paper(orders, prices, cash, holdings)
+        results, holdings, cash = _us_execute_paper(orders, prices, cash, holdings, mkey=mkey)
     else:
         results, holdings, cash = _us_execute_shadow(orders, prices, holdings, cash)
     failed = [r for r in results if r["state"] not in ("filled", "simulated")]
