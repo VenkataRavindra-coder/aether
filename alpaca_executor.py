@@ -35,6 +35,32 @@ def status_value(status) -> str:
     return str(getattr(status, "value", status)).lower()
 
 
+# Consecutive-failure threshold before a client declares itself unhealthy (see consecutive_errors
+# below). Deliberately small: a broker that is genuinely down should stop new entries quickly,
+# not after dozens of silently-swallowed retries.
+BROKER_ERROR_FREEZE_THRESHOLD = 3
+
+
+def classify_broker_error(e: Exception) -> str:
+    """Buckets a broker-call failure so callers can react differently instead of treating a
+    rate limit, a timeout and a flat-out rejection identically (the previous behaviour: every
+    failure collapsed into the same generic {"status": "error"}, logged, and otherwise ignored
+    -- nothing backed off on a 429, and nothing ever stopped trying after N straight failures)."""
+    import requests
+    if isinstance(e, requests.exceptions.Timeout):
+        return "timeout"
+    if isinstance(e, requests.exceptions.ConnectionError):
+        return "connection"
+    code = getattr(e, "status_code", None)
+    if code == 429:
+        return "rate_limited"
+    if isinstance(code, int) and 500 <= code < 600:
+        return "server_error"
+    if isinstance(code, int) and 400 <= code < 500:
+        return "client_error"
+    return "unknown"
+
+
 class AlpacaExecutionClient:
     def __init__(self, paper: bool = True, key_env: str = "APCA_API_KEY_ID",
                  secret_env: str = "APCA_API_SECRET_KEY"):
@@ -43,6 +69,10 @@ class AlpacaExecutionClient:
         self.api_secret = os.getenv(secret_env)
         self.live_trading = os.getenv("LIVE_TRADING", "false").lower() == "true"
         self.paper = paper
+        # Consecutive broker-call failures since the last success. A caller can check this after
+        # a failed order and freeze new entries once it crosses BROKER_ERROR_FREEZE_THRESHOLD,
+        # instead of silently retrying forever against a broker that is genuinely down.
+        self.consecutive_errors = 0
 
         if not self.api_key or not self.api_secret:
             logger.warning("Alpaca API credentials missing. Running in simulation/stub mode.")
@@ -128,6 +158,7 @@ class AlpacaExecutionClient:
 
             order = self.client.submit_order(order_data=request_params)
             logger.info(f"LIVE ORDER PLACED: {order.id} | Side: {side_upper} | Status: {order.status}")
+            self.consecutive_errors = 0
             return {
                 "status": "success",
                 "order_id": str(order.id),
@@ -137,8 +168,15 @@ class AlpacaExecutionClient:
             }
 
         except Exception as e:
-            logger.error(f"Failed to submit live order to Alpaca: {str(e)}")
-            return {"status": "error", "message": str(e), "qty": 0.0}
+            error_class = classify_broker_error(e)
+            self.consecutive_errors += 1
+            logger.error(f"Failed to submit live order to Alpaca: {str(e)} (class={error_class}, "
+                        f"consecutive_errors={self.consecutive_errors})")
+            if error_class == "rate_limited":
+                import time as _time
+                _time.sleep(2)
+            return {"status": "error", "message": str(e), "qty": 0.0, "error_class": error_class,
+                    "consecutive_errors": self.consecutive_errors}
 
     def get_open_positions(self):
         """Fetches active open positions for portfolio residual tracking."""
@@ -233,6 +271,7 @@ class AlpacaExecutionClient:
                 kwargs["client_order_id"] = client_order_id
             order = self.client.submit_order(order_data=MarketOrderRequest(**kwargs))
             logger.info(f"ETF ORDER PLACED: {order.id} | {side.upper()} {symbol} | {status_value(order.status)}")
+            self.consecutive_errors = 0
             return {"status": "submitted", "order_id": str(order.id)}
         except Exception as e:
             if client_order_id:
@@ -241,11 +280,19 @@ class AlpacaExecutionClient:
                     logger.warning(f"Submit for {symbol} errored ({e}); an order already exists under "
                                    f"client_order_id={client_order_id} (id {existing.id}) -- treating it "
                                    f"as already submitted instead of retrying.")
+                    self.consecutive_errors = 0
                     return {"status": "submitted", "order_id": str(existing.id), "recovered": True}
                 except Exception:
                     pass
-            logger.error(f"Failed to submit market order for {symbol}: {str(e)}")
-            return {"status": "error", "message": str(e)}
+            error_class = classify_broker_error(e)
+            self.consecutive_errors += 1
+            logger.error(f"Failed to submit market order for {symbol}: {str(e)} (class={error_class}, "
+                        f"consecutive_errors={self.consecutive_errors})")
+            if error_class == "rate_limited":
+                import time as _time
+                _time.sleep(2)
+            return {"status": "error", "message": str(e), "error_class": error_class,
+                    "consecutive_errors": self.consecutive_errors}
 
     def cancel_order(self, order_id: str) -> bool:
         """Cancels an open order. False if it could not be cancelled (e.g. it already filled)."""

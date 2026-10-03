@@ -172,6 +172,17 @@ process is truly wedged, e.g. a thread stuck holding `STATE_LOCK`). If the ping 
 systemd kills and restarts the process. Previously `Restart=always` only covered the process
 actually exiting — a hang that never crashed had nothing to recover it.
 
+**Broker call failures are classified, not treated identically.** Every failed Alpaca call used
+to collapse into the same generic error, logged and otherwise ignored — nothing backed off on a
+rate limit, and nothing ever stopped retrying after repeated failures. `alpaca_executor.py` now
+buckets a failure as `timeout` / `connection` / `rate_limited` / `server_error` / `client_error` /
+`unknown` (`classify_broker_error`), backs off 2s on a `rate_limited` response, and tracks
+`consecutive_errors` on each broker client instance (reset on every success, including a
+client_order_id-recovered one). If the US engine hits `BROKER_ERROR_FREEZE_THRESHOLD` (3)
+consecutive broker-call failures in a rebalance, it freezes (`us.frozen`) the same way an
+unreconciled order already does, instead of silently retrying every cycle against a broker that
+is genuinely down.
+
 ---
 
 ## 6. Emergency procedures

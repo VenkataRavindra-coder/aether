@@ -11,7 +11,7 @@ os.environ.setdefault("AETHER_RISK_STATE", "/tmp/_test_alpaca_executor_risk.json
 import risk_controller
 risk_controller.set_kill("us", False)
 
-from alpaca_executor import AlpacaExecutionClient
+from alpaca_executor import AlpacaExecutionClient, classify_broker_error, BROKER_ERROR_FREEZE_THRESHOLD
 
 results = []
 
@@ -70,6 +70,7 @@ def make_client():
     c = AlpacaExecutionClient.__new__(AlpacaExecutionClient)
     c.paper = True
     c.api_key, c.api_secret, c.live_trading = "k", "s", False
+    c.consecutive_errors = 0
     return c
 
 
@@ -107,6 +108,68 @@ long_id = f"us-{'2026-10'}-{'EEM'}-{'BUY'}"[:48]
 t("a typical generated client_order_id fits the 48-char limit", len(long_id) <= 48)
 worst_case = f"us-{'2026-10'}-{'VERYLONGSYMBOLNAME1234567890'}-{'BUY'}"[:48]
 t("even an unusually long symbol is truncated to fit the 48-char limit", len(worst_case) <= 48)
+
+# --- classify_broker_error buckets the exception types that actually matter ---
+import requests
+
+
+class FakeAPIError(Exception):
+    def __init__(self, status_code):
+        self.status_code = status_code
+
+
+t("a requests.Timeout is classified as timeout", classify_broker_error(requests.exceptions.Timeout()) == "timeout")
+t("a requests.ConnectionError is classified as connection", classify_broker_error(requests.exceptions.ConnectionError()) == "connection")
+t("HTTP 429 is classified as rate_limited", classify_broker_error(FakeAPIError(429)) == "rate_limited")
+t("HTTP 503 is classified as server_error", classify_broker_error(FakeAPIError(503)) == "server_error")
+t("HTTP 403 is classified as client_error", classify_broker_error(FakeAPIError(403)) == "client_error")
+t("an exception with no status code is classified as unknown", classify_broker_error(RuntimeError("?")) == "unknown")
+
+
+class FakeClientAlwaysFails:
+    def submit_order(self, order_data):
+        raise RuntimeError("broker is down")
+
+    def get_order_by_client_id(self, coid):
+        raise RuntimeError("still down")
+
+
+# --- consecutive_errors increments on failure, resets on success ---
+c = make_client()
+c.client = FakeClientAlwaysFails()
+for i in range(BROKER_ERROR_FREEZE_THRESHOLD):
+    r = c.submit_market_order("SPY", "BUY", notional=50)
+    t(f"failure {i+1} reports the running consecutive_errors count", r.get("consecutive_errors") == i + 1)
+t("consecutive_errors has now reached the freeze threshold", c.consecutive_errors == BROKER_ERROR_FREEZE_THRESHOLD)
+t("a persistent failure is classified (unknown, here -- a bare RuntimeError)", r.get("error_class") == "unknown")
+
+c.client = FakeClientOK()
+r = c.submit_market_order("SPY", "BUY", notional=50)
+t("a subsequent success resets consecutive_errors back to zero", r["status"] == "submitted" and c.consecutive_errors == 0)
+
+# --- a 429 triggers a short backoff instead of failing instantly ---
+import time as _time
+
+
+class FakeClientRateLimited:
+    def submit_order(self, order_data):
+        raise FakeAPIError(429)
+
+    def get_order_by_client_id(self, coid):
+        raise RuntimeError("not found")
+
+
+c = make_client()
+c.client = FakeClientRateLimited()
+real_sleep = _time.sleep
+slept = {}
+_time.sleep = lambda s: slept.update(seconds=s)
+try:
+    r = c.submit_market_order("SPY", "BUY", notional=50)
+finally:
+    _time.sleep = real_sleep
+t("a 429 is classified as rate_limited and reported as such", r.get("error_class") == "rate_limited")
+t("a 429 triggers a backoff sleep before returning", slept.get("seconds") == 2)
 
 fails = [n for n, ok in results if not ok]
 print(f"\n{len(results) - len(fails)}/{len(results)} passed")

@@ -14,7 +14,7 @@ from fastapi import FastAPI, HTTPException, Header, Query, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field, field_validator
-from alpaca_executor import AlpacaExecutionClient
+from alpaca_executor import AlpacaExecutionClient, BROKER_ERROR_FREEZE_THRESHOLD
 import strategy as strat
 import us_strategy
 import notify
@@ -1469,6 +1469,13 @@ def _us_rebalance(us: dict, today: str, mkey: str, now_et: datetime, fetch_daily
         stuck = [r.get("order_id") for r in results if r["state"] == "unreconciled"]
         if stuck:
             u["frozen"] = f"unreconciled order(s) {stuck}: check the broker, then clear us.frozen"
+        elif US_EXECUTE and us_broker.consecutive_errors >= BROKER_ERROR_FREEZE_THRESHOLD:
+            # The broker call itself failed BROKER_ERROR_FREEZE_THRESHOLD times in a row (not an
+            # order rejection -- a timeout, a 5xx, a dropped connection). Retrying forever against
+            # a broker that is genuinely down just keeps failing silently; freeze instead, the same
+            # way an unreconciled order already does, so this surfaces instead of looping quietly.
+            u["frozen"] = (f"{us_broker.consecutive_errors} consecutive broker errors: "
+                           f"check Alpaca connectivity, then clear us.frozen")
         u["history"].append({
             "date": today, "month": mkey, "signal_date": sig["signal_date"], "mode": _us_mode(),
             "weights": sig["weights"], "equity": round(equity_after, 2), "complete": not failed,
