@@ -486,4 +486,19 @@ def safety():
     last = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(os.path.getmtime(archives[-1]))) if archives else None
     return {"us_live": _flag("US_LIVE"), "halt": halt,
             "live_budget_usd": _f(os.getenv("RISK_MAX_DAILY_BUY_USD_LIVE") or 100),
-            "live_spent_today_usd": spent, "last_backup_utc": last}
+            "live_spent_today_usd": spent, "last_backup_utc": last,
+            **dict(zip(("proposal", "last_rebalance_month"), _us_proposal_info()))}
+
+
+def _us_proposal_info():
+    """(proposal {id,status,date} or None, last_rebalance_month) for the active US mode."""
+    import json
+    from pathlib import Path
+    try:
+        st = json.loads((Path.home() / "aether_state.json").read_text())
+    except Exception:
+        return None, None
+    u = st.get("us_live" if _flag("US_LIVE") else "us_paper") or {}
+    p = u.get("live_proposal") or None
+    prop = {k: p.get(k) for k in ("id", "status", "date")} if p else None
+    return prop, u.get("last_rebalance_month")
