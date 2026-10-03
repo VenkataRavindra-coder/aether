@@ -159,6 +159,19 @@ just show a stale "last checked" time with nothing actively flagging it. `US_STA
 is now checked the same way the crypto loop's `last_cycle_ts` is, and alerts if the US loop hasn't
 completed a cycle in `5 * US_CHECK_INTERVAL_SECONDS` (at least 5 minutes).
 
+**Every Alpaca HTTP call now has a timeout.** alpaca-py sets none itself (confirmed: neither
+`TradingClient` nor the base `RESTClient` take a timeout parameter) — a single hung request used
+to block whichever lock-holding cycle made it indefinitely. A custom `requests` adapter is
+mounted onto each client's session with a default of `ALPACA_HTTP_TIMEOUT_SECONDS` (15s).
+
+**systemd now has a real watchdog.** `aether.service` is `Type=notify` with `WatchdogSec=180`:
+the app sends `READY=1` once started and `WATCHDOG=1` at the end of every successful monitor
+cycle (`monitor_cycle` only reaches that point if VM metrics, service checks and the
+now-timeout-bounded broker balance check all returned — so it reliably keeps pinging unless the
+process is truly wedged, e.g. a thread stuck holding `STATE_LOCK`). If the ping stops for 180s,
+systemd kills and restarts the process. Previously `Restart=always` only covered the process
+actually exiting — a hang that never crashed had nothing to recover it.
+
 ---
 
 ## 6. Emergency procedures

@@ -2,6 +2,7 @@ import risk_controller
 import os
 import logging
 from dotenv import load_dotenv
+from requests.adapters import HTTPAdapter
 from alpaca.trading.client import TradingClient
 from alpaca.trading.requests import LimitOrderRequest
 from alpaca.trading.enums import OrderSide, TimeInForce
@@ -9,6 +10,24 @@ from alpaca.trading.enums import OrderSide, TimeInForce
 load_dotenv()
 
 logger = logging.getLogger("AETHER_ALPACA")
+
+# alpaca-py sets no timeout on any HTTP call it makes (confirmed: TradingClient/RESTClient take
+# no timeout parameter at all). A single hung request to Alpaca -- a dropped connection with no
+# RST, a stalled TLS handshake -- blocks whichever lock-holding cycle made it forever, with
+# nothing to recover it. This mounts a default timeout onto the underlying requests.Session,
+# which alpaca-py does expose (as `_session`) even though it isn't part of its public API.
+ALPACA_HTTP_TIMEOUT_SECONDS = float(os.getenv("ALPACA_HTTP_TIMEOUT_SECONDS", "15"))
+
+
+class _TimeoutHTTPAdapter(HTTPAdapter):
+    def __init__(self, *args, timeout=ALPACA_HTTP_TIMEOUT_SECONDS, **kwargs):
+        self._timeout = timeout
+        super().__init__(*args, **kwargs)
+
+    def send(self, request, **kwargs):
+        if kwargs.get("timeout") is None:
+            kwargs["timeout"] = self._timeout
+        return super().send(request, **kwargs)
 
 
 def status_value(status) -> str:
@@ -31,6 +50,9 @@ class AlpacaExecutionClient:
         else:
             try:
                 self.client = TradingClient(self.api_key, self.api_secret, paper=paper)
+                adapter = _TimeoutHTTPAdapter()
+                self.client._session.mount("https://", adapter)
+                self.client._session.mount("http://", adapter)
                 logger.info(f"Alpaca Trading Client initialized ({'PAPER' if paper else 'LIVE MONEY'} account). "
                             f"LIVE_TRADING flag: {self.live_trading}")
             except Exception as e:

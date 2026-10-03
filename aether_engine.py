@@ -51,6 +51,30 @@ def _env_int(name: str, default: str) -> int:
         logger.error(f"{name}={raw!r} is not a valid integer; using default {default!r}")
         return int(default)
 
+
+def _sd_notify(message: str) -> None:
+    """Speaks systemd's sd_notify protocol directly (a Unix datagram to $NOTIFY_SOCKET) so no
+    extra dependency is needed for just two message types. A no-op whenever NOTIFY_SOCKET isn't
+    set (Type=simple services, or running outside systemd entirely, e.g. the test suites).
+    READY=1 tells systemd startup actually finished; WATCHDOG=1 is the heartbeat that
+    WatchdogSec in aether.service expects on a schedule -- if it ever stops arriving (the whole
+    process wedged, not just crashed) systemd kills and restarts us, which nothing did before."""
+    addr = os.environ.get("NOTIFY_SOCKET")
+    if not addr:
+        return
+    import socket as _socket
+    if addr[0] == "@":
+        addr = "\0" + addr[1:]
+    try:
+        sock = _socket.socket(_socket.AF_UNIX, _socket.SOCK_DGRAM)
+        try:
+            sock.connect(addr)
+            sock.sendall(message.encode())
+        finally:
+            sock.close()
+    except Exception as e:
+        logger.warning(f"sd_notify({message!r}) failed: {type(e).__name__}")
+
 @asynccontextmanager
 async def lifespan(_app):
     # Decide WHY we started before any background thread exists: the monitor thread rewrites the
@@ -71,6 +95,7 @@ async def lifespan(_app):
     logger.info(f"Telegram alerts {'enabled' if notify.enabled() else 'disabled (TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID not set)'}.")
     notify.send(report, key="startup", cooldown=60)
     write_heartbeat()
+    _sd_notify("READY=1")
     yield
     _shutting_down.set()
     notify.send("[AETHER] Service stopping (VM shutdown, restart or manual stop).", key="shutdown", cooldown=60)
@@ -1054,6 +1079,12 @@ def monitor_cycle(now: datetime = None):
     if now.hour == DIGEST_HOUR_UTC and _monitor["digest_date"] != today:
         _monitor["digest_date"] = today
         notify.send(build_status_text("AETHER daily digest"))
+
+    # Reaching here means this cycle did not hang: VM metrics, service checks, and the broker
+    # balance check (now timeout-bounded) all returned. A genuinely wedged process -- e.g. a
+    # thread stuck holding STATE_LOCK -- would stop this from running at all, so the ping
+    # would stop too, and systemd'"'"'s WatchdogSec would eventually restart the whole thing.
+    _sd_notify("WATCHDOG=1")
 
 
 def monitor_loop():
