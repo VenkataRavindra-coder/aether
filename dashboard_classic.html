@@ -28,43 +28,43 @@
   .app { height: 100dvh; display: flex; flex-direction: column; gap: 8px; padding: 8px; }
 
   /* header */
-  .header-fx { position: relative; overflow: hidden; flex: none; display: flex; align-items: center; justify-content: space-between; gap: 12px;
-               border-radius: 12px; padding: 10px 16px; background: #07080d;
-               box-shadow: 0 0 0 1px rgba(120, 210, 255, 0.35), 0 8px 28px rgba(40, 90, 255, 0.18); }
-  .header-fx::before { content: ""; position: absolute; inset: -40% -20%;
-    background: radial-gradient(40% 80% at 10% 50%, rgba(61, 214, 140, 0.85), transparent 60%),
-                radial-gradient(35% 90% at 55% 40%, rgba(90, 140, 255, 0.9), transparent 62%),
-                radial-gradient(30% 80% at 88% 60%, rgba(190, 80, 255, 0.75), transparent 60%);
-    filter: blur(8px); animation: header-flow 8s ease-in-out infinite alternate; opacity: 0.9; }
-  .header-fx::after { content: ""; position: absolute; inset: 0; background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.28), transparent);
-    transform: translateX(-120%); animation: header-sheen 3.6s ease-in-out infinite; }
+  .header-fx { position: relative; isolation: isolate; overflow: hidden; flex: none; display: flex; align-items: center; justify-content: space-between; gap: 12px;
+               border-radius: 14px; padding: 10px 16px; background: #0f172a80; border: 1px solid #ffffff12; }
+  .header-fx::before { content: ""; position: absolute; inset: 0; border-radius: inherit; z-index: -1;
+    background: linear-gradient(90deg, #ef444422 0% 14.28571%, #f9731622 14.28571% 28.57143%, #facc1522 28.57143% 42.85714%, #22c55e22 42.85714% 57.14286%, #38bdf822 57.14286% 71.42857%, #6366f122 71.42857% 85.71429%, #a855f722 85.71429% 100%);
+    animation: header-rainbow-pulse 8s ease-in-out infinite; pointer-events: none; }
+  .header-fx::after { content: ""; position: absolute; bottom: 0; left: 16px; right: 16px; height: 2px; border-radius: 2px;
+    background: linear-gradient(90deg, #ef4444 0% 14.28571%, #f97316 14.28571% 28.57143%, #facc15 28.57143% 42.85714%, #22c55e 42.85714% 57.14286%, #38bdf8 57.14286% 71.42857%, #6366f1 71.42857% 85.71429%, #a855f7 85.71429% 100%);
+    animation: header-rainbow-pulse 6s ease-in-out infinite; opacity: .75; pointer-events: none; }
   .header-fx > * { position: relative; z-index: 1; }
-  @keyframes header-flow { 0% { transform: translateX(-6%) scale(1); } 100% { transform: translateX(8%) scale(1.08); } }
-  @keyframes header-sheen { 0%, 55% { transform: translateX(-120%); } 100% { transform: translateX(120%); } }
-  .brand { display: flex; align-items: center; gap: 12px; }
-  .mark { width: 64px; height: 56px; flex: none; display: grid; place-items: center; perspective: 480px; }
-  .mark-svg { width: 64px; height: 56px; display: block; transform-origin: 50% 60%; filter: drop-shadow(0 8px 10px rgba(0, 0, 0, 0.4)); animation: mark-turn 4.2s ease-in-out infinite; }
-  @keyframes mark-turn { 0%, 100% { transform: rotateY(-22deg) rotateX(10deg) translateY(0); } 50% { transform: rotateY(24deg) rotateX(-8deg) translateY(-4px); } }
-  .brand h1 { font-size: 18px; font-weight: 600; letter-spacing: -0.01em; color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,.4); line-height: 1; }
-  .brand p { margin-top: 4px; font-size: 12px; color: rgba(255,255,255,.85); line-height: 1; }
+  @keyframes header-rainbow-pulse { 0%, 100% { filter: brightness(.85); opacity: .65; } 50% { filter: brightness(1.3); opacity: 1; } }
+  .brand { display: flex; align-items: center; gap: 15px; }
+  .logo-space { perspective: 450px; width: 54px; height: 58px; flex: none; }
+  .logo { width: 54px; height: 58px; position: relative; transform-style: preserve-3d; animation: logo-float 7s ease-in-out infinite; filter: drop-shadow(0 8px 8px #a78bfa40); }
+  .logo svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+  .logo .depth { transform: translateZ(-5px) translate(3px,3px); filter: brightness(.32); }
+  .logo .face { transform: translateZ(3px); }
+  @keyframes logo-float { 0%, 100% { transform: rotateX(9deg) rotateY(-18deg) translateY(0); } 50% { transform: rotateX(-8deg) rotateY(22deg) translateY(-4px); } }
+  .brand h1 { font-size: 26px; font-weight: 700; letter-spacing: -1px; color: #fff; line-height: 1; }
+  .brand p { margin-top: 4px; font-size: 12px; color: #94a3b8; line-height: 1; }
   .chips { display: flex; align-items: center; gap: 8px; font-size: 12px; flex-wrap: wrap; justify-content: flex-end; }
-  .chip { display: inline-flex; align-items: center; gap: 6px; border-radius: 999px; border: 1px solid rgba(255,255,255,.3); background: rgba(0,0,0,.35);
-          padding: 4px 4px 4px 10px; color: #fff; backdrop-filter: blur(4px); }
+  .chip { display: inline-flex; align-items: center; gap: 6px; border-radius: 999px; border: 1px solid #334155; background: #1e293b;
+          padding: 4px 4px 4px 10px; color: #cbd5e1; }
   .chip i { width: 6px; height: 6px; border-radius: 50%; background: var(--up); display: inline-block; }
   .chip i.warn { background: var(--warn); } .chip i.bad { background: var(--dn); }
-  .chip .stamp { font-family: var(--mono); font-size: 10px; color: var(--fg); }
-  .chip button { width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; color: #fff; }
-  .chip button:hover { background: rgba(255,255,255,.15); }
+  .chip .stamp { font-family: var(--mono); font-size: 10px; color: #cbd5e1; }
+  .chip button { width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; color: #cbd5e1; }
+  .chip button:hover { background: #334155; color: #fff; }
   .chip button svg { width: 14px; height: 14px; }
   .chip button.spin svg { animation: spin .7s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
-  .pill { border-radius: 999px; border: 1px solid rgba(255,255,255,.4); background: rgba(255,255,255,.15); padding: 4px 10px; font-weight: 500; letter-spacing: .03em; color: #fff; }
-  .pill.live { background: var(--dn); border-color: #fff; }
-  .kill { border-radius: 999px; border: 1px solid rgba(255,255,255,.7); background: #fff; color: var(--bg); padding: 4px 12px; font-weight: 500; }
-  .kill.active { background: var(--dn); color: #fff; border-color: #fff; }
-  .hlink { color: rgba(255,255,255,.85); text-decoration: none; padding: 4px 6px; }
-  .hlink:hover { color: #fff; text-decoration: underline; }
-  .updated { color: rgba(255,255,255,.85); font-family: var(--mono); font-size: 11px; }
+  .pill { border-radius: 7px; border: none; background: #1e293b; padding: 6px 10px; font-weight: 600; font-size: 12px; color: #f4f4f5; text-decoration: none; display: inline-block; }
+  .pill.live { background: var(--dn); color: #fff; }
+  .kill { border-radius: 7px; border: none; background: #1e293b; color: #f4f4f5; padding: 6px 10px; font-weight: 600; font-size: 12px; }
+  .kill.active { background: var(--dn); color: #fff; }
+  .hlink { border: 1px solid #334155; background: #0f172a; border-radius: 7px; padding: 7px 10px; color: #cbd5e1; font-size: 12px; text-decoration: none; display: inline-block; }
+  .hlink:hover { color: #fff; border-color: #475569; }
+  .updated { color: #94a3b8; font-family: var(--mono); font-size: 11px; }
   .updated.stale { color: #ffd479; }
 
   .banner { flex: none; border-radius: 10px; padding: 6px 12px; font-size: 12px; background: #2a2414; color: var(--warn); border: 1px solid #5a4a20; }
@@ -119,7 +119,7 @@
   .bot p { font-size: 12px; color: var(--sec); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .bot .checks { font-size: 11px; }
 
-  @media (prefers-reduced-motion: reduce) { .header-fx::before, .header-fx::after, .mark-svg { animation: none; } }
+  @media (prefers-reduced-motion: reduce) { .header-fx::before, .header-fx::after, .logo { animation: none; } }
   @media (max-width: 1000px), (max-height: 620px) {
     body { overflow: auto; }
     .app { height: auto; }
@@ -134,18 +134,7 @@
 <div class="app">
   <header class="header-fx">
     <div class="brand">
-      <span class="mark" aria-hidden="true">
-        <svg viewBox="0 0 88 76" class="mark-svg">
-          <path d="M46 18 L64 4 L84 54 L66 68 Z" fill="#3e4654" />
-          <path d="M38 18 L56 4 L34 54 L16 68 Z" fill="#b7bec8" />
-          <path d="M38 18 H46 L66 68 H58 Z" fill="#8b93a1" />
-          <path d="M6 68 L28 18 H38 L16 68 Z" fill="#f7f8fa" />
-          <path d="M28 18 L46 4 L64 4 L46 18 Z" fill="#ffffff" />
-          <path d="M48 40 L66 26 L64 36 L46 50 Z" fill="#14784a" />
-          <path d="M18 40 H48 L46 50 H16 Z" fill="#3dd68c" />
-          <path d="M18 40 L36 26 L66 26 L48 40 Z" fill="#9cf3c4" />
-        </svg>
-      </span>
+      <div class="logo-space" aria-hidden="true"><div class="logo"><svg class="depth" viewBox="0 0 100 100" aria-hidden="true"><path fill="#10b981" d="M5 92 44 8h18L32 92z"/><path fill="#f8fafc" d="m62 8 36 84H78L53 34zM30 69l44-24-13 23z"/></svg><svg class="face" viewBox="0 0 100 100" aria-hidden="true"><defs><linearGradient id="aetherLogoGradient" gradientUnits="userSpaceOnUse" x1="5" y1="0" x2="98" y2="0"><stop offset="0%" stop-color="#ef4444"/><stop offset="14.28571%" stop-color="#ef4444"/><stop offset="14.28571%" stop-color="#f97316"/><stop offset="28.57143%" stop-color="#f97316"/><stop offset="28.57143%" stop-color="#facc15"/><stop offset="42.85714%" stop-color="#facc15"/><stop offset="42.85714%" stop-color="#22c55e"/><stop offset="57.14286%" stop-color="#22c55e"/><stop offset="57.14286%" stop-color="#38bdf8"/><stop offset="71.42857%" stop-color="#38bdf8"/><stop offset="71.42857%" stop-color="#6366f1"/><stop offset="85.71429%" stop-color="#6366f1"/><stop offset="85.71429%" stop-color="#a855f7"/><stop offset="100%" stop-color="#a855f7"/></linearGradient></defs><path fill="url(#aetherLogoGradient)" d="M5 92 44 8h18L32 92z"/><path fill="url(#aetherLogoGradient)" d="m62 8 36 84H78L53 34z"/><path fill="url(#aetherLogoGradient)" d="m30 69 44-24-13 23z"/></svg></div></div>
       <div><h1>Aether</h1><p>The whole book. One glance.</p></div>
     </div>
     <div class="chips">
@@ -154,10 +143,9 @@
       <span class="chip" id="st-vm" title="VM health"><i></i>VM<span class="stamp"></span><button type="button" aria-label="Refresh everything"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M13 8a5 5 0 1 1-1.2-3.2" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><path d="M12 2.5 V5.2 H9.3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg></button></span>
       <span class="chip" id="st-tg" title="Telegram alerts"><i></i>Telegram<span class="stamp"></span><button type="button" aria-label="Refresh everything"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M13 8a5 5 0 1 1-1.2-3.2" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><path d="M12 2.5 V5.2 H9.3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg></button></span>
       <span class="pill" id="mode">…</span>
-      <span class="pill" id="paperAcct" title="Paper account: practice money, not real">…</span>
+      <a class="pill" id="paperAcct" href="/" title="Paper account: practice money, not real. Click to go back to the main view.">…</a>
       <span class="pill" id="liveAcct" title="Live account: real money">…</span>
       <span class="kill" id="kill" title="The engine's own kill switch. It trips automatically when the daily loss limit is hit.">Kill switch …</span>
-      <a class="hlink" href="/">‹ Summary</a>
       <a class="hlink" href="/logout">Log out</a>
     </div>
   </header>
