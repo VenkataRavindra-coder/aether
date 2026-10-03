@@ -24,7 +24,8 @@ Crypto live trading is **hard-blocked** in the Risk Controller regardless of set
 ### 2.1 Crypto trend strategy (`strategy.py`, run by `aether_engine.py`)
 - Long-only (Alpaca crypto cannot short). Same code drives the backtester and the live runner.
 - Bars: 1 hour (`STRATEGY_BAR_SECONDS=3600`). Engine checks every 60 s (`STRATEGY_INTERVAL_SECONDS`).
-- Symbols: VERIFY — fill from `grep -n "SYMBOL" aether_engine.py`.
+- Symbols: BTC/USD, ETH/USD, SOL/USD (`TRACKED_SYMBOLS`, hard-coded in `aether_engine.py`;
+  the `.env` `SYMBOLS` value is not read).
 - Parameters (`strategy.Params`): fast EMA 50, slow EMA 200, trend EMA 800, RSI 14 (max 70),
   ATR 14 × 3.0, fee 0.25%, slippage 0.05%.
 - Entry: EMA cross entry (`ema_cross_entry`) subject to the trend and RSI filters. Exact
@@ -38,6 +39,7 @@ Crypto live trading is **hard-blocked** in the Risk Controller regardless of set
 ### 2.2 TradingView webhook (`POST /webhook/tradingview`)
 - Auth: `WEBHOOK_SECRET` in header `X-Webhook-Secret` or JSON `secret`. Wrong secret → 401.
 - Payload: `symbol`, `condition` (contains BUY or SELL), `price`, `resolution` (required).
+- Only the tracked crypto symbols are accepted; anything else is rejected and logged.
 - BUY: fixed $100 (`TRADE_NOTIONAL_USD`), refused if above 5% of equity (`MAX_ORDER_PCT`).
 - SELL: closes the whole long position; naked shorts are blocked.
 - Every attempt (filled, shadow, rejected, error) is written to trade history.
