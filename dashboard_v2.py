@@ -63,6 +63,36 @@ def _f(x, default=0.0):
         return default
 
 
+def _creds(mode):
+    """API key/secret for an explicit account, bypassing the LIVE_TRADING-based default.
+    mode=None is not handled here; callers needing the legacy single-account behavior
+    keep using _env(...) / _base_url() directly, unchanged."""
+    if mode == "live":
+        return _env("APCA_LIVE_API_KEY_ID"), _env("APCA_LIVE_API_SECRET_KEY")
+    if mode == "paper":
+        return (_env("APCA_API_KEY_ID", "ALPACA_API_KEY", "ALPACA_KEY_ID"),
+                _env("APCA_API_SECRET_KEY", "ALPACA_SECRET_KEY", "ALPACA_API_SECRET"))
+    return "", ""
+
+
+def _account_summary(mode):
+    """Cheap read-only snapshot (just GET /v2/account, no positions/history/fills) so showing
+    both paper and live side by side on the dashboard stays fast even though it doubles the
+    number of Alpaca calls the page makes. Never writes, never touches LIVE_TRADING/US_LIVE."""
+    key, sec = _creds(mode)
+    if not key or not sec:
+        return {"configured": False}
+    base = "https://api.alpaca.markets" if mode == "live" else "https://paper-api.alpaca.markets"
+    req = urllib.request.Request(base + "/v2/account",
+                                 headers={"APCA-API-KEY-ID": key, "APCA-API-SECRET-KEY": sec})
+    with urllib.request.urlopen(req, timeout=HTTP_TIMEOUT) as r:
+        a = json.loads(r.read().decode())
+    eq, last = _f(a.get("equity")), _f(a.get("last_equity"))
+    return {"configured": True, "equity": eq, "cash": _f(a.get("cash")),
+            "today_pl": (eq - last) if last else None,
+            "today_pl_pct": ((eq - last) / last * 100) if last else None}
+
+
 DATA_URL = "https://data.alpaca.markets"
 
 
@@ -239,6 +269,10 @@ def _build():
         "account_mode": "LIVE" if _is_live() else "PAPER",
         "dashboard_safety": {"us_live_max_usd": _f(os.getenv("US_LIVE_MAX_USD")) if os.getenv("US_LIVE_MAX_USD") else None,
                              "read_only": True},
+        "accounts": {
+            "paper": safe("Paper account", lambda: _account_summary("paper"), {"configured": False}),
+            "live": safe("Live account", lambda: _account_summary("live"), {"configured": False}),
+        },
         "engines": {
             "crypto": {"enabled": _flag("STRATEGY_ENABLED"), "live": _is_live()},
             "us": {"enabled": _flag("US_ENABLED"), "execute": _flag("US_EXECUTE")},
