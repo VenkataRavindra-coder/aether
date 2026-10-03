@@ -36,6 +36,13 @@ def prob_sr_above(sr, sr0, t, skew, kurt_raw):
     return N01.cdf((sr - sr0) * math.sqrt(t - 1) / math.sqrt(denom))
 
 
+def _trading_days(start, end):
+    import datetime as dt
+    a, b = dt.date.fromisoformat(start[:10]), dt.date.fromisoformat(end[:10])
+    wd = sum(1 for i in range((b - a).days + 1) if (a + dt.timedelta(i)).weekday() < 5)
+    return int(wd * 252 / 261)
+
+
 def verdict(p):
     if p != p:
         return "n/a"
@@ -70,14 +77,16 @@ def main(argv):
     print(f"{'id':>3}  {'strategy':<24} {'OOS SR':>6} {'days':>5}  {'P(SR>0)':>7}  {'DSR':>5}  verdict")
     for rid, strat, sym, oos_sr, oos_json in rows:
         m = json.loads(oos_json or "{}")
-        t = m.get("days")
+        t, approx = m.get("days"), False
+        if not t and m.get("start") and m.get("end"):
+            t, approx = _trading_days(m["start"], m["end"]), True
         sr = (oos_sr if oos_sr is not None else m.get("sharpe", float("nan"))) / math.sqrt(PERIODS)
         skew = m.get("daily_skew", 0.0) or 0.0
         k = m.get("daily_kurtosis")
         kurt = 3.0 if k is None else (k if raw else k + 3.0)
         psr = prob_sr_above(sr, 0.0, t or 0, skew, kurt)
         dsr = prob_sr_above(sr, sr0, t or 0, skew, kurt)
-        days = f"{t:>5}" if t else "  n/a"
+        days = (f"~{t:>4}" if approx else f"{t:>5}") if t else "  n/a"
         print(f"{rid:>3}  {strat[:24]:<24} {sr * math.sqrt(PERIODS):>6.2f} {days}  {psr:>7.2f}  {dsr:>5.2f}  {verdict(dsr)}")
     print("\nDSR >= 0.95 significant, 0.80-0.95 promising, below 0.80 could be luck.")
 
