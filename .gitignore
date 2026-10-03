@@ -11,3 +11,6 @@
 !backup.sh
 !backup_alert.py
 !strategy.md
+!aether-research/
+!aether-research/*/
+!aether-research/**/*.md
