@@ -10,3 +10,4 @@
 !deploy/aether-backup.timer
 !backup.sh
 !backup_alert.py
+!strategy.md
