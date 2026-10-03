@@ -14,6 +14,14 @@ Rules for NEW entries, in order:
   5. real money: order > RISK_MAX_ORDER_USD_LIVE      -> block   (default $100)
   6. real money: today's buys + order > RISK_MAX_DAILY_BUY_USD_LIVE -> block (default $100)
 Paper orders are never capped by 5-6, so the $5,000 paper allocation is unaffected.
+
+Exits are never blocked, including by rule 1: a halt must not trap you in a position.
+
+But a halt must not silently LIQUIDATE one either. A plan that rotates positions (sells,
+then re-buys in the same run) is all-or-nothing: gate the whole plan on halted() and call
+preflight() over every order before submitting any of them. Otherwise the sells fill and the
+buys are refused, leaving the account out of its intended exposure while the dashboard
+reports "HALTED: all new entries blocked".
 """
 import json
 import logging
@@ -28,7 +36,9 @@ HALT_FILE = Path(os.getenv("AETHER_HALT_FILE", str(Path.home() / "AETHER_HALT"))
 
 # Engines whose entries need an evaluated daily-loss kill switch.
 # None = not evaluated since start-up -> entries blocked until the engine reports.
-_KILL = {"crypto": None}
+# "us" is registered as well: it is the only engine that can spend real money, so its
+# entries stay blocked until it has reported a kill-switch state at least once.
+_KILL = {"crypto": None, "us": None}
 _LOCK = threading.Lock()
 
 
@@ -92,7 +102,7 @@ def _log(engine, symbol, side, notional, real_money, allowed, reason):
         logger.warning(f"risk decision not logged: {e}")
 
 
-def _decide(engine, side, notional, is_closing, real_money):
+def _decide(engine, side, notional, is_closing, real_money, record=True, spent_extra=0.0):
     if side not in ("BUY", "SELL"):
         return False, "invalid_side"
     if is_closing:
@@ -118,19 +128,57 @@ def _decide(engine, side, notional, is_closing, real_money):
         if usd > cap:
             return False, f"over_max_order_usd_live({cap:g})"
         budget = _env_usd("RISK_MAX_DAILY_BUY_USD_LIVE", "100")
-        spent = _live_buys_today()
+        # spent_extra counts the earlier buys in a plan being pre-flighted, so a plan whose
+        # buys only breach the daily budget in aggregate is still refused as a whole.
+        spent = _live_buys_today() + float(spent_extra or 0.0)
         if spent + usd > budget + 1e-9:
             return False, f"over_daily_live_budget(spent {spent:g} of {budget:g})"
-        _record_live_buy(usd)
+        if record:
+            _record_live_buy(usd)
     return True, "ok"
 
 
-def check(engine: str, symbol: str, side: str, notional, is_closing: bool, real_money: bool):
-    """Returns (allowed: bool, reason: str)."""
+def check(engine: str, symbol: str, side: str, notional, is_closing: bool, real_money: bool,
+          record: bool = True, spent_extra: float = 0.0):
+    """Returns (allowed: bool, reason: str).
+
+    record=False evaluates the rules WITHOUT consuming the real-money daily buy budget.
+    spent_extra adds notional already committed earlier in the same plan. Both are for
+    preflight(); the actual submission must record."""
     side = (side or "").upper()
     with _LOCK:
-        allowed, reason = _decide(engine, side, notional, is_closing, real_money)
+        allowed, reason = _decide(engine, side, notional, is_closing, real_money, record=record,
+                                  spent_extra=spent_extra)
     _log(engine, symbol, side, notional, real_money, allowed, reason)
     if not allowed:
         logger.warning(f"RISK BLOCK {engine} {side} {symbol}: {reason}")
     return allowed, reason
+
+
+def preflight(engine: str, orders):
+    """Evaluate a WHOLE plan before any order is submitted, without recording spend.
+
+    `orders` is an iterable of (side, notional, is_closing, real_money) tuples.
+    Returns (allowed: bool, reason: str) for the first order that would be blocked.
+
+    Why this exists: submitting a plan one order at a time lets the sells fill while the buys
+    are refused -- by a halt appearing mid-plan, a per-order cap, or the daily budget. The
+    account ends up liquidated and out of its intended exposure. Pre-flighting makes the plan
+    decision all-or-nothing. Real-money buys are accumulated across the plan so a plan that
+    breaches the daily budget only in aggregate is refused too. The daily buy budget is NOT
+    consumed here; only a real submission records it, so a refused plan costs nothing and can
+    be retried.
+    """
+    extra = 0.0
+    with _LOCK:
+        for side, notional, is_closing, real_money in orders:
+            allowed, reason = _decide(engine, (side or "").upper(), notional, is_closing,
+                                      real_money, record=False, spent_extra=extra)
+            if not allowed:
+                return False, reason
+            if real_money and not is_closing:
+                try:
+                    extra += float(notional)
+                except (TypeError, ValueError):
+                    pass
+    return True, "ok"

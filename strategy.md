@@ -69,8 +69,15 @@ Crypto live trading is **hard-blocked** in the Risk Controller regardless of set
 | US live dollar cap | $100 on strategy equity, buys and account equity | `US_LIVE_MAX_USD` |
 | Live order cap | $100 per order | `RISK_MAX_ORDER_USD_LIVE` (default) |
 | Live daily buy budget | $100 per UTC day, persisted to disk | `RISK_MAX_DAILY_BUY_USD_LIVE` (default) |
+| **US daily-loss kill switch** | 3% below day-start equity → no new US entries | `US_MAX_DAILY_LOSS_PCT` + Risk Controller |
+| **US peak-drawdown kill switch** | 27% below peak equity history → no new US entries. This automates the §8 retirement level (-13.5% worst out-of-sample → retire at -27%) instead of relying on a manual monthly check | `US_MAX_DRAWDOWN_PCT` + Risk Controller |
 | Approval tolerance | executed plan may differ ≤ 2% from the approved one | `US_APPROVAL_TOLERANCE` |
 | Malformed limit config | blocks all entries (fails closed) | `risk_controller.py` |
+
+`RISK_MAX_ORDER_USD_LIVE` and `RISK_MAX_DAILY_BUY_USD_LIVE` are **independent of**
+`US_LIVE_MAX_USD`. `plan_orders` splits the cap across up to 3 ETFs, so each buy is roughly
+`US_LIVE_MAX_USD / 3`. Keep `RISK_MAX_ORDER_USD_LIVE >= US_LIVE_MAX_USD` (and the daily budget
+no smaller), otherwise a plan is refused by pre-flight once the cap is raised above ~$300.
 
 Retired/unused `.env` names (do not rely on them): `MAX_OPEN_POSITIONS`,
 `MAX_NOTIONAL_PER_POSITION_PCT`, `RISK_PER_TRADE_PCT`, `MAX_DAILY_LOSS_PCT`, `TRADING_MODE`,
@@ -88,8 +95,24 @@ For new entries, in order:
 4. Unknown or non-positive size → block.
 5. Real money: order > $100 → block.
 6. Real money: today's buys + order > $100 → block.
+7. US: daily loss ≥ `US_MAX_DAILY_LOSS_PCT` or peak drawdown ≥ `US_MAX_DRAWDOWN_PCT` → block.
 
-Closing orders (exits) are always allowed. Every decision is logged to the decision log.
+**Exits are never blocked — by the halt, the kill switches, or the caps.** A stop must not trap
+you in a position.
+
+Both engines are registered in `_KILL` and start as `None` (not yet evaluated), so entries for an
+engine are blocked from process start until that engine has reported at least once. Fail closed;
+at most one cycle of delay (crypto 60 s, US 300 s).
+
+**A halt blocks entries and rotations, never exits.** A planned rotation (sell some ETFs, buy
+others in the same run) is all-or-nothing: the US engine gates the whole rebalance on
+`risk_controller.halted()` and calls `risk_controller.preflight()` over every planned order
+before submitting any of them. `preflight()` evaluates with `record=False`, so a refused plan
+does not consume the real-money daily buy budget and can be retried. Without this, a halt (or a
+per-order cap) would let the sells fill and refuse the buys, liquidating the account while the
+dashboard reported "HALTED: all new entries blocked".
+
+Every decision is logged to the decision log.
 
 ---
 
@@ -103,6 +126,9 @@ Real-money US orders require ALL of:
    configured chat. Stale proposals expire; a changed plan invalidates the approval.
 5. Time is after 15:30 ET.
 6. Risk Controller allows each order.
+7. No manual halt: `~/AETHER_HALT` does not exist.
+8. The US kill switch is evaluated and clear, and `preflight()` accepts **every** order in the
+   plan (all-or-nothing — a plan whose sells would be followed by refused buys is not sent).
 
 ---
 
@@ -110,7 +136,7 @@ Real-money US orders require ALL of:
 
 | Situation | Action |
 |---|---|
-| Stop all new entries now | `touch ~/AETHER_HALT` (resume: `rm ~/AETHER_HALT`) |
+| Stop all new entries now (also blocks a mid-rotation rebalance; exits still work) | `touch ~/AETHER_HALT` (resume: `rm ~/AETHER_HALT`) |
 | Stop everything | `sudo systemctl stop aether` |
 | US engine frozen | Check orders/positions in Alpaca, fix, then clear `us.frozen` in state |
 | Crypto kill switch fired | Wait for UTC midnight; review the decision log first |
@@ -152,7 +178,10 @@ Real-money US orders require ALL of:
   (a) profit factor over the last 20 closed trades < 1.0 (checked once 20 exist), or
   (b) drawdown from peak (live or shadow) > 2x the out-of-sample backtest's worst
   (US momentum: -13.5% -> retire at -27%). Exits continue. Re-enable only after a written
-  review in this file. No LLM in this decision. Manual monthly check until automated.
+  review in this file. No LLM in this decision.
+  - (b) is now **automated** for the US engine by the peak-drawdown kill switch
+    (`US_MAX_DRAWDOWN_PCT`, default 27 — section 3). It stops new entries and alerts, and never
+    clears itself on unknown data while positions are open. (a) remains a manual monthly check.
 
 ---
 

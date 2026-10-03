@@ -961,11 +961,18 @@ US_CHECK_INTERVAL = int(os.getenv("US_CHECK_INTERVAL_SECONDS", "300"))
 US_EXEC_AFTER_ET = (15, 30)
 US_SLIPPAGE = 0.0005
 US_RETRY_SECONDS = 900
+# US kill switch. The US engine is the only one that can spend real money, so it gets its own
+# loss limits, evaluated every cycle from the equity history. The drawdown default matches the
+# retirement level already written down in strategy.md section 8 (US momentum: -13.5%
+# out-of-sample worst -> retire at -27%), turning that manual monthly rule into an automatic one.
+US_MAX_DAILY_LOSS = float(os.getenv("US_MAX_DAILY_LOSS_PCT", "3")) / 100
+US_MAX_DRAWDOWN = float(os.getenv("US_MAX_DRAWDOWN_PCT", "27")) / 100
 NY = ZoneInfo("America/New_York")
 UAE_TZ = timezone(timedelta(hours=4))
 US_STOP = threading.Event()
 US_LOCK = threading.Lock()
-US_STATUS = {"last_check": None, "last_error": None, "note": "", "preview": None, "preview_at": 0.0, "retry_after": 0.0}
+US_STATUS = {"last_check": None, "last_error": None, "note": "", "preview": None, "preview_at": 0.0,
+             "retry_after": 0.0, "kill_switch": None, "kill_reason": None}
 _stock_client = None
 
 
@@ -1223,6 +1230,37 @@ def _us_rebalance(us: dict, today: str, mkey: str, now_et: datetime, fetch_daily
             q * prices[x] for x, q in holdings.items()
         )
     orders = us_strategy.plan_orders(holdings, prices, sig["weights"], equity_before)
+
+    # A rebalance is a ROTATION (sells, then re-buys), not an exit. The per-order gate lets
+    # closing orders through a halt by design, so without this check a halt would sell the
+    # portfolio and then refuse the buys -- liquidating the account while the dashboard says
+    # "HALTED: all new entries blocked". Block the whole plan instead.
+    if US_EXECUTE and orders and risk_controller.halted():
+        US_STATUS["note"] = "no rebalance: AETHER_HALT present (rotation blocked; exits still allowed)"
+        notify.send("[ALERT] US rebalance skipped: AETHER_HALT is present, so no orders were sent. "
+                    "A halt blocks entries and rotations; it never blocks an exit.",
+                    key="us-halted", cooldown=3600)
+        decision_log.log("us", "blocked", mode=_us_mode(), decision="halted", month=mkey,
+                         reason=f"AETHER_HALT present; {len(orders)} planned order(s) not sent")
+        return
+
+    # All-or-nothing: evaluate every order in the plan before submitting any of them, so the
+    # sells cannot fill while the buys are refused by a per-order cap or the daily budget.
+    if US_EXECUTE and orders:
+        ok, why = risk_controller.preflight(
+            "us",
+            [(o["side"], o.get("notional", o.get("est_value")), o["side"] == "SELL", US_LIVE)
+             for o in orders])
+        if not ok:
+            US_STATUS["note"] = f"no rebalance: risk pre-flight blocked the plan ({why})"
+            notify.send(f"[ALERT] US rebalance pre-flight failed ({why}) - no orders sent. Check "
+                        f"RISK_MAX_ORDER_USD_LIVE / RISK_MAX_DAILY_BUY_USD_LIVE against "
+                        f"US_LIVE_MAX_USD=${US_LIVE_MAX_USD:,.2f}, and the daily buy budget.",
+                        key="us-preflight", cooldown=3600)
+            decision_log.log("us", "blocked", mode=_us_mode(), decision="preflight_failed",
+                             reason=why, month=mkey, orders=len(orders))
+            return
+
     if _us_gate_active() and not _us_live_gate(orders, sig, mkey, today, now_et, equity_before):
         return
     if US_EXECUTE:
@@ -1449,6 +1487,75 @@ def us_cycle(fetch_daily=None, fetch_prices=None, market=None):
                                  last_error=US_STATUS.get("last_error"))
 
 
+def _us_set_kill(killed: bool, reason: str) -> bool:
+    """Record the US kill-switch state, alert on a new trip, and log every change."""
+    was = US_STATUS.get("kill_switch")
+    US_STATUS["kill_switch"] = killed
+    US_STATUS["kill_reason"] = None if not killed else reason
+    risk_controller.set_kill("us", killed)
+    if killed and was is not True:
+        notify.send(f"[ALERT] US kill switch ACTIVE: {reason}. New US entries and rotations are "
+                    f"blocked until it clears; exits still work.", key="us-kill", cooldown=6 * 3600)
+    if was is not None and killed != was:
+        decision_log.log("us", "kill_switch", decision="active" if killed else "cleared",
+                         mode=_us_mode(), reason=reason)
+    return killed
+
+
+def _us_evaluate_kill_switch(us: dict, today: str) -> bool:
+    """Daily-loss / peak-drawdown kill switch for the US engine.
+
+    Runs once per US cycle, before any rebalance decision, so it keeps evaluating while the
+    market is closed. Fails CLOSED on unknown data: when positions cannot be valued the
+    previous state is left untouched rather than cleared (the start-up state is None, which
+    blocks entries until an engine reports).
+    """
+    holdings = {s: q for s, q in (us.get("holdings") or {}).items() if q > 0}
+    prices = us.get("last_prices") or {}
+    cash = us.get("cash")
+
+    if not holdings:
+        # Nothing is deployed, so there is no loss to guard against. This must be reported as
+        # CLEAR rather than left unevaluated: cash only becomes non-None after a rebalance, so
+        # leaving it unevaluated would block the first rebalance forever.
+        return _us_set_kill(False, "no open US positions")
+
+    missing = [s for s in holdings if s not in prices]
+    if cash is None or missing:
+        logger.warning(f"US kill switch not evaluated: cash={cash}, missing prices={missing}")
+        return bool(US_STATUS.get("kill_switch"))  # never clear on unknown data
+
+    equity = float(cash) + sum(q * prices[s] for s, q in holdings.items())
+
+    hist = [h for h in (us.get("equity_history") or []) if h.get("v")]
+    if not hist:
+        logger.warning("US kill switch not evaluated: no equity-history baseline yet")
+        return bool(US_STATUS.get("kill_switch"))
+
+    day_start = None
+    for h in reversed(hist):
+        if h.get("d") == today:
+            day_start = float(h["v"])
+            break
+    if day_start is None:
+        # Today's snapshot is only written after the close, so use the last one as the basis.
+        prior = [h for h in hist if h.get("d") != today]
+        if prior:
+            day_start = float(prior[-1]["v"])
+    peak = max([float(h["v"]) for h in hist] + [equity])
+
+    daily_loss = (day_start - equity) / day_start if day_start and day_start > 0 else 0.0
+    drawdown = (peak - equity) / peak if peak > 0 else 0.0
+
+    if daily_loss >= US_MAX_DAILY_LOSS:
+        return _us_set_kill(True, f"down {daily_loss * 100:.2f}% today "
+                                  f"(limit {US_MAX_DAILY_LOSS * 100:g}%)")
+    if drawdown >= US_MAX_DRAWDOWN:
+        return _us_set_kill(True, f"{drawdown * 100:.2f}% below peak equity "
+                                  f"(limit {US_MAX_DRAWDOWN * 100:g}%)")
+    return _us_set_kill(False, f"ok (today {daily_loss * 100:+.2f}%, from peak -{drawdown * 100:.2f}%)")
+
+
 def _us_cycle_inner(fetch_daily=None, fetch_prices=None, market=None):
     fetch_daily = fetch_daily or fetch_us_daily
     fetch_prices = fetch_prices or fetch_us_prices
@@ -1458,6 +1565,7 @@ def _us_cycle_inner(fetch_daily=None, fetch_prices=None, market=None):
         US_STATUS["last_check"] = utcnow_str()
         with STATE_LOCK:
             us = _us_state(load_state())
+        _us_evaluate_kill_switch(us, today)
         if (not is_open) and now_et.weekday() < 5 and now_et.hour >= 16 and us["cash"] is not None \
                 and us["last_snapshot_date"] != today:
             try:
@@ -1517,6 +1625,7 @@ async def get_us_status(secret: str = Query(default="")):
         "last_rebalance_month": us["last_rebalance_month"], "last_rebalance_at": us["last_rebalance_at"],
         "signal_date": us["signal_date"], "preview": prev if not us["scores"] else None,
         "cash": us["cash"], "equity": equity, "rows": rows,
+        "kill_switch": US_STATUS.get("kill_switch"), "kill_reason": US_STATUS.get("kill_reason"),
         "equity_history": us["equity_history"], "history": list(reversed(us["history"]))[:12],
     }
 
