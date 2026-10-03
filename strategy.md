@@ -216,6 +216,15 @@ or someone running the engine by hand while the service is also up, and both wou
 before reading any state or starting any thread. A second instance that can't acquire it logs a
 critical error and exits immediately (`raise SystemExit(1)`) rather than running anyway.
 
+**Decision log failures now alert, added 2026-10-04.** `decision_log.py` previously swallowed
+every write failure, warning only at exponentially-spaced counts (1, 10, 100, then every 1000)
+with nothing else -- trading continued normally while the audit trail silently stopped. It now
+alerts on Telegram on the FIRST failure (not after a threshold, since every row lost past that
+point is gone for good -- rows are never updated or retried), and again when it recovers.
+`decision_log.persistence_degraded()` / `failure_count()` expose the current state for any
+caller that wants it. `_code_version()` (the git commit tag stamped on every row) now resolves
+once at import instead of lazily on the first log() call during live trading.
+
 ---
 
 ## 7. Operations

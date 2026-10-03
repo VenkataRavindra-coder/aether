@@ -13,6 +13,8 @@ import subprocess
 import threading
 from datetime import datetime, timezone
 
+import notify
+
 _HERE = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.getenv("AETHER_DECISION_DB", os.path.join(_HERE, "aether_decisions.sqlite"))
 
@@ -39,25 +41,40 @@ CREATE INDEX IF NOT EXISTS ix_decisions_engine_symbol ON decisions(engine, symbo
 _lock = threading.Lock()
 _logger = logging.getLogger("AETHER_DECISIONS")
 _conn = None
-_version = None
 _failures = 0
 _last_signature = {}
 
 
-def _code_version():
-    global _version
-    if _version is None:
-        try:
-            # Strip NOTIFY_SOCKET: aether_engine.py runs as a Type=notify systemd service, and a
-            # subprocess that inherits that env var triggers a harmless but noisy
-            # "Got notification message ... rejected" log line from systemd.
-            env = {k: v for k, v in os.environ.items() if k != "NOTIFY_SOCKET"}
-            out = subprocess.run(["git", "-C", _HERE, "rev-parse", "--short", "HEAD"],
-                                 capture_output=True, text=True, timeout=3, env=env)
-            _version = out.stdout.strip() or "unknown"
-        except Exception:
-            _version = "unknown"
-    return _version
+def persistence_degraded() -> bool:
+    """True once the decision log has failed to write at least once since its last success.
+    Exposed so a caller (the dashboard, a healthcheck) can surface "the audit trail may have
+    gaps" instead of this failing in total silence, which is what used to happen: every
+    exception here was swallowed, logged at exponentially-spaced counts, and otherwise ignored
+    -- trading continued normally with no alert and no visible flag anywhere."""
+    return _failures > 0
+
+
+def failure_count() -> int:
+    return _failures
+
+
+def _resolve_code_version():
+    """Runs once, eagerly, at module import -- not lazily on the first log() call during live
+    trading. A git subprocess on the decision-recording path (even once, even cached after) was
+    an avoidable dependency; resolving it up front removes it from that path entirely."""
+    try:
+        # Strip NOTIFY_SOCKET: aether_engine.py runs as a Type=notify systemd service, and a
+        # subprocess that inherits that env var triggers a harmless but noisy
+        # "Got notification message ... rejected" log line from systemd.
+        env = {k: v for k, v in os.environ.items() if k != "NOTIFY_SOCKET"}
+        out = subprocess.run(["git", "-C", _HERE, "rev-parse", "--short", "HEAD"],
+                             capture_output=True, text=True, timeout=3, env=env)
+        return out.stdout.strip() or "unknown"
+    except Exception:
+        return "unknown"
+
+
+_version = _resolve_code_version()
 
 
 def _connect():
@@ -78,17 +95,31 @@ def log(engine, event, symbol=None, decision=None, reason=None, price=None, bar_
                None if bar_time is None else str(bar_time), event,
                None if decision is None else str(decision), None if reason is None else str(reason),
                None if price is None else float(price),
-               json.dumps(data, default=str, sort_keys=True) if data else None, _code_version())
+               json.dumps(data, default=str, sort_keys=True) if data else None, _version)
         with _lock:
             _connect().execute(
                 "INSERT INTO decisions (ts, engine, mode, symbol, bar_time, event, decision, reason, price, "
                 "data_json, code_version) VALUES (?,?,?,?,?,?,?,?,?,?,?)", row)
+        was_degraded = _failures > 0
         _failures = 0
+        if was_degraded:
+            _logger.warning("decision log recovered after previous write failures.")
+            notify.send("[OK] AETHER decision log is writing again after previous failures.",
+                        key="decision-log-fail", cooldown=0)
         return True
     except Exception as e:
         _failures += 1
         if _failures in (1, 10, 100) or _failures % 1000 == 0:
             _logger.warning(f"decision log write failed ({_failures}x): {type(e).__name__}: {str(e)[:120]}")
+        if _failures == 1:
+            # Alert on the FIRST failure, not after some threshold: every row lost after this
+            # point is gone forever (never updated or deleted, never retried), so "trading
+            # continued normally with the audit trail silently broken" is exactly the failure
+            # mode worth knowing about immediately, not after it's already happened 10+ times.
+            notify.send(f"[ALERT] AETHER decision log failed to write: {type(e).__name__}: "
+                        f"{str(e)[:150]}. The audit trail may now have gaps; trading continues "
+                        f"normally. Check disk space and {DB_PATH}.",
+                        key="decision-log-fail", cooldown=3600)
         try:
             if _conn is not None:
                 _conn.close()
