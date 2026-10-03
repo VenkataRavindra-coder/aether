@@ -125,15 +125,15 @@ function buildSummary(ov,sf,kill,now){
  return {level:level,lines:[head,usLine,crLine,plLine,foot].filter(Boolean),proposal:pr,action:action};
 }
 window.buildSummary=buildSummary;
-function mount(){let el=document.getElementById('plainSummary');if(el)return el;el=document.createElement('section');el.id='plainSummary';el.className='card';el.style.cssText='margin:0 0 14px 0;padding:14px 18px;line-height:1.7;font-size:14px;border-left:4px solid #2ea043';
+function mount(){let el=document.getElementById('plainSummary');if(el)return el;el=document.createElement('section');el.id='plainSummary';el.className='card';el.style.cssText='margin:0;padding:8px 14px;line-height:1.45;font-size:12.5px;border-left:4px solid #2ea043';
  const t=[...document.querySelectorAll('div,span,h2,h3,p,small')].find(e=>e.children.length===0&&e.textContent.trim()==='Everything you own');
- if(t){const chain=[];for(let e=t;e&&e!==document.body;e=e.parentElement)chain.push(e);const maxW=Math.max(...chain.map(e=>e.offsetWidth||0));const row=chain.find(e=>(e.offsetWidth||0)>=0.9*maxW);if(row&&row.parentElement){row.parentElement.insertBefore(el,row);row.parentElement.style.alignContent='start';return el;}}
+ if(t){const chain=[];for(let e=t;e&&e!==document.body;e=e.parentElement)chain.push(e);const maxW=Math.max(...chain.map(e=>e.offsetWidth||0));const row=chain.find(e=>(e.offsetWidth||0)>=0.9*maxW);if(row&&row.parentElement){row.parentElement.insertBefore(el,row);if(row.parentElement.classList.contains('frame'))row.parentElement.style.gridTemplateRows='68px auto 137px 1fr 22px';return el;}}
  document.body.prepend(el);return el;}
 function tidyButtons(){[...document.querySelectorAll('button,a')].forEach(b=>{const x=b.textContent.trim();if(x==='Alpaca settings'){b.textContent='\u26A0 Alpaca keys';b.title='Changes API keys. Requires your password.';b.style.border='1px solid #d29922';b.style.color='#d29922';}if(x==='Pause animation'){b.textContent='Pause background motion';}});}
 async function refreshSummary(){try{const [a,b]=await Promise.all([fetch('/api/overview',{credentials:'same-origin'}),fetch('/api/safety',{credentials:'same-origin'})]);if(!a.ok||!b.ok)return;const ov=await a.json(),sf=await b.json();
  const kill=(window.state&&window.state.strategy)?window.state.strategy.kill_switch:undefined;const r=buildSummary(ov,sf,kill,Date.now());const el=mount();
  el.style.borderLeftColor={green:'#2ea043',orange:'#d29922',red:'#f85149'}[r.level];
- el.innerHTML='<div style="font-weight:600;font-size:15px;margin-bottom:4px">'+r.lines[0]+'</div>'+r.lines.slice(1).map(l=>'<div>'+l+'</div>').join('');
+ el.innerHTML='<div style="font-weight:600;font-size:13.5px;margin-bottom:2px">'+r.lines[0]+'</div>'+r.lines.slice(1).map(l=>'<div>'+l+'</div>').join('');
  const ps=document.getElementById('proposalState'),pt=document.getElementById('proposalText');
  if(ps&&pt){const p=r.proposal;ps.textContent=p?p.status+(p.date?' \u00b7 '+p.date:''):'None';pt.textContent='Needs your action: '+r.action+'.';}
  tidyButtons();}catch(e){}}
