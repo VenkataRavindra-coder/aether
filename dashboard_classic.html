@@ -28,7 +28,7 @@
   .app { height: 100dvh; display: flex; flex-direction: column; gap: 8px; padding: 8px; }
 
   /* header */
-  .header-fx { position: relative; isolation: isolate; overflow: hidden; flex: none; display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  .header-fx { position: relative; isolation: isolate; overflow: hidden; flex: none; display: flex; flex-wrap: wrap; row-gap: 8px; align-items: center; justify-content: space-between; gap: 12px;
                border-radius: 14px; padding: 10px 16px; background: #0f172a80; border: 1px solid #ffffff12; }
   .header-fx::before { content: ""; position: absolute; inset: 0; border-radius: inherit; z-index: -1;
     background: linear-gradient(90deg, #ef444422 0% 14.28571%, #f9731622 14.28571% 28.57143%, #facc1522 28.57143% 42.85714%, #22c55e22 42.85714% 57.14286%, #38bdf822 57.14286% 71.42857%, #6366f122 71.42857% 85.71429%, #a855f722 85.71429% 100%);
@@ -143,7 +143,7 @@
       <span class="chip" id="st-vm" title="VM health"><i></i>VM<span class="stamp"></span><button type="button" aria-label="Refresh everything"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M13 8a5 5 0 1 1-1.2-3.2" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><path d="M12 2.5 V5.2 H9.3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg></button></span>
       <span class="chip" id="st-tg" title="Telegram alerts"><i></i>Telegram<span class="stamp"></span><button type="button" aria-label="Refresh everything"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M13 8a5 5 0 1 1-1.2-3.2" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><path d="M12 2.5 V5.2 H9.3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg></button></span>
       <span class="pill" id="mode">…</span>
-      <a class="pill" id="paperAcct" href="/" title="Back to the main summary view">‹ Summary</a>
+      <a class="pill" id="paperAcct" href="/" title="Paper account: practice money, not real. Click to go back to the main view.">…</a>
       <span class="pill" id="liveAcct" title="Live account: real money">…</span>
       <span class="kill" id="kill" title="The engine's own kill switch. It trips automatically when the daily loss limit is hit.">Kill switch …</span>
       <a class="hlink" href="/logout">Log out</a>
@@ -283,8 +283,9 @@
     m.textContent = overview.account_mode === "LIVE" ? "LIVE" : "PAPER";
     m.className = "pill" + (overview.account_mode === "LIVE" ? " live" : "");
     m.title = overview.account_mode === "LIVE" ? "Live account: real money" : "Paper account: practice money";
-    const acc = overview.accounts || {}, lv = acc.live;
+    const acc = overview.accounts || {}, pp = acc.paper, lv = acc.live;
     const fmt = (a) => !a || !a.configured ? null : n2(isNum(a.equity) ? a.equity : 0, 2);
+    $("paperAcct").textContent = "Paper " + (fmt(pp) || "—");
     const liveEl = $("liveAcct");
     liveEl.textContent = "Live " + (lv && lv.configured ? (lv.equity ? fmt(lv) : "$0 (not funded)") : "not configured");
     liveEl.className = "pill" + (lv && lv.configured && lv.equity > 0 ? " live" : "");
