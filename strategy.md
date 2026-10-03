@@ -179,7 +179,16 @@ completed a cycle in `5 * US_CHECK_INTERVAL_SECONDS` (at least 5 minutes).
 - **Access:** `https://ops.ratelark.app` (Cloudflare Access email code + `DASHBOARD_PASSWORD`).
   Fallback: `ssh -N -L 8000:127.0.0.1:8000 aether` then `http://127.0.0.1:8000`. `/logout` requires
   a valid session and only accepts `POST` (it used to be a public `GET`, so anyone on the internet
-  could call it and force every operator session to log out, repeatedly).
+  could call it and force every operator session to log out, repeatedly). `/login` locks a source
+  out for 5 minutes after 5 wrong passwords in a row (tracked per client IP, alerts on Telegram
+  when it trips) -- previously a failed attempt only cost the attacker a 1s sleep, which did
+  nothing against many parallel connections.
+- **The old `/classic` dashboard (and its `/account`, `/api/stocks`, `/api/history`,
+  `/api/portfolio-history`, `/api/snapshot` endpoints) was removed 2026-10-03.** It was the
+  pre-rebuild dashboard, superseded by `dashboard_v2.html`, unlinked from any page the dashboard
+  actually serves, and had a confirmed stored-XSS hole (broker/webhook text written straight into
+  `innerHTML`). If anything ever needs that old UI back, it is in git history before this date --
+  it should not be revived as-is given the XSS.
 - **Code:** private repo `VenkataRavindra-coder/aether`, deploy key on the VM.
 - **Backups:** nightly 03:15 UTC (`aether-backup.timer`): state, decision log, research trials;
   integrity-checked; 14 local copies in `~/backups`; offsite to Azure `aetherbkp/aether-backups`
