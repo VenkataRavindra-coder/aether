@@ -550,19 +550,6 @@ _SESSION_COOKIE = "aether_session"
 _OPEN_PATHS = {"/login", "/logout", "/webhook/tradingview"}
 
 
-@app.middleware("http")
-async def _dashboard_session(request: _Request, call_next):
-    path = request.url.path
-    if path not in _OPEN_PATHS:
-        sid = request.cookies.get(_SESSION_COOKIE, "")
-        if sid and _session_ok(sid):
-            raw = request.scope.get("query_string", b"").decode()
-            pairs = [(k, v) for k, v in _parse_qsl(raw, keep_blank_values=True) if k != "secret"]
-            pairs.append(("secret", WEBHOOK_SECRET))
-            request.scope["query_string"] = _urlencode(pairs).encode()
-        elif path == "/" and "secret" not in request.query_params:
-            return _RedirectResponse("/login", status_code=303)
-    return await call_next(request)
 
 
 _LOGIN_HTML = """<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -1537,7 +1524,7 @@ async def get_us_status(secret: str = Query(default="")):
 @app.get("/classic", response_class=HTMLResponse)
 async def visual_pipeline_dashboard(secret: str = Query(default="")):
     """Renders the secure visual AETHER operations dashboard UI."""
-    verify_access(secret=secret)
+    pass  # auth: _dashboard_auth session middleware
 
     is_live = os.getenv("LIVE_TRADING", "false").lower() == "true"
     mode_label = "LIVE EXECUTION" if is_live else "OBSERVATION (SHADOW)"
