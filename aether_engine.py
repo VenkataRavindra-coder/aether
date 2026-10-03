@@ -56,12 +56,16 @@ async def lifespan(_app):
     # Decide WHY we started before any background thread exists: the monitor thread rewrites the
     # heartbeat file the moment it runs, which would erase the evidence this check reads.
     report = startup_report()
+    strategy_thread = None
     if STRATEGY_ENABLED:
-        threading.Thread(target=strategy_loop, daemon=True, name="aether-strategy").start()
+        strategy_thread = threading.Thread(target=strategy_loop, daemon=True, name="aether-strategy")
+        strategy_thread.start()
     else:
         logger.info("Strategy engine disabled (set STRATEGY_ENABLED=true in .env to enable).")
+    us_thread = None
     if US_ENABLED:
-        threading.Thread(target=us_loop, daemon=True, name="aether-us").start()
+        us_thread = threading.Thread(target=us_loop, daemon=True, name="aether-us")
+        us_thread.start()
     threading.Thread(target=monitor_loop, daemon=True, name="aether-monitor").start()
     notify.start_command_poller(handle_command)
     logger.info(f"Telegram alerts {'enabled' if notify.enabled() else 'disabled (TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID not set)'}.")
@@ -70,10 +74,23 @@ async def lifespan(_app):
     yield
     _shutting_down.set()
     notify.send("[AETHER] Service stopping (VM shutdown, restart or manual stop).", key="shutdown", cooldown=60)
-    write_heartbeat(clean_stop=True)
-    time.sleep(2)
     STRATEGY_STOP.set()
     US_STOP.set()
+    # These are daemon threads: if the interpreter exits while one is mid-cycle (submitting a
+    # live order, polling for a fill), it is severed with no cleanup -- the order can end up
+    # live at the broker and never recorded locally. Give a cycle already in flight a real
+    # chance to finish instead of a bare sleep(2). TimeoutStopSec in aether.service must stay
+    # at least this high, or systemd SIGKILLs the process before this join returns.
+    JOIN_TIMEOUT = 300
+    if strategy_thread is not None:
+        strategy_thread.join(timeout=JOIN_TIMEOUT)
+        if strategy_thread.is_alive():
+            logger.warning(f"Strategy thread did not stop within {JOIN_TIMEOUT}s of shutdown request.")
+    if us_thread is not None:
+        us_thread.join(timeout=JOIN_TIMEOUT)
+        if us_thread.is_alive():
+            logger.warning(f"US thread did not stop within {JOIN_TIMEOUT}s of shutdown request.")
+    write_heartbeat(clean_stop=True)
     notify.STOP.set()
 
 
@@ -982,6 +999,16 @@ def monitor_cycle(now: datetime = None):
             stalled = True
             notify.send(f"[ALERT] Strategy loop has not completed a cycle in {int(time.time() - last)}s.", key="stall", cooldown=3600)
 
+    # The US loop used to have no stall check at all: with STRATEGY_ENABLED=false (a plausible
+    # US-only setup) the heartbeat and healthcheck ping kept going even if the US thread had
+    # died or hung, because nothing ever looked at US_STATUS["last_check_ts"].
+    if US_ENABLED:
+        last = US_STATUS.get("last_check_ts")
+        limit = max(300, US_CHECK_INTERVAL * 5)
+        if last and time.time() - last > limit:
+            stalled = True
+            notify.send(f"[ALERT] US ETF loop has not completed a cycle in {int(time.time() - last)}s.", key="us-stall", cooldown=3600)
+
     if HEALTHCHECK_PING_URL and not stalled:
         _ping_healthcheck()
 
@@ -1017,8 +1044,8 @@ NY = ZoneInfo("America/New_York")
 UAE_TZ = timezone(timedelta(hours=4))
 US_STOP = threading.Event()
 US_LOCK = threading.Lock()
-US_STATUS = {"last_check": None, "last_error": None, "note": "", "preview": None, "preview_at": 0.0,
-             "retry_after": 0.0, "kill_switch": None, "kill_reason": None}
+US_STATUS = {"last_check": None, "last_check_ts": None, "last_error": None, "note": "", "preview": None,
+             "preview_at": 0.0, "retry_after": 0.0, "kill_switch": None, "kill_reason": None}
 _stock_client = None
 
 
@@ -1623,6 +1650,7 @@ def _us_cycle_inner(fetch_daily=None, fetch_prices=None, market=None):
         is_open, now_et = (market or us_market_state)()
         today, mkey = now_et.strftime("%Y-%m-%d"), now_et.strftime("%Y-%m")
         US_STATUS["last_check"] = utcnow_str()
+        US_STATUS["last_check_ts"] = time.time()
         with STATE_LOCK:
             us = _us_state(load_state())
         _us_evaluate_kill_switch(us, today)

@@ -144,6 +144,21 @@ Real-money US orders require ALL of:
 8. The US kill switch is evaluated and clear, and `preflight()` accepts **every** order in the
    plan (all-or-nothing — a plan whose sells would be followed by refused buys is not sent).
 
+**Shutdown no longer severs an in-flight order.** A `systemctl restart` used to set the stop
+flags, sleep 2 seconds and exit — if a live order was mid-submission or mid-fill-poll
+(`wait_for_fill` can take up to 90s per order), the daemon thread running it was cut off with no
+chance to finish, leaving an order live at the broker and never recorded locally. The shutdown
+sequence now joins the strategy and US threads (up to 300s) before the process exits, so a cycle
+already in progress gets a real chance to complete. `TimeoutStopSec` in `aether.service` is 310s
+to match — if you ever lower the join timeout in code, lower this too, and the other way round.
+
+**The US loop now has its own stall check.** Previously only the crypto loop's heartbeat was
+monitored (`monitor_cycle`); with crypto ever disabled (`STRATEGY_ENABLED=false`, a plausible
+US-only setup) a dead or hung US thread would go unnoticed indefinitely — the dashboard would
+just show a stale "last checked" time with nothing actively flagging it. `US_STATUS["last_check_ts"]`
+is now checked the same way the crypto loop's `last_cycle_ts` is, and alerts if the US loop hasn't
+completed a cycle in `5 * US_CHECK_INTERVAL_SECONDS` (at least 5 minutes).
+
 ---
 
 ## 6. Emergency procedures

@@ -12,7 +12,11 @@ Environment=PYTHONUNBUFFERED=1
 ExecStart=/home/azureuser/venv/bin/python3 -m uvicorn aether_engine:app --host 127.0.0.1 --port 8000 --no-access-log
 Restart=always
 RestartSec=5
-TimeoutStopSec=20
+# 310s: the shutdown sequence in aether_engine.py's lifespan() joins the strategy/US
+# threads for up to 300s so an in-flight live order (submit + fill poll) isn't severed
+# mid-flight by the interpreter exiting. Must stay >= that join timeout, or systemd
+# SIGKILLs the process before the join returns.
+TimeoutStopSec=310
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=full
