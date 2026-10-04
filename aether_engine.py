@@ -21,6 +21,7 @@ import notify
 import decision_log
 import risk_controller
 import cf_access
+from heartbeat import beat  # aether_safety package (2026-10-04): external watchdog heartbeat
 from zoneinfo import ZoneInfo
 
 load_dotenv()
@@ -1264,6 +1265,7 @@ def monitor_cycle(now: datetime = None):
     # thread stuck holding STATE_LOCK -- would stop this from running at all, so the ping
     # would stop too, and systemd'"'"'s WatchdogSec would eventually restart the whole thing.
     _sd_notify("WATCHDOG=1")
+    beat("engine")  # aether_safety's external watchdog checks this independently of systemd's
 
 
 def monitor_loop():
@@ -1980,3 +1982,10 @@ async def get_us_status(secret: str = Query(default="")):
 # that patching wasn't worth doing in dead code nobody could reach through the app.
 import dashboard_v2 as _dashboard_v2  # noqa: E402
 app.include_router(_dashboard_v2.router)
+
+# aether_us_dashboard package (2026-10-04): a dedicated US-only view at /us, reading safety_guard's
+# live-account breakers and the decision log. AETHER's auth is the _dashboard_auth middleware
+# above, not a FastAPI Depends() dependency, so build_router gets a no-op and relies on that
+# middleware (which already covers every path, including this one, by default-deny).
+from us_dashboard import build_router as _build_us_dashboard_router  # noqa: E402
+app.include_router(_build_us_dashboard_router(lambda: None))

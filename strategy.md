@@ -302,3 +302,55 @@ once at import instead of lazily on the first log() call during live trading.
 2. Change code; run `test_risk_controller.py` and `test_uslive.py` (both must pass).
 3. Commit and push; restart `aether`; check `journalctl -u aether` for errors.
 4. Never test with real ETF symbols outside market hours (orders queue and fill later).
+
+---
+
+## Risk Governance (live)  — amendment, enforced by safety_guard.py
+
+**Scope.** All rules below use the LIVE capital pool only (marked daily from the live
+Alpaca account by `risk_mark.py`). Paper keeps its own limits and never feeds these.
+
+**Halt definition (applies to every breaker and `~/AETHER_HALT`).** A halt blocks NEW
+ENTRIES only. Exits (stop-loss sells, closes) are never blocked. Sells that would open a
+short are always blocked.
+
+**Mark.** Weekly, monthly and drawdown breakers are judged on one fixed daily mark:
+Mon-Fri 15:50 New York time. If the latest mark is more than 4 days old, entries are
+blocked (breakers would be blind).
+
+| Breaker | Trigger | Action | Reset |
+|---|---|---|---|
+| Daily loss | live equity <= prior close - 2% (checked at each entry) | block entries | automatic, next trading day |
+| Weekly loss | marked equity <= week anchor - 5% | latch, create `~/AETHER_HALT` | manual review -> `risk_admin.py reset` + `rm ~/AETHER_HALT` |
+| Monthly loss | marked equity <= month anchor - 8% | latch, create `~/AETHER_HALT` | manual, as above |
+| Drawdown halt | DD from peak >= H, where H = min(10%, 2 x worst out-of-sample DD) | latch, create `~/AETHER_HALT` | manual; reset rebases peak to current equity |
+| Drawdown reduce | DD >= 0.75 H | new entry size x 0.5 | automatic when DD recovers |
+| Drawdown warn | DD >= 0.50 H | Telegram only | -- |
+
+Warning, reduce and halt are fractions of H, so they always fire in that order.
+
+**Note (2026-10-04): drawdown halt tightened for micro-live.** `GUARD_DD_ABS_CAP` is set to
+0.10 (10%) here as the cap, but the operator has chosen a tighter working ceiling while the
+live account is funded at the $100 micro-live level -- see `US_MAX_DRAWDOWN_PCT=15` (a
+separate, pre-existing kill switch on the engine's own paper/live equity history,
+`_us_evaluate_kill_switch` in `aether_engine.py`). These two breakers are independent and
+both gate: whichever is stricter at any moment wins. They do not share a ledger or a data
+source -- this one marks live equity once daily via `risk_mark.py`; the engine's own kill
+switch samples once daily into `equity_history`. Reconciling them into one system is a
+later improvement, not required for this to be safe (both fail toward blocking entries,
+never toward allowing something the other would have blocked).
+
+**Precedence.** Retirement rule (PF of last 20 closed trades < 1.0, or DD > 2x worst
+out-of-sample backtest DD) stays active. When rules overlap, the most conservative wins.
+
+**Sizing.** Risk per trade <= 1% of live equity. If the computed notional (after any
+reduction) is below the broker minimum ($1 fractional), the trade is skipped -- never
+rounded up.
+
+**Cash flows.** Fund the micro-live account once. Any deposit/withdrawal must be recorded
+(`risk_admin.py cashflow +-X`) the same day so it is not counted as P&L or drawdown.
+
+**Monitoring.** An external watchdog (separate systemd timer, every 5 min) alerts when
+aether.service is down, the engine heartbeat is >15 min old, or the risk mark is stale, and
+lists any open live positions (their stops are engine-managed, so they are unprotected
+while the engine is down). Optional off-VM dead-man ping via `HEALTHCHECK_URL`.

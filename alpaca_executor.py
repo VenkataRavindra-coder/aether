@@ -256,6 +256,23 @@ class AlpacaExecutionClient:
             "us", symbol, side_upper, notional, side_upper == "SELL", real_money=not self.paper)
         if not allowed:
             return {"status": "error", "message": f"risk:{risk_reason}"}
+        if not self.paper:
+            # aether_safety package (2026-10-04): a second, independent gate -- live account
+            # only, paper never reaches this branch. Daily/weekly/monthly loss breakers and a
+            # peak-to-trough drawdown halt, marked once daily from the real live equity by
+            # risk_mark.py (see strategy.md "Risk Governance"). Exits still always pass (the
+            # function's own logic allows them unconditionally); this can only ever make an
+            # ENTRY stricter than risk_controller.check() already did, never looser.
+            from safety_guard import check_live_order
+            position_qty = self.get_position_qty(symbol) or 0.0
+            bal = self.get_account_balance()
+            live_equity = float(bal["portfolio_value"]) if bal.get("source") == "live" else None
+            d = check_live_order(side_upper, symbol, notional, position_qty, live_equity, sell_qty=qty)
+            if not d.allowed:
+                logger.warning(f"Live order guard blocked {side_upper} {symbol}: {d.reason}")
+                return {"status": "error", "message": f"guard:{d.reason}"}
+            if side_upper == "BUY" and d.notional:
+                notional = d.notional  # may be halved at the drawdown-reduce level
         if not self.client:
             return {"status": "error", "message": "Alpaca client uninitialized."}
         try:
