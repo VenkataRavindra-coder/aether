@@ -1,7 +1,7 @@
 # AETHER Live-Readiness Test Plan
 
 Scope: US ETF engine, micro-live ($50-$100), human approval on entries, crypto live off.
-Status: LOCKED v2.3 (amends v2.2, tag plan-v2.2). Commit to the repo BEFORE running any evidence test. Criteria may not be edited after results are seen (see section 12 for the only allowed way to amend).
+Status: LOCKED v2.4 (amends v2.3, tag plan-v2.3). Commit to the repo BEFORE running any evidence test. Criteria may not be edited after results are seen (see section 12 for the only allowed way to amend).
 
 ## 0. Rules of the plan
 
@@ -251,15 +251,15 @@ NO-GO unless every row is satisfied and signed with evidence links.
 
 ## 11a. Daily automation (starts with the soak)
 
-One systemd timer, run as azureuser, read-only on engine state. The runner never restarts aether.service, never touches ~/AETHER_HALT, never uses the strategy or live API keys, and unit tests replace Telegram with fakes. Every run writes tests/evidence/daily/<YYYY-MM-DD>.json (commit SHA, results, hash of the raw output), sends one Telegram summary line, and pings the off-VM dead-man's switch. A missing run is a failure.
+One systemd timer (aether-daily.timer, 04:30 UTC, after the nightly backup), run as azureuser. It never restarts, stops or starts a service, never touches the halt file, never uses the live keys, and never places an order: it uses the strategy paper keys read-only for A2 and A3, and unit tests replace Telegram with fakes. Every run writes tests/evidence/daily/<YYYY-MM-DD>.json (commit SHA, results, hash of the results), sends one Telegram summary line, and pings its own off-VM check (DAILY_HEALTHCHECK_URL, 1-day period). A missing run is a failure. The evidence folder is not committed (a commit would move HEAD) and is included in the nightly backup.
 
 | ID | Check | Pass criterion |
 |----|-------|----------------|
 | A1 | Regression suite: tests/ (all), test_uslive.py, test_halt_allows_exit.py | All pass at the deployed commit |
 | A2 | Real-data check (read-only): fetch_us_daily for the universe, validate_bars, us_signals dry run for the current month | No ValueError; newest completed-month bar within MAX_STALENESS_DAYS; the current target weights are logged |
 | A3 | Reconciliation: Alpaca positions and open orders versus aether_state.json (paper) | Zero unexplained differences |
-| A4 | Version and tree: code_version in the newest decision-log row equals git HEAD, and git status is clean | Equal and clean; anything else is an unexplained change |
-| A5 | Stress test on the dedicated stress account (stress_test.py) | Passes; never touches the strategy account or ~/AETHER_HALT |
+| A4 | Version and tree: the engine code (every .py file except tests, the stress script, research code, patches and the daily runner) at the commit named by code_version in the newest decision-log row equals the same code at git HEAD, and git status is clean | Equal and clean. Commits that change only docs, tests, research, patches or the runner are not a mismatch; anything else is an unexplained change |
+| A5 | Stress test on the dedicated stress account (stress_test.py), switched on with AETHER_DAILY_STRESS=1 once the script has been reviewed | Passes; never touches the strategy account or the halt file. NOT ENABLED is not green and must be resolved before the soak starts |
 | A6 | Runner heartbeat: summary sent and off-VM ping received | A missing day is a failure |
 
 ## 11b. Daily recovery checks
@@ -272,7 +272,7 @@ Non-destructive: restores go into a temporary folder, never over live files.
 | RD2 | Archive re-opened: extract the newest archive into a temporary folder | tar extracts; both SQLite files pass integrity_check; aether_state.json parses and has the us_paper and us_live keys; git_commit.txt present |
 | RD3 | Offsite upload | The aether-backup.service log shows "uploaded <archive>" for the newest archive within 26 h |
 | RD4 | Recovery configuration | aether.service has Restart=always and WatchdogSec set; HEALTHCHECK_URL is set; the backup, watchdog and health timers are active |
-| RD5 | Backup coverage | The archive holds every file needed to resume safely: aether_state.json, .aether_risk_state.json, live_risk_ledger.json (once it exists), the decision log, research.sqlite, git_commit.txt |
+| RD5 | Backup coverage | The archive holds every file needed to resume safely: aether_state.json, .aether_risk_state.json, live_risk_ledger.json (once it exists), the decision log, research.sqlite, git_commit.txt, and tests/evidence (once it exists), so the plan's own evidence survives losing the VM |
 
 Monthly, by hand, with the evidence stored: R1 fresh-VM restore (60-minute target); R2 corrupted-newest fallback; offsite readability check with a read-capable credential kept off the VM (the VM's upload credential is Create-only); F10 drill (stop the watchdog timer for 15 minutes; the external alert must arrive within 10 minutes).
 
@@ -294,3 +294,4 @@ Monthly, by hand, with the evidence stored: R1 fresh-VM restore (60-minute targe
 | 2026-10-07 | 2da6fe1b19eb58cbda8dda3134426f682d882cb0 (tag plan-v2.1) | v2.1 locked: this commit fixed the criteria; earlier changelog rows are drafts of the same file | Commit and tag pushed to origin before any test run |
 | 2026-10-07 | 8f139232e73fbde4d428f596c3b5bce6a969a7df (tag plan-v2.2) | v2.2: C11 retargeted to the real monthly-rotation code (no SMA/ATR exist); C11b real-data repeat of C1/C11; K5 retargeted to current-month and partial bars (same EST/EDT dates); 3g retargeted from stops to exits, drawdown kill and rotation safety (E1-E6); D10 added; soak must span two month-end rebalances; L1 sized as the full rotation; PF rule is a manual month-end review per strategy.md and the drawdown rule is automated; section 12 states development runs are not evidence | Plan assumed a daily trend strategy with stops; reading us_strategy.py, strategy.md and fetch_us_daily showed otherwise. No evidence test had been run. Development runs are in the commit history (d1eac5f, 15540b4). The only criterion removed is the SMA/ATR check, which cannot apply to this strategy. |
 | 2026-10-07 | b86646355e6cf17359091a2d78d77694dfdc883c (tag plan-v2.3) | v2.3: E1 reworded (the US engine has no automatic exit), E3 latched drawdown kill, E3b/E5/E7/E8 added or rewritten for the rotation engine, D10 split into the rebalance path and a daily preview check (D10b), new sections 11a daily automation and 11b daily recovery checks, scorecard layer 8, kill criterion on code/HEAD mismatch | Findings from reading _us_rebalance, _us_execute_paper, the kill-switch code and the backup script; code fixes in commit 0399606 (rotation safety, latch). No evidence test had been run. |
+| 2026-10-07 | (v2.4 commit and tag plan-v2.4: fill in after committing) | v2.4: A4 compares engine code only (doc- or test-only commits are not a mismatch), A5 gated until the stress script is reviewed, 11a states that the runner reads with the strategy paper keys and is read-only, RD5 adds tests/evidence | Found while writing aether_daily.py: a literal 'HEAD equals code_version' would go red on any doc commit, and 'never uses the strategy keys' contradicted A2 and A3. No evidence test had been run. |
