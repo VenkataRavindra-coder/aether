@@ -22,6 +22,8 @@ import sys
 import tarfile
 import tempfile
 import time
+import urllib.error
+import urllib.parse
 import urllib.request
 
 HOME = pathlib.Path(os.environ.get("AETHER_HOME", str(pathlib.Path.home())))
@@ -362,12 +364,33 @@ def ping(url, failed, timeout=10, opener=urllib.request.urlopen):
         return False
 
 
+TELEGRAM_MAX = 3900
+
+
+def telegram_send(text, token, chat, opener=urllib.request.urlopen, timeout=15):
+    """Send a Telegram message and return its message_id, but only if Telegram's own reply says ok.
+
+    Why not notify.send: a one-shot process like this one exits right after calling it, and an asynchronous send can
+    be lost, so the old code reported 'summary sent' for messages that never arrived (found when the 07:24 and 08:32
+    alerts were missing from the chat). The bot token is in the URL, so no error message here ever includes the URL."""
+    if not token or not chat:
+        raise RuntimeError("TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID not set")
+    data = urllib.parse.urlencode({"chat_id": chat, "text": text[:TELEGRAM_MAX],
+                                   "disable_web_page_preview": "true"}).encode()
+    req = urllib.request.Request(f"https://api.telegram.org/bot{token}/sendMessage", data=data)
+    try:
+        body = json.loads(opener(req, timeout=timeout).read().decode("utf-8", "replace"))
+    except urllib.error.HTTPError as e:
+        raise RuntimeError(f"Telegram refused the message (HTTP {e.code})") from None
+    except Exception as e:  # noqa: BLE001
+        raise RuntimeError(f"Telegram send failed ({type(e).__name__})") from None
+    if not isinstance(body, dict) or not body.get("ok"):
+        raise RuntimeError("Telegram replied not-ok")
+    return body.get("result", {}).get("message_id")
+
+
 def default_send(text, alert):
-    import notify
-    if alert:
-        notify.send(text, key="daily-fail", cooldown=3600)
-    else:
-        notify.send(text)
+    return telegram_send(text, os.environ.get("TELEGRAM_BOT_TOKEN"), os.environ.get("TELEGRAM_CHAT_ID"))
 
 
 def main(home=HOME, checks=CHECKS, send=default_send, ping_fn=ping, now=None):
@@ -377,15 +400,16 @@ def main(home=HOME, checks=CHECKS, send=default_send, ping_fn=ping, now=None):
     now = now or datetime.datetime.now(datetime.timezone.utc)
     results = run_all(checks)
     alert, text = summary_text(results, head, f"{now:%Y-%m-%d}")
-    sent = True
+    sent, mid = True, None
     try:
-        send(text, alert)
+        mid = send(text, alert)
     except Exception as e:  # noqa: BLE001
         sent = False
         print(f"summary not sent: {type(e).__name__}: {str(e)[:100]}")
     pinged = ping_fn(os.environ.get("DAILY_HEALTHCHECK_URL"), alert)
     ok6 = sent and pinged is not False
-    detail = f"summary {'sent' if sent else 'NOT sent'}; ping " + {True: "sent", False: "FAILED", None: "not configured"}[pinged]
+    shown = "NOT sent" if not sent else (f"delivered (Telegram message {mid})" if mid is not None else "sent")
+    detail = f"summary {shown}; ping " + {True: "sent", False: "FAILED", None: "not configured"}[pinged]
     results.append(res("A6", ok6 if pinged is not None else (True if sent else False), detail))
     if pinged is None and sent:
         results[-1]["detail"] += " (set DAILY_HEALTHCHECK_URL for the off-VM heartbeat)"

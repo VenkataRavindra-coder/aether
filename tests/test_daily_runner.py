@@ -569,3 +569,95 @@ def test_all_green_requires_every_check_to_be_green(tmp_path):
     mixed_off = [ad.res("A1", True, "x"), ad.res("A5", None, "off")]
     assert json.loads(ad.write_evidence(mixed_fail, "abc", tmp_path, now).read_text())["all_green"] is False
     assert json.loads(ad.write_evidence(mixed_off, "abc", tmp_path, now.replace(day=10)).read_text())["all_green"] is False
+
+
+# ---------------------------------------------------------------- Telegram delivery (A6 must not claim what it cannot prove)
+import io
+import urllib.error as _uerr
+
+TOKEN, CHAT = "123456:SECRET-TOKEN-VALUE", "987654321"
+
+
+class FakeReply:
+    def __init__(self, payload):
+        self.payload = payload
+
+    def read(self):
+        return self.payload if isinstance(self.payload, bytes) else json.dumps(self.payload).encode()
+
+
+def opener_returning(payload, seen=None):
+    def _open(req, timeout=None):
+        if seen is not None:
+            seen.append((req.full_url, req.data, timeout))
+        return FakeReply(payload)
+    return _open
+
+
+def test_telegram_send_returns_the_message_id_only_when_telegram_says_ok():
+    seen = []
+    mid = ad.telegram_send("hello", TOKEN, CHAT, opener_returning({"ok": True, "result": {"message_id": 77}}, seen))
+    assert mid == 77
+    url, data, timeout = seen[0]
+    assert url == f"https://api.telegram.org/bot{TOKEN}/sendMessage" and timeout == 15
+    assert b"chat_id=987654321" in data and b"text=hello" in data
+
+
+@pytest.mark.parametrize("payload", [{"ok": False, "description": "Forbidden: bot was blocked"}, {}, [], b"not json", b""])
+def test_a_reply_that_is_not_ok_is_a_failure(payload):
+    with pytest.raises(RuntimeError):
+        ad.telegram_send("hello", TOKEN, CHAT, opener_returning(payload))
+
+
+def test_network_and_http_errors_are_failures_and_never_leak_the_token():
+    def refuse(req, timeout=None):
+        raise _uerr.HTTPError(req.full_url, 401, "Unauthorized", {}, io.BytesIO(b""))
+
+    def down(req, timeout=None):
+        raise OSError(f"cannot reach {req.full_url}")
+    for opener in (refuse, down):
+        with pytest.raises(RuntimeError) as e:
+            ad.telegram_send("hello", TOKEN, CHAT, opener)
+        assert "SECRET-TOKEN-VALUE" not in str(e.value) and "SECRET-TOKEN-VALUE" not in repr(e.value)
+        assert e.value.__cause__ is None and e.value.__suppress_context__ is True
+    with pytest.raises(RuntimeError, match="HTTP 401"):
+        ad.telegram_send("hello", TOKEN, CHAT, refuse)
+
+
+@pytest.mark.parametrize("token,chat", [("", CHAT), (TOKEN, ""), (None, None)])
+def test_missing_credentials_fail_loudly(token, chat):
+    with pytest.raises(RuntimeError, match="not set"):
+        ad.telegram_send("hello", token, chat, opener_returning({"ok": True}))
+
+
+def test_long_messages_are_cut_to_telegrams_limit():
+    seen = []
+    ad.telegram_send("Q" * 10000, TOKEN, CHAT, opener_returning({"ok": True, "result": {"message_id": 1}}, seen))
+    assert seen[0][1].count(b"Q") == ad.TELEGRAM_MAX
+
+
+def test_default_send_reads_the_credentials_from_the_environment(monkeypatch):
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", TOKEN)
+    monkeypatch.setenv("TELEGRAM_CHAT_ID", CHAT)
+    captured = []
+    monkeypatch.setattr(ad, "telegram_send", lambda text, token, chat, **k: (captured.append((text, token, chat)), 5)[1])
+    assert ad.default_send("hi", True) == 5 and captured == [("hi", TOKEN, CHAT)]
+    monkeypatch.delenv("TELEGRAM_BOT_TOKEN")
+    monkeypatch.undo()                                    # use the real telegram_send: no token must fail before any network
+    monkeypatch.delenv("TELEGRAM_BOT_TOKEN", raising=False)
+    with pytest.raises(RuntimeError, match="not set"):
+        ad.default_send("hi", False)
+
+
+def test_a6_names_the_delivered_message_and_fails_when_delivery_fails(tmp_path, monkeypatch):
+    monkeypatch.setenv("DAILY_HEALTHCHECK_URL", "https://hc/daily")
+    code = ad.main(home=tmp_path, checks=[("A1", lambda: ad.res("A1", True, "fine"))],
+                   send=lambda text, alert: 4242, ping_fn=lambda u, f: True)
+    body = json.loads(next((tmp_path / "tests" / "evidence" / "daily").glob("*.json")).read_text())
+    assert code == 0 and "delivered (Telegram message 4242)" in body["results"][-1]["detail"]
+
+    def undeliverable(text, alert):
+        raise RuntimeError("Telegram replied not-ok")
+    code = ad.main(home=tmp_path, checks=[("A1", lambda: ad.res("A1", True, "fine"))],
+                   send=undeliverable, ping_fn=lambda u, f: True)
+    assert code == 1
