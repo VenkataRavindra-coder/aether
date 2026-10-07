@@ -19,6 +19,7 @@ sqlite3 aether_decisions.sqlite ".backup '$WORK/aether_decisions.sqlite'"
 sqlite3 aether-research/research.sqlite ".backup '$WORK/research.sqlite'"
 cp aether_state.json "$WORK/"
 [ -f .aether_risk_state.json ] && cp .aether_risk_state.json "$WORK/"
+[ -f live_risk_ledger.json ] && cp live_risk_ledger.json "$WORK/"
 git rev-parse HEAD > "$WORK/git_commit.txt"
 
 # 2. Verify before trusting it.
