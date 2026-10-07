@@ -1,7 +1,7 @@
 # AETHER Live-Readiness Test Plan
 
 Scope: US ETF engine, micro-live ($50-$100), human approval on entries, crypto live off.
-Status: LOCKED v2.1. Committed to the repo BEFORE any test is run. Criteria may not be edited after results are seen (see section 12 for the only allowed way to amend).
+Status: LOCKED v2.2 (amends v2.1, tag plan-v2.1). Commit to the repo BEFORE running any evidence test. Criteria may not be edited after results are seen (see section 12 for the only allowed way to amend).
 
 ## 0. Rules of the plan
 
@@ -56,7 +56,8 @@ Status: LOCKED v2.1. Committed to the repo BEFORE any test is run. Criteria may 
 | C8 | Limit-price computation: wide spread, zero bid/ask, crossed quote, stale quote | Price within max-deviation of last trade, or no order |
 | C9 | `client_order_id` construction | Deterministic from (date, symbol, side, strategy version); unique across all decisions in replay |
 | C10 | Config drift: change `.env` while running | Takes effect only on restart; config hash logged at startup and on every decision |
-| C11 | Indicator correctness: compare every indicator the strategy uses (SMA, ATR, etc.) against a reference library (pandas-ta or TA-Lib, research env only) over the FULL series of real ETF data (>= 500 bars), calling the real functions used by the US ETF engine in us_strategy.py; plus known-answer tests (clear uptrend -> BUY, flat series -> HOLD, short history -> no signal) | SMA-type indicators: rtol 1e-9. Wilder-smoothed indicators (ATR): rtol 1e-6, compared only after a 200-bar warm-up (about 190 bars is needed at period 14 for the seed difference to fall below 1e-6). Tolerances and warm-up are fixed by this commit. All known-answer cases correct |
+| C11 | Indicator correctness for the US ETF rotation (us_strategy.py has no SMA/ATR): momentum_score matches an exact-arithmetic (Fraction) reference on 50 random series; known-answer cases on target_weights (all-positive, all-negative -> 100% cash ETF, flat -> cash ETF, mixed -> 1/3 cash ETF, ties alphabetical, missing or short history raises, weights sum to 1); plan_orders invariants (never oversell, buys <= cash + proceeds, sells before buys, at-target -> no orders) | tests/test_c_layer.py C11 and plan_orders tests all pass; momentum abs difference <= 1e-12 |
+| C11b | Real-data repeat of C1 and C11: stored real adjusted closes (snapshot from fetch_us_daily, SHA-256 recorded) for EVERY month-start in the backtest sample | Truncated-data signal equals full-data signal at every month-start; momentum matches the exact reference to 1e-12; weights equal the stored backtest signal for that month |
 | C12 | Signal-to-submit timing: measure with `time.monotonic()` (not wall clock) and write to the decision log: engine_delay = (risk check done - signal generated) + (submit - approval received; for exits, approval time = risk check done). Human approval wait is excluded | Engine delay p95 < 60 s and never > 5 min; warning logged at 60 s; every outlier has a root cause; every decision-log row has engine_delay_s |
 
 ## 3. Failure injection (chaos)
@@ -93,6 +94,7 @@ Run on paper account. For each, record: order sent? alert? state correct? recove
 | D7 | Symbol halted / delisted / renamed / ETF closure announced | No order; alert |
 | D8 | Split announced for held ETF | Position and stop levels adjusted or trading halted |
 | D9 | Cash dividend paid on held ETF | Reconciliation explains cash change; no false mismatch alarm |
+| D10 | Signal-path validation failure (stale, bad close, gap, duplicate, spike, short history) | us_cycle places no orders and raises an alert, verified with an injected fake feed; tests/test_data_layer.py (D2-D5) passes |
 
 **3c. Broker and network faults.**
 
@@ -142,19 +144,18 @@ Run on paper account. For each, record: order sent? alert? state correct? recove
 | K2 | Half-day (day after Thanksgiving, Christmas Eve) | Orders respect early close |
 | K3 | DST change weekends (UAE has none; US does) | Schedule still fires at correct ET time |
 | K4 | Market-closed submission | Rejected or queued deliberately, never silently |
-| K5 | After-hours spike: inject a bar/trade stamped 16:05 America/New_York (zoneinfo; EDT date 2026-07-15 and EST date 2027-01-13) at +10% deviation. Each run starts from a fresh deepcopy of the same initial state. Positive control: the same +10% bar at 15:55 ET must update intraday state (proves the test can detect a spike) | Engine logs a drop/bypass message (asserted via caplog); full state, signal, and orders after the 16:05 spike are IDENTICAL to a control run without the spike; no order generated; daily-close logic uses the official close only |
+| K5 | Current-month and partial bars cannot reach the signal: inject a +10% bar dated on the signal day and an absurd bar elsewhere in the current month, on an EDT date (2026-07-15) and an EST date (2027-01-13), plus month-boundary cases (first of month excluded, month-end bar kept). The price used for order limits must also pass the C8 max-deviation check, so a stale after-hours print cannot set a limit | Weights identical to a control run without the injected bars (tests/test_c_layer.py K5); C8 passes |
 
-**3g. Stops and exits (engine-managed, no broker brackets).**
+**3g. Exits and drawdown protection (the US rotation engine has no per-position stops by design; strategy.md must say so).**
 
 | ID | Test | Pass criterion |
 |----|------|----------------|
-| E1 | Stop level hit intraday | Exit submitted exactly once; no approval required |
-| E2 | Price gaps through stop at the open | Exit at market/aggressive limit; slippage logged vs stop |
-| E3 | Stop hit while engine is down, then restart | On restart, detects breached stop and exits before any other action |
-| E4 | Stop hit with HALT file present and Telegram down | Exit still executes |
-| E5 | Exit order rejected or unfilled | Retries with bounded backoff, escalating alert; never silently gives up |
-| E6 | Stop computed on partial-fill qty (with B4) | Exit qty equals held qty, never more |
-| E7 | Stop state survives restart and state rebuild (F3) | Stop levels recovered or recomputed from documented rule; alert if unknown |
+| E1 | Exit never blocked: HALT file present, drawdown kill active, daily caps hit, Telegram down; a closing SELL is sent | Sell reaches the broker; entries stay blocked |
+| E2 | Rotation is all-or-nothing: a plan whose buys would be refused (halt appears mid-plan, per-order cap, daily budget) | No order is submitted (risk_controller.preflight), so sells never liquidate without the replacement buys |
+| E3 | Drawdown kill switch (US_MAX_DRAWDOWN_PCT, default 27): equity paths just below and just above the limit | Entries blocked plus alert at or above the limit, allowed below; exits still work; does not clear itself on unknown data while positions are open |
+| E4 | Engine down across a month-end and first trading day, then restart | The rebalance runs exactly once after restart: not missed, not duplicated |
+| E5 | Crash mid-rotation (some sells filled, buys not yet sent), then restart | Reconciles to Alpaca; completes or halts with an alert; never doubles an order |
+| E6 | strategy.md versus code | strategy.md states the US engine has no per-position stops; every statement about stop-loss or stop-protected positions is corrected or scoped to the crypto engine; doc and code agree |
 
 ## 4. Security red team
 
@@ -184,13 +185,13 @@ Run on paper account. For each, record: order sent? alert? state correct? recove
 | R4 | Rotate every secret (webhook, dashboard, keys, backup SAS) | System back up with no stale credentials |
 | R5 | Backup failure (SAS expired, storage unreachable) | Alert within one backup cycle |
 
-## 6. Soak test (paper, minimum 30 calendar days)
+## 6. Soak test (paper: minimum 30 calendar days AND at least two month-end rebalance executions)
 
 Run continuously with no code changes. Any code change restarts the clock.
 
 - **Daily reconciliation job:** Alpaca positions, orders, fills vs AETHER log. Zero unexplained differences.
 - **Per-fill comparison (primary):** replay each day through the backtest code; compare entry/exit price, slippage, missed trades.
-- **Minimum sample:** if fewer than 10 paper fills occur in 30 days, extend the soak until 10 fills.
+- **Minimum sample:** if fewer than 10 paper fills occur in the soak, extend it until 10 fills. The soak must also contain at least two rebalance executions (the strategy rebalances monthly).
 - **Pass:** average slippage <= modeled cost; zero missed trades without written cause; zero duplicate orders; zero unalerted errors; uptime >= 99% of scheduled cycles (cycles that ran / cycles scheduled).
 - **Secondary:** realized net return within the simulation's 90% confidence band (reported, low statistical power at this sample size).
 - **Weekly:** unannounced drill (random fault from section 3, chosen by a script, not by you).
@@ -204,7 +205,7 @@ Once per week during soak, a script picks one scenario from sections 3-5 and tri
 | Stage | Size | Duration | Advance only if |
 |-------|------|----------|-----------------|
 | L0 | $0 (live account funded, orders disabled) | 1 week | Live reconciliation job clean; heartbeat (F10) live |
-| L1 | $50-$100, one position | >= 20 closed trades | Fills match paper within tolerance; zero incidents |
+| L1 | $50-$100 total across the full rotation (up to 3 ETFs, fractional) | >= 20 closed trades (expect well over a year at monthly turnover; S18 must report the backtest's closed trades per month so the duration is known before L1) | Fills match paper within tolerance; zero incidents |
 | L2 | 2x | >= 20 more trades | Same, plus drawdown within limits |
 | L3 | Further steps | Per strategy.md | Each step needs written review |
 
@@ -215,7 +216,7 @@ Once per week during soak, a script picks one scenario from sections 3-5 and tri
 ## 9. Kill criteria (fixed now, not later)
 
 Halt live entries immediately and require written review if ANY occur:
-- Drawdown > 2x out-of-sample worst (existing retirement rule), or PF < 1.0 over last 20 closed trades (thresholds confirmed or amended by S19 before L1).
+- Drawdown > 2x out-of-sample worst (-27%): automated entry block by the drawdown kill switch (E3). PF < 1.0 over the last 20 closed trades: manual month-end review per strategy.md (S19 confirms or amends the threshold before L1). Either one requires written review before entries resume.
 - Any duplicate order, wrong-account order, or order outside limits.
 - Any reconciliation difference unresolved after one cycle.
 - Realized slippage > 2x modeled over 20 trades.
@@ -227,11 +228,11 @@ Halt live entries immediately and require written review if ANY occur:
 | Layer | Items | Required |
 |-------|-------|----------|
 | 1 Strategy truth | S1-S20 (incl. S4b) | all |
-| 2 Code correctness | C1-C12 | 12/12 |
+| 2 Code correctness | C1-C12 (incl. C11b) | 13/13 |
 | 3 Failure injection | F, D, B, T, M, K, E | all |
 | 4 Security | X1-X13 | 13/13 |
 | 5 Recovery | R1-R5 | 5/5 |
-| 6 Soak | 30 days and >= 10 fills, criteria met | yes |
+| 6 Soak | 30 days, two month-end rebalances, >= 10 fills, criteria met | yes |
 | 7 Game days | all passed | yes |
 
 NO-GO unless every row is satisfied and signed with evidence links.
@@ -247,6 +248,7 @@ NO-GO unless every row is satisfied and signed with evidence links.
 - The plan may be changed only by a commit made BEFORE the next test run, with a written reason in the changelog below.
 - Any amendment that touches a layer resets that layer: all its items rerun from scratch.
 - Loosening a criterion after seeing a failing result is not allowed under any wording.
+- Development runs (tests run while writing or fixing code) are not evidence. Only runs of committed test scripts at a clean commit, with stored evidence per rule 0.3, count.
 
 ### Changelog
 
@@ -257,3 +259,4 @@ NO-GO unless every row is satisfied and signed with evidence links.
 | | | v2.1 spec clarifications: C11 full-series comparison, 1e-9 SMA tolerance, ATR warm-up of 5 x period, real engine functions; K5 timezone-safe (zoneinfo, EST and EDT) with control-run identity check; C12 monotonic clock, approval wait excluded, 60 s warning (not 5 s), delay recorded in decision log | Pasted specs had loose tolerance, wall-clock/DST errors, and would have counted approval wait |
 | | | v2.1 patch 2: C11 warm-up set to 200 bars on >= 500-bar series (5 x period was too short for 1e-6), ATR rtol 1e-6, real ETF data and real us_strategy.py functions required; K5 adds fresh-state-per-run, EST and EDT dates, 15:55 positive control, caplog drop-message assertion | Warm-up math error; K5 test could not detect a spike or prove isolation |
 | 2026-10-07 | 2da6fe1b19eb58cbda8dda3134426f682d882cb0 (tag plan-v2.1) | v2.1 locked: this commit fixed the criteria; earlier changelog rows are drafts of the same file | Commit and tag pushed to origin before any test run |
+| 2026-10-07 | (v2.2 commit and tag plan-v2.2: fill in after committing) | v2.2: C11 retargeted to the real monthly-rotation code (no SMA/ATR exist); C11b real-data repeat of C1/C11; K5 retargeted to current-month and partial bars (same EST/EDT dates); 3g retargeted from stops to exits, drawdown kill and rotation safety (E1-E6); D10 added; soak must span two month-end rebalances; L1 sized as the full rotation; PF rule is a manual month-end review per strategy.md and the drawdown rule is automated; section 12 states development runs are not evidence | Plan assumed a daily trend strategy with stops; reading us_strategy.py, strategy.md and fetch_us_daily showed otherwise. No evidence test had been run. Development runs are in the commit history (d1eac5f, 15540b4). The only criterion removed is the SMA/ATR check, which cannot apply to this strategy. |
