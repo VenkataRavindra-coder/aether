@@ -1351,14 +1351,20 @@ def us_signals(fetch_daily, today_str: str) -> dict:
     closes, last_dates = {}, []
     for sym in us_strategy.UNIVERSE:
         bars = us_strategy.bars_before_month(daily.get(sym, []), today_str)
+        us_strategy.validate_bars(sym, bars)
         closes[sym] = [b["c"] for b in bars]
         if bars:
             last_dates.append(bars[-1]["d"])
     weights, scores, selected = us_strategy.target_weights(closes)
     signal_date = min(last_dates)
-    prev_month = (datetime.strptime(today_str[:7] + "-01", "%Y-%m-%d") - timedelta(days=1)).strftime("%Y-%m")
+    month_end = datetime.strptime(today_str[:7] + "-01", "%Y-%m-%d") - timedelta(days=1)
+    prev_month = month_end.strftime("%Y-%m")
     if signal_date[:7] != prev_month:
         raise ValueError(f"stale data: newest completed-month bar is {signal_date}, expected a date in {prev_month}")
+    lag_days = (month_end - datetime.strptime(signal_date, "%Y-%m-%d")).days
+    if lag_days > us_strategy.MAX_STALENESS_DAYS:
+        raise ValueError(f"stale data: newest completed-month bar is {signal_date}, {lag_days} days before "
+                         f"month-end {month_end:%Y-%m-%d} (limit {us_strategy.MAX_STALENESS_DAYS})")
     return {"weights": weights, "scores": scores, "selected": selected, "signal_date": signal_date}
 
 

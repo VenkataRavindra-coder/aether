@@ -6,6 +6,9 @@ score is not positive is replaced by short-term Treasuries (SHY). Signals use cl
 completed month-end; execution happens on the next trading day.
 """
 
+import datetime as _dt
+import math
+
 RISK_ETFS = ["SPY", "QQQ", "IWM", "EFA", "EEM", "IEF", "TLT", "GLD", "DBC", "VNQ"]
 CASH_ETF = "SHY"
 UNIVERSE = RISK_ETFS + [CASH_ETF]
@@ -25,6 +28,8 @@ def target_weights(closes_by_symbol):
     Returns (weights, scores, selected). Raises ValueError if history is insufficient."""
     scores = {}
     for s in RISK_ETFS:
+        if not all(_good_close(c) for c in closes_by_symbol.get(s, [])):
+            raise ValueError(f"non-finite or non-positive close for {s}")
         sc = momentum_score(closes_by_symbol.get(s, []))
         if sc is None:
             raise ValueError(f"insufficient history for {s} (need {MIN_BARS} closes)")
@@ -36,6 +41,37 @@ def target_weights(closes_by_symbol):
         dest = s if scores[s] > 0 else CASH_ETF
         weights[dest] = weights.get(dest, 0.0) + 1.0 / TOP_N
     return weights, scores, selected
+
+
+# ---- Data-quality limits (plan D2/D3/D4/D5). Fixed before any test run; change only via plan section 12.
+MAX_GAP_DAYS = 6          # longest normal gap between consecutive bars (long holiday weekends are <= 4)
+MAX_DAILY_MOVE = 0.40     # |close / previous close - 1| above this is treated as a bad tick
+MAX_STALENESS_DAYS = 5    # newest completed-month bar must be within this many days of month-end
+
+
+def _good_close(c):
+    return isinstance(c, (int, float)) and not isinstance(c, bool) and math.isfinite(c) and c > 0
+
+
+def validate_bars(symbol, bars):
+    """bars: [{'d': 'YYYY-MM-DD', 'c': close}] oldest first. Raises ValueError on anything untrustworthy:
+    non-finite / non-positive / non-numeric close, duplicate or out-of-order dates, a gap longer than
+    MAX_GAP_DAYS, or a daily move larger than MAX_DAILY_MOVE. Fail closed: the caller must not trade."""
+    prev_d = prev_c = None
+    for b in bars:
+        c = b["c"]
+        if not _good_close(c):
+            raise ValueError(f"{symbol}: bad close {c!r} on {b['d']}")
+        d = _dt.date.fromisoformat(b["d"])
+        if prev_d is not None:
+            if d <= prev_d:
+                raise ValueError(f"{symbol}: dates not strictly increasing at {b['d']}")
+            if (d - prev_d).days > MAX_GAP_DAYS:
+                raise ValueError(f"{symbol}: {(d - prev_d).days}-day gap before {b['d']}")
+            move = c / prev_c - 1.0
+            if abs(move) > MAX_DAILY_MOVE:
+                raise ValueError(f"{symbol}: {move:+.0%} move on {b['d']} exceeds {MAX_DAILY_MOVE:.0%}")
+        prev_d, prev_c = d, c
 
 
 def month_key(date_str):
