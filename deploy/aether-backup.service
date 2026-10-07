@@ -5,4 +5,5 @@ Description=AETHER nightly backup (state, decision log, research trials)
 Type=oneshot
 User=ratelark
 WorkingDirectory=/home/ratelark/ratelark
+EnvironmentFile=/home/ratelark/ratelark/.env
 ExecStart=/home/ratelark/ratelark/backup.sh

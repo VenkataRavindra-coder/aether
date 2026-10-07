@@ -10,6 +10,7 @@ StartLimitIntervalSec=0
 Type=notify
 User=ratelark
 WorkingDirectory=/home/ratelark/ratelark
+EnvironmentFile=/home/ratelark/ratelark/.env
 Environment=PYTHONUNBUFFERED=1
 ExecStart=/home/ratelark/ratelark/.venv/bin/python3 -m uvicorn aether_engine:app --host 127.0.0.1 --port 8000 --no-access-log
 Restart=always
