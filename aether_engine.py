@@ -1415,8 +1415,12 @@ def _us_execute_paper(orders, prices, cash, holdings_before=None, mkey=""):
     for the rest of the day."""
     results = []
     book = dict(holdings_before or {})
+    sell_failed = False  # a SELL that did not fully fill: the BUYs were sized on its proceeds
     for o in orders:
         sym = o["symbol"]
+        if o["side"] == "BUY" and sell_failed:
+            results.append({**o, "state": "skipped_after_failed_sell"})
+            continue
         coid = f"us-{mkey}-{sym}-{o['side']}"[:48] if mkey else None
         if o["side"] == "SELL":
             r = us_broker.submit_market_order(sym, "SELL", qty=o["qty"], client_order_id=coid)
@@ -1424,6 +1428,8 @@ def _us_execute_paper(orders, prices, cash, holdings_before=None, mkey=""):
             r = us_broker.submit_market_order(sym, "BUY", notional=o["notional"], client_order_id=coid)
         if r.get("status") != "submitted":
             results.append({**o, "state": "error", "detail": r.get("message")})
+            if o["side"] == "SELL":
+                sell_failed = True
             if o["side"] == "BUY" and not us_broker.paper and not str(r.get("message", "")).startswith("risk:"):
                 risk_controller.release_live_buy(o["notional"])
             continue
@@ -1440,6 +1446,8 @@ def _us_execute_paper(orders, prices, cash, holdings_before=None, mkey=""):
                 risk_controller.release_live_buy(o["notional"] - actual)
         book[sym] = book.get(sym, 0.0) + (qty if o["side"] == "BUY" else -qty)
         state = f["state"] if f["state"] in _US_FINAL_STATES else "unreconciled"
+        if o["side"] == "SELL" and state != "filled":
+            sell_failed = True
         results.append({**o, "state": state, "filled_qty": qty, "avg_price": px, "order_id": r["order_id"]})
         if state == "unreconciled":
             for rest in orders[orders.index(o) + 1:]:
@@ -1845,7 +1853,8 @@ def _us_set_kill(killed: bool, reason: str) -> bool:
     risk_controller.set_kill("us", killed)
     if killed and was is not True:
         notify.send(f"[ALERT] US kill switch ACTIVE: {reason}. New US entries and rotations are "
-                    f"blocked until it clears; exits still work.", key="us-kill", cooldown=6 * 3600)
+                    f"blocked until it clears. Nothing sells automatically: review the positions "
+                    f"and close by hand if needed.", key="us-kill", cooldown=6 * 3600)
     if was is not None and killed != was:
         decision_log.log("us", "kill_switch", decision="active" if killed else "cleared",
                          mode=_us_mode(), reason=reason)
@@ -1860,6 +1869,11 @@ def _us_evaluate_kill_switch(us: dict, today: str) -> bool:
     previous state is left untouched rather than cleared (the start-up state is None, which
     blocks entries until an engine reports).
     """
+    if us.get("dd_latched"):
+        # A peak-drawdown trip is latched (strategy.md: re-enable only after a written review).
+        # Clearing is a manual step: stop the service, review, set us.dd_latched to null AND
+        # re-baseline us.equity_history, or the same peak trips it again on the next cycle.
+        return _us_set_kill(True, f"drawdown kill latched: {us['dd_latched']} (review required)")
     holdings = {s: q for s, q in (us.get("holdings") or {}).items() if q > 0}
     prices = us.get("last_prices") or {}
     cash = us.get("cash")
@@ -1901,8 +1915,17 @@ def _us_evaluate_kill_switch(us: dict, today: str) -> bool:
         return _us_set_kill(True, f"down {daily_loss * 100:.2f}% today "
                                   f"(limit {US_MAX_DAILY_LOSS * 100:g}%)")
     if drawdown >= US_MAX_DRAWDOWN:
-        return _us_set_kill(True, f"{drawdown * 100:.2f}% below peak equity "
-                                  f"(limit {US_MAX_DRAWDOWN * 100:g}%)")
+        reason = (f"{drawdown * 100:.2f}% below peak equity "
+                  f"(limit {US_MAX_DRAWDOWN * 100:g}%)")
+        us["dd_latched"] = reason
+        try:
+            with STATE_LOCK:
+                st = load_state()
+                _us_state(st)["dd_latched"] = reason
+                save_state(st)
+        except Exception as e:  # still block entries this cycle; the next cycle retries the save
+            logger.error(f"Could not persist the US drawdown latch: {type(e).__name__}: {str(e)[:120]}")
+        return _us_set_kill(True, reason)
     return _us_set_kill(False, f"ok (today {daily_loss * 100:+.2f}%, from peak -{drawdown * 100:.2f}%)")
 
 
