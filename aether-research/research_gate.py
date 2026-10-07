@@ -129,18 +129,27 @@ def pbo_cscv(matrix, n_blocks=16, max_combos=20000, seed=0):
 
 
 # ------------------------------------------------------------------ resampling (S8, S10, S11)
-def block_bootstrap_sharpes(r, block=21, draws=5000, seed=0, periods=PERIODS):
-    """Annualised Sharpe of `draws` moving-block-bootstrap resamples of `r` (S10)."""
+def block_bootstrap_sharpes(r, block=21, draws=5000, seed=0, periods=PERIODS, chunk=250):
+    """Annualised Sharpe of `draws` moving-block-bootstrap resamples of `r` (S10).
+
+    The block start positions for ALL draws are generated first, so the result depends only on the seed, never on
+    `chunk`. The resamples are then built `chunk` at a time, which keeps memory small (about 35 MB for 5,000 draws
+    over 5,000 days instead of several hundred MB): this runs on the machine that also runs the trading engine."""
     a = _arr(r)
     if a.size < 2 * block:
         raise ValueError("series too short for this block length")
     rng = np.random.default_rng(seed)
     n_blocks = math.ceil(a.size / block)
     starts = rng.integers(0, a.size - block + 1, size=(draws, n_blocks))
-    idx = (starts[:, :, None] + np.arange(block)[None, None, :]).reshape(draws, -1)[:, :a.size]
-    s = a[idx]
-    sd = s.std(axis=1, ddof=1)
-    return np.where(sd > SD_FLOOR, s.mean(axis=1) / np.where(sd > SD_FLOOR, sd, 1.0), 0.0) * math.sqrt(periods)
+    offs = np.arange(block)
+    out = np.empty(draws)
+    for lo in range(0, draws, chunk):
+        st = starts[lo:lo + chunk]
+        idx = (st[:, :, None] + offs[None, None, :]).reshape(len(st), -1)[:, :a.size]
+        s = a[idx]
+        sd = s.std(axis=1, ddof=1)
+        out[lo:lo + chunk] = np.where(sd > SD_FLOOR, s.mean(axis=1) / np.where(sd > SD_FLOOR, sd, 1.0), 0.0)
+    return out * math.sqrt(periods)
 
 
 def mc_max_drawdown(period_returns, draws=10000, seed=0):

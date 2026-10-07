@@ -352,3 +352,42 @@ def test_pf_windows_edge_cases():
     assert a == rg.pf_below_one_frequency(np.random.default_rng(21).normal(0, 0.05, 100), draws=300, seed=4)
     with pytest.raises(ValueError):
         rg.pf_below_one_frequency([0.1] * 5, window=20)
+
+
+# ---------------------------------------------------------------- the bootstrap is chunked for memory, not for results
+def _one_shot_bootstrap(r, block, draws, seed, periods=252):
+    """The original, memory-hungry implementation, kept here as the reference the chunked one must equal exactly."""
+    a = np.asarray(r, dtype=float)
+    rng = np.random.default_rng(seed)
+    n_blocks = math.ceil(a.size / block)
+    starts = rng.integers(0, a.size - block + 1, size=(draws, n_blocks))
+    idx = (starts[:, :, None] + np.arange(block)[None, None, :]).reshape(draws, -1)[:, :a.size]
+    s = a[idx]
+    sd = s.std(axis=1, ddof=1)
+    return np.where(sd > rg.SD_FLOOR, s.mean(axis=1) / np.where(sd > rg.SD_FLOOR, sd, 1.0), 0.0) * math.sqrt(periods)
+
+
+@pytest.mark.parametrize("n,block,draws,chunk", [(500, 21, 100, 250), (503, 21, 100, 7), (1000, 5, 64, 1),
+                                                 (420, 21, 333, 100), (2000, 42, 50, 250)])
+def test_chunked_bootstrap_equals_the_one_shot_reference_exactly(n, block, draws, chunk):
+    r = noise(n, 1, 50)[:, 0]
+    assert np.array_equal(rg.block_bootstrap_sharpes(r, block, draws, seed=3, chunk=chunk),
+                          _one_shot_bootstrap(r, block, draws, 3))
+
+
+def test_bootstrap_result_does_not_depend_on_the_chunk_size():
+    r = noise(900, 1, 51)[:, 0]
+    ref = rg.block_bootstrap_sharpes(r, 21, 200, seed=4, chunk=250)
+    for chunk in (1, 3, 50, 199, 200, 5000):
+        assert np.array_equal(ref, rg.block_bootstrap_sharpes(r, 21, 200, seed=4, chunk=chunk))
+
+
+def test_the_pre_registered_bootstrap_fits_in_a_small_amount_of_memory():
+    """5,000 draws over about 5,000 days is the S10 setting on the long history. It must not allocate hundreds of MB."""
+    import tracemalloc
+    r = noise(5000, 1, 52)[:, 0]
+    tracemalloc.start()
+    rg.block_bootstrap_sharpes(r, 21, 5000, seed=1)
+    _, peak = tracemalloc.get_traced_memory()
+    tracemalloc.stop()
+    assert peak < 120 * 1024 * 1024, f"peak {peak / 1e6:.0f} MB"

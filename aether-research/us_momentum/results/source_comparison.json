@@ -1,0 +1,82 @@
+{
+  "returns": {
+    "common_dates": 2697,
+    "first": "2016-01-04",
+    "last": "2026-09-24",
+    "per_symbol": {
+      "SPY": {
+        "median_bps": 0.151,
+        "p99_bps": 11.68,
+        "max_bps": 268.8
+      },
+      "QQQ": {
+        "median_bps": 0.099,
+        "p99_bps": 2.64,
+        "max_bps": 18.0
+      },
+      "IWM": {
+        "median_bps": 0.317,
+        "p99_bps": 13.51,
+        "max_bps": 140.4
+      },
+      "EFA": {
+        "median_bps": 0.574,
+        "p99_bps": 6.53,
+        "max_bps": 216.3
+      },
+      "EEM": {
+        "median_bps": 0.891,
+        "p99_bps": 10.25,
+        "max_bps": 126.1
+      },
+      "IEF": {
+        "median_bps": 0.322,
+        "p99_bps": 1.27,
+        "max_bps": 14.6
+      },
+      "TLT": {
+        "median_bps": 0.309,
+        "p99_bps": 3.35,
+        "max_bps": 17.7
+      },
+      "GLD": {
+        "median_bps": 0.0,
+        "p99_bps": 4.95,
+        "max_bps": 321.0
+      },
+      "DBC": {
+        "median_bps": 1.534,
+        "p99_bps": 6.94,
+        "max_bps": 139.5
+      },
+      "VNQ": {
+        "median_bps": 0.493,
+        "p99_bps": 8.48,
+        "max_bps": 957.4
+      },
+      "SHY": {
+        "median_bps": 0.363,
+        "p99_bps": 1.28,
+        "max_bps": 6.7
+      }
+    },
+    "worst_median_bps": 1.534
+  },
+  "signals": {
+    "months": 116,
+    "agree": 113,
+    "agreement": 0.9741,
+    "differing_months": [
+      "2017-10",
+      "2021-05",
+      "2026-09"
+    ]
+  },
+  "verdict": {
+    "returns_ok": true,
+    "signals_ok": true,
+    "pass": true
+  },
+  "alpaca_sha256": "4ce1f6f07e7507dc",
+  "yahoo_sha256": "e9524a2a60e1c609"
+}
