@@ -1,0 +1,10 @@
+[Unit]
+Description=Run AETHER daily automation at 04:30 UTC (after the 03:15 UTC backup)
+
+[Timer]
+OnCalendar=*-*-* 04:30:00 UTC
+Persistent=true
+RandomizedDelaySec=120
+
+[Install]
+WantedBy=timers.target
