@@ -155,14 +155,30 @@ def check_a4(home=HOME, run=run):
                f"clean; running code {cv} matches HEAD {head[:7]}")
 
 
-def check_a5(enabled=None, run=run, home=HOME):
-    on = enabled if enabled is not None else os.environ.get("AETHER_DAILY_STRESS") == "1"
-    if not on:
-        return res("A5", None, "NOT ENABLED (set AETHER_DAILY_STRESS=1 after the stress script is reviewed)")
-    py = pathlib.Path(home) / "venv" / "bin" / "python3"
-    rc, out = run([py, "stress_test.py"], timeout=1200, cwd=home)
-    tail = [ln for ln in out.strip().splitlines() if ln.strip()][-1:] or [""]
-    return res("A5", rc == 0, f"rc={rc} {tail[0][:80]}")
+STRESS_MAX_AGE_H = 96  # covers a long weekend: the stress timer runs on weekdays
+
+
+def check_a5(home=HOME, now=None):
+    """The stress test is run by aether-stress.timer (weekdays, US market hours) through run_stress.sh, which
+    records .stress_last_run.json. This check only reads that record; it places no order itself."""
+    path = pathlib.Path(home) / ".stress_last_run.json"
+    if not path.exists():
+        return res("A5", None, "NO STRESS RUN RECORDED YET (enable aether-stress.timer)")
+    try:
+        body = json.loads(path.read_text())
+        rc = int(body["rc"])
+        when = datetime.datetime.strptime(body["utc"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=datetime.timezone.utc)
+    except Exception as e:  # noqa: BLE001
+        return res("A5", False, f"stress status file unreadable: {type(e).__name__}")
+    now = now or datetime.datetime.now(datetime.timezone.utc)
+    age_h = (now - when).total_seconds() / 3600
+    if age_h < -1:
+        return res("A5", False, "stress status timestamp is in the future (clock problem?)")
+    if rc != 0:
+        return res("A5", False, f"last stress run failed (rc={rc}) {age_h:.0f} h ago")
+    if age_h > STRESS_MAX_AGE_H:
+        return res("A5", False, f"last stress run was {age_h:.0f} h ago (limit {STRESS_MAX_AGE_H})")
+    return res("A5", True, f"last stress run passed {age_h:.0f} h ago")
 
 
 # ------------------------------------------------------------------ 11b: daily recovery checks

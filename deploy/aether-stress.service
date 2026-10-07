@@ -1,0 +1,11 @@
+[Unit]
+Description=AETHER stress test on the dedicated stress account (paper, weekdays)
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=azureuser
+WorkingDirectory=/home/azureuser
+ExecStart=/bin/bash /home/azureuser/run_stress.sh
+TimeoutStartSec=1500
+Nice=10

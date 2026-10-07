@@ -1290,6 +1290,7 @@ US_RETRY_SECONDS = 900
 # out-of-sample worst -> retire at -27%), turning that manual monthly rule into an automatic one.
 US_MAX_DAILY_LOSS = _env_float("US_MAX_DAILY_LOSS_PCT", "3") / 100
 US_MAX_DRAWDOWN = _env_float("US_MAX_DRAWDOWN_PCT", "27") / 100
+US_MAX_PRICE_DEV = _env_float("US_MAX_PRICE_DEV_PCT", "10") / 100
 NY = ZoneInfo("America/New_York")
 UAE_TZ = timezone(timedelta(hours=4))
 US_STOP = threading.Event()
@@ -1365,7 +1366,13 @@ def us_signals(fetch_daily, today_str: str) -> dict:
     if lag_days > us_strategy.MAX_STALENESS_DAYS:
         raise ValueError(f"stale data: newest completed-month bar is {signal_date}, {lag_days} days before "
                          f"month-end {month_end:%Y-%m-%d} (limit {us_strategy.MAX_STALENESS_DAYS})")
-    return {"weights": weights, "scores": scores, "selected": selected, "signal_date": signal_date}
+    latest_close = {}
+    for sym in us_strategy.UNIVERSE:
+        prior = [b for b in daily.get(sym, []) if b["d"] < today_str]  # today's partial bar is not a close
+        if prior:
+            latest_close[sym] = prior[-1]["c"]
+    return {"weights": weights, "scores": scores, "selected": selected, "signal_date": signal_date,
+            "latest_close": latest_close}
 
 
 def _us_holdings(us: dict):
@@ -1512,6 +1519,14 @@ def _us_rebalance(us: dict, today: str, mkey: str, now_et: datetime, fetch_daily
     if missing:
         US_STATUS["note"] = f"no rebalance: no price for {missing}"
         notify.send(f"[ALERT] US ETF engine has no live price for {', '.join(missing)}; skipping.", key="us-price", cooldown=6 * 3600)
+        return
+    problems = us_strategy.price_sanity({x: prices[x] for x in symbols}, sig.get("latest_close") or {}, US_MAX_PRICE_DEV)
+    if problems:
+        US_STATUS["note"] = "no rebalance: price sanity check failed"
+        notify.send(f"[ALERT] US rebalance skipped, price sanity check failed: {'; '.join(problems)[:300]}",
+                    key="us-price-sanity", cooldown=6 * 3600)
+        decision_log.log("us", "blocked", mode=_us_mode(), decision="price_sanity",
+                         reason="; ".join(problems)[:300], month=mkey)
         return
 
     if US_LIVE:

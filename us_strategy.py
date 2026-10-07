@@ -74,6 +74,28 @@ def validate_bars(symbol, bars):
         prev_d, prev_c = d, c
 
 
+MAX_PRICE_DEV = 0.10  # default for US_MAX_PRICE_DEV_PCT: latest price vs last daily close
+
+
+def price_sanity(prices, reference, max_dev=MAX_PRICE_DEV):
+    """prices, reference: {symbol: price}. Returns a list of problems (empty list = fine). Any unusable price,
+    missing reference close, or deviation above max_dev is a problem: the caller must not trade."""
+    problems = []
+    for s in sorted(prices):
+        p = prices[s]
+        if not _good_close(p):
+            problems.append(f"{s}: unusable price {p!r}")
+            continue
+        ref = reference.get(s)
+        if not _good_close(ref):
+            problems.append(f"{s}: no valid reference close")
+            continue
+        dev = p / ref - 1.0
+        if abs(dev) > max_dev:
+            problems.append(f"{s}: price {p:g} is {dev:+.1%} from last close {ref:g} (limit {max_dev:.0%})")
+    return problems
+
+
 def month_key(date_str):
     return date_str[:7]
 

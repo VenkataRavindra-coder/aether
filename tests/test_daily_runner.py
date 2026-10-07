@@ -403,15 +403,49 @@ def test_a4_no_code_version_fails(tmp_path):
     assert ad.check_a4(tmp_path)["ok"] is False
 
 
-# ---------------------------------------------------------------- A5
-def test_a5_not_enabled_is_neither_pass_nor_fail():
-    r = ad.check_a5(enabled=False)
-    assert r["ok"] is None and "NOT ENABLED" in r["detail"]
+# ---------------------------------------------------------------- A5 (reads the stress timer's record)
+NOW = datetime.datetime(2026, 10, 7, 12, 0, 0, tzinfo=datetime.timezone.utc)
 
 
-def test_a5_enabled_runs_the_script(tmp_path):
-    assert ad.check_a5(True, fake_run([("stress_test", (0, "ok"))]), tmp_path)["ok"] is True
-    assert ad.check_a5(True, fake_run([("stress_test", (1, "boom"))]), tmp_path)["ok"] is False
+def stress_record(home, rc, hours_ago, raw=None):
+    when = (NOW - datetime.timedelta(hours=hours_ago)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    (pathlib.Path(home) / ".stress_last_run.json").write_text(raw if raw is not None else json.dumps({"rc": rc, "utc": when}))
+
+
+def test_a5_no_record_is_neither_pass_nor_fail(tmp_path):
+    r = ad.check_a5(tmp_path, NOW)
+    assert r["ok"] is None and "NO STRESS RUN" in r["detail"]
+
+
+def test_a5_recent_success_passes(tmp_path):
+    stress_record(tmp_path, 0, 20)
+    assert ad.check_a5(tmp_path, NOW)["ok"] is True
+
+
+def test_a5_failed_run_fails(tmp_path):
+    stress_record(tmp_path, 1, 2)
+    r = ad.check_a5(tmp_path, NOW)
+    assert r["ok"] is False and "failed" in r["detail"]
+
+
+def test_a5_old_success_fails_but_a_long_weekend_does_not(tmp_path):
+    stress_record(tmp_path, 0, 90)   # Friday run seen on Tuesday morning
+    assert ad.check_a5(tmp_path, NOW)["ok"] is True
+    stress_record(tmp_path, 0, 100)
+    r = ad.check_a5(tmp_path, NOW)
+    assert r["ok"] is False and "limit" in r["detail"]
+
+
+@pytest.mark.parametrize("raw", ["{not json", "{}", '{"rc": "x", "utc": "2026-10-07T00:00:00Z"}',
+                                 '{"rc": 0, "utc": "yesterday"}'])
+def test_a5_unreadable_record_fails(tmp_path, raw):
+    stress_record(tmp_path, 0, 1, raw=raw)
+    assert ad.check_a5(tmp_path, NOW)["ok"] is False
+
+
+def test_a5_timestamp_in_the_future_fails(tmp_path):
+    stress_record(tmp_path, 0, -5)
+    assert ad.check_a5(tmp_path, NOW)["ok"] is False
 
 
 # ---------------------------------------------------------------- orchestration
