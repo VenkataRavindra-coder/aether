@@ -1,7 +1,7 @@
 # AETHER Live-Readiness Test Plan
 
 Scope: US ETF engine, micro-live ($50-$100), human approval on entries, crypto live off.
-Status: LOCKED v2.4 (amends v2.3, tag plan-v2.3). Commit to the repo BEFORE running any evidence test. Criteria may not be edited after results are seen (see section 12 for the only allowed way to amend).
+Status: LOCKED v2.5 (amends v2.4, tag plan-v2.4). Commit to the repo BEFORE running any evidence test. Criteria may not be edited after results are seen (see section 12 for the only allowed way to amend).
 
 ## 0. Rules of the plan
 
@@ -53,7 +53,7 @@ Status: LOCKED v2.4 (amends v2.3, tag plan-v2.3). Commit to the repo BEFORE runn
 | C5 | Fuzz order inputs: qty 0, negative, NaN, inf, huge, wrong symbol, wrong side, below minimum notional, excess decimal places | All rejected, never crash into submitting |
 | C6 | Replay test: feed 1 year of recorded bars through the live code path | Decisions match backtest 100%, or every mismatch has a written root cause |
 | C7 | Time handling: naive vs aware datetimes, UTC vs ET, DST, leap day | No order on wrong-day signals |
-| C8 | Limit-price computation: wide spread, zero bid/ask, crossed quote, stale quote | Price within max-deviation of last trade, or no order |
+| C8 | Price-sanity guard for the dollar-sized market orders (the engine sends no limit orders): the latest IEX price of every symbol the rebalance needs versus its last daily close, limit US_MAX_PRICE_DEV_PCT (default 10): normal prices, a +/-25% spike, zero, NaN, negative, a missing price, a missing reference | A deviation above the limit or any unusable price skips the rebalance, sends an alert, logs decision=price_sanity and places no order (tests/test_price_sanity.py) |
 | C9 | `client_order_id` construction | Deterministic from (date, symbol, side, strategy version); unique across all decisions in replay |
 | C10 | Config drift: change `.env` while running | Takes effect only on restart; config hash logged at startup and on every decision |
 | C11 | Indicator correctness for the US ETF rotation (us_strategy.py has no SMA/ATR): momentum_score matches an exact-arithmetic (Fraction) reference on 50 random series; known-answer cases on target_weights (all-positive, all-negative -> 100% cash ETF, flat -> cash ETF, mixed -> 1/3 cash ETF, ties alphabetical, missing or short history raises, weights sum to 1); plan_orders invariants (never oversell, buys <= cash + proceeds, sells before buys, at-target -> no orders) | tests/test_c_layer.py C11 and plan_orders tests all pass; momentum abs difference <= 1e-12 |
@@ -90,7 +90,7 @@ Run on paper account. For each, record: order sent? alert? state correct? recove
 | D3 | Bad tick: price 0, NaN, negative, +/-10x spike | Rejected, alert, no order |
 | D4 | Missing bar in middle of series | Detected; no signal computed on gapped data |
 | D5 | Duplicate / out-of-order bars | Deduplicated or rejected |
-| D6 | IEX vs consolidated divergence injected | Limit orders protected by max-deviation check |
+| D6 | The IEX latest price diverges from the daily-bar close (bad print, stale pre-market trade) | The C8 guard blocks the rebalance with an alert; no order is sent |
 | D7 | Symbol halted / delisted / renamed / ETF closure announced | No order; alert |
 | D8 | Split announced for held ETF | Position and stop levels adjusted or trading halted |
 | D9 | Cash dividend paid on held ETF | Reconciliation explains cash change; no false mismatch alarm |
@@ -105,7 +105,7 @@ Run on paper account. For each, record: order sent? alert? state correct? recove
 | B2 | Timeout AFTER order accepted (ack lost) | Engine queries order by client_order_id before retrying |
 | B3 | Order rejected (insufficient settled cash, PDT, fractional rule, market closed) | Logged, alerted, no retry storm |
 | B4 | Partial fill, then cancel | Position/stop sized to actual filled qty |
-| B5 | Limit order never fills; day order expires overnight | Cancel after timeout; no orphan open orders next session |
+| B5 | A market order is not filled before the poll timeout, or a DAY order expires | Cancelled and re-read; an order that still cannot be reconciled freezes the engine with an alert; no orphan open orders next session |
 | B6 | Websocket/stream drop | Falls back to polling or halts |
 | B7 | Broker returns unexpected schema | Fails closed, does not crash into default values |
 | B8 | DNS failure / full network loss for 10 min | Halts entries; resumes safely |
@@ -116,14 +116,14 @@ Run on paper account. For each, record: order sent? alert? state correct? recove
 | ID | Test | Pass criterion |
 |----|------|----------------|
 | T1 | Telegram down | No approval -> no ENTRY; queued approvals expire; exits still execute |
-| T2 | Approval replay (same message tapped twice, or old approval reused) | Single use; expired after N minutes |
+| T2 | Approval replay (the same /approve tapped twice, an old approval reused, an approval for another day) | Single use: once USED, a replay changes nothing and the plan needs a new proposal; valid only on the same ET day (tests/test_approval.py) |
 | T3 | Approval from wrong chat ID | Ignored |
-| T4 | Approval arrives after price moved past tolerance | Order re-checked against current price, rejected if outside |
+| T4 | The plan at execution time is no longer inside the approved plan (a symbol or side not approved, an order more than 2% larger, total buying more than 2% above the approved total, a different order list, weights, mode or account) | The proposal is expired, a new one is sent, and no order is submitted (tests/test_approval.py) |
 | T5 | `touch ~/AETHER_HALT` mid-session | All entries stop within one cycle; exits and alerts still work |
 | T6 | Order 10x over `RISK_MAX_ORDER_USD_LIVE` | Blocked |
 | T7 | Daily buy cap reached, then retry across restart | Cap persists across restart |
 | T8 | Approval requested outside market hours or while you are asleep (UAE evening/night = US session) | Expires cleanly; no stale approval executes next session |
-| T9 | Approval message content | Shows symbol, side, qty, limit price, notional, account (paper/live), expiry; wrong or missing field -> not sendable |
+| T9 | Approval message content | Shows the mode (paper or live), proposal id, target weights, equity, each order's symbol, side and amount, and 'valid today only'; tests/test_approval.py checks the text |
 
 **3e. Mode isolation.**
 
@@ -215,7 +215,7 @@ Once per week during soak, a script picks one scenario from sections 3-5 and tri
 | L3 | Further steps | Per strategy.md | Each step needs written review |
 
 - Paper keeps running alongside live at every stage.
-- Before L1, confirmed with Alpaca in writing: cash vs margin account, PDT handling, fractional limit-order support.
+- Before L1, confirmed with Alpaca in writing: cash vs margin account, PDT handling, fractional market-order support.
 - At trend-following pace, L1's 20 trades may take several months. This is expected and is not a reason to raise size early.
 
 ## 9. Kill criteria (fixed now, not later)
@@ -259,7 +259,7 @@ One systemd timer (aether-daily.timer, 04:30 UTC, after the nightly backup), run
 | A2 | Real-data check (read-only): fetch_us_daily for the universe, validate_bars, us_signals dry run for the current month | No ValueError; newest completed-month bar within MAX_STALENESS_DAYS; the current target weights are logged |
 | A3 | Reconciliation: Alpaca positions and open orders versus aether_state.json (paper) | Zero unexplained differences |
 | A4 | Version and tree: the engine code (every .py file except tests, the stress script, research code, patches and the daily runner) at the commit named by code_version in the newest decision-log row equals the same code at git HEAD, and git status is clean | Equal and clean. Commits that change only docs, tests, research, patches or the runner are not a mismatch; anything else is an unexplained change |
-| A5 | Stress test on the dedicated stress account (stress_test.py), switched on with AETHER_DAILY_STRESS=1 once the script has been reviewed | Passes; never touches the strategy account or the halt file. NOT ENABLED is not green and must be resolved before the soak starts |
+| A5 | Stress test on the dedicated stress account: aether-stress.timer runs stress_test.py on weekdays at 16:00 UTC (US market hours) through run_stress.sh, which records .stress_last_run.json; the daily runner only reads that record | The last run exited 0 and is under 96 h old (covers a long weekend); it never touches the strategy account or the halt file; a missing record is not green and must be resolved before the soak starts |
 | A6 | Runner heartbeat: summary sent and off-VM ping received | A missing day is a failure |
 
 ## 11b. Daily recovery checks
@@ -295,3 +295,4 @@ Monthly, by hand, with the evidence stored: R1 fresh-VM restore (60-minute targe
 | 2026-10-07 | 8f139232e73fbde4d428f596c3b5bce6a969a7df (tag plan-v2.2) | v2.2: C11 retargeted to the real monthly-rotation code (no SMA/ATR exist); C11b real-data repeat of C1/C11; K5 retargeted to current-month and partial bars (same EST/EDT dates); 3g retargeted from stops to exits, drawdown kill and rotation safety (E1-E6); D10 added; soak must span two month-end rebalances; L1 sized as the full rotation; PF rule is a manual month-end review per strategy.md and the drawdown rule is automated; section 12 states development runs are not evidence | Plan assumed a daily trend strategy with stops; reading us_strategy.py, strategy.md and fetch_us_daily showed otherwise. No evidence test had been run. Development runs are in the commit history (d1eac5f, 15540b4). The only criterion removed is the SMA/ATR check, which cannot apply to this strategy. |
 | 2026-10-07 | b86646355e6cf17359091a2d78d77694dfdc883c (tag plan-v2.3) | v2.3: E1 reworded (the US engine has no automatic exit), E3 latched drawdown kill, E3b/E5/E7/E8 added or rewritten for the rotation engine, D10 split into the rebalance path and a daily preview check (D10b), new sections 11a daily automation and 11b daily recovery checks, scorecard layer 8, kill criterion on code/HEAD mismatch | Findings from reading _us_rebalance, _us_execute_paper, the kill-switch code and the backup script; code fixes in commit 0399606 (rotation safety, latch). No evidence test had been run. |
 | 2026-10-07 | 073317fd306ea90f5fb15f2b781fd7ee7007559f (tag plan-v2.4) | v2.4: A4 compares engine code only (doc- or test-only commits are not a mismatch), A5 gated until the stress script is reviewed, 11a states that the runner reads with the strategy paper keys and is read-only, RD5 adds tests/evidence | Found while writing aether_daily.py: a literal 'HEAD equals code_version' would go red on any doc commit, and 'never uses the strategy keys' contradicted A2 and A3. No evidence test had been run. |
+| 2026-10-07 | (v2.5 commit and tag plan-v2.5: fill in after committing) | v2.5: C8, D6, B5 rewritten for dollar-sized market orders with a price-sanity guard; T2, T4, T9 rewritten to match the real approval gate (tests/test_approval.py); A5 reads the result of a weekday market-hours stress timer; the Alpaca confirmation item says fractional market orders | Reading _us_rebalance, _us_execute_paper and the approval gate showed the engine sends market orders, so the limit-order criteria could not be met, and the stress script places orders so it must run in market hours. Code: price-sanity patch and new tests. No evidence test had been run. |
