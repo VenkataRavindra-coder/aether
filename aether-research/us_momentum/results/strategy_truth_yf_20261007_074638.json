@@ -1,0 +1,231 @@
+{
+  "baseline": {
+    "start": "2007-03-01",
+    "end": "2026-10-06",
+    "cagr": 0.1081,
+    "vol": 0.1458,
+    "sharpe": 0.779,
+    "max_dd": -0.2073,
+    "calmar": 0.521,
+    "worst_month": -0.0928,
+    "pct_up_months": 0.634,
+    "daily_skew": -0.415,
+    "daily_kurtosis": 5.792,
+    "days": 4931
+  },
+  "items": {
+    "S16": {
+      "result": "PASS",
+      "detail": "two identical runs give byte-identical equity",
+      "equity_sha256": "38c43052ee9ceba1"
+    },
+    "S2": {
+      "result": "FAIL",
+      "detail": "DSR 0.802 (needs 0.95) | Sharpe 0.78 vs luck threshold 0.58 | N=28 | Sharpe needed for 0.95: 0.96",
+      "dsr": 0.8018300809731904,
+      "sharpe": 0.7785109531329293,
+      "sr0": 0.5845320559133619,
+      "n": 28,
+      "sharpe_needed": 0.96187106765224,
+      "years": 19.6,
+      "dsr_2022_on": 0.7343114125504047,
+      "psr_if_n_is_1": 0.9996680308474286
+    },
+    "S5": {
+      "result": "PASS",
+      "detail": "net CAGR at x2 costs 10.68%, x3 10.54% (baseline 10.81%)",
+      "stress": {
+        "2": {
+          "cagr": 0.1068,
+          "sharpe": 0.77
+        },
+        "3": {
+          "cagr": 0.1054,
+          "sharpe": 0.762
+        }
+      }
+    },
+    "S9-close": {
+      "result": "INFO",
+      "detail": "close-of-day execution: CAGR 10.47%, Sharpe 0.757 (open execution: 10.81%, 0.779)",
+      "close_metrics": {
+        "start": "2007-03-01",
+        "end": "2026-10-06",
+        "cagr": 0.1047,
+        "vol": 0.1459,
+        "sharpe": 0.757,
+        "max_dd": -0.2094,
+        "calmar": 0.5,
+        "worst_month": -0.0929,
+        "pct_up_months": 0.638,
+        "daily_skew": -0.406,
+        "daily_kurtosis": 5.784,
+        "days": 4931
+      }
+    },
+    "S10": {
+      "result": "PASS",
+      "detail": "5th percentile Sharpe 0.46 (median 0.77) over 5000 draws",
+      "p5": 0.463331473267425
+    },
+    "S11": {
+      "result": "FAIL",
+      "detail": "95th percentile max drawdown 30.7% (limit 27%); observed 20.7%",
+      "p95": 0.30689418215423875,
+      "observed": 0.2073
+    },
+    "S12": {
+      "result": "PASS",
+      "detail": "no slice breaches the drawdown limit",
+      "slices": {
+        "2008": {
+          "testable": true,
+          "return": 0.0214,
+          "max_dd": -0.2073,
+          "spy_max_dd": -0.4712,
+          "within_limit": true
+        },
+        "2011": {
+          "testable": true,
+          "return": 0.0107,
+          "max_dd": -0.1264,
+          "spy_max_dd": -0.1861,
+          "within_limit": true
+        },
+        "2015-16": {
+          "testable": true,
+          "return": -0.0293,
+          "max_dd": -0.1725,
+          "spy_max_dd": -0.1302,
+          "within_limit": true
+        },
+        "2018Q4": {
+          "testable": true,
+          "return": -0.1469,
+          "max_dd": -0.1749,
+          "spy_max_dd": -0.192,
+          "within_limit": true
+        },
+        "2020": {
+          "testable": true,
+          "return": 0.1784,
+          "max_dd": -0.1487,
+          "spy_max_dd": -0.3372,
+          "within_limit": true
+        },
+        "2022": {
+          "testable": true,
+          "return": -0.0628,
+          "max_dd": -0.1249,
+          "spy_max_dd": -0.245,
+          "within_limit": true
+        }
+      }
+    },
+    "S13": {
+      "result": "PASS",
+      "detail": "largest single-year share of total profit 11% (limit 40%)",
+      "max_share": 0.10978566801201409
+    },
+    "S17": {
+      "result": "PASS",
+      "detail": "Sharpe/Calmar strategy 0.779/0.521 | SPY 0.639/0.202 | 60/40 0.779/0.269",
+      "spy": {
+        "start": "2007-03-01",
+        "end": "2026-10-06",
+        "cagr": 0.1116,
+        "vol": 0.1959,
+        "sharpe": 0.639,
+        "max_dd": -0.5519,
+        "calmar": 0.202,
+        "worst_month": -0.1652,
+        "pct_up_months": 0.66,
+        "daily_skew": 0.004,
+        "daily_kurtosis": 17.599,
+        "days": 4931
+      },
+      "sixty": {
+        "start": "2007-03-01",
+        "end": "2026-10-06",
+        "cagr": 0.0846,
+        "vol": 0.1126,
+        "sharpe": 0.779,
+        "max_dd": -0.3139,
+        "calmar": 0.269,
+        "worst_month": -0.0977,
+        "pct_up_months": 0.672,
+        "daily_skew": 0.134,
+        "daily_kurtosis": 17.222,
+        "days": 4931
+      }
+    },
+    "S18": {
+      "result": "PASS",
+      "detail": "171 round trips over 19.6 years (needs 100)",
+      "round_trips": 171
+    },
+    "S19": {
+      "result": "PASS",
+      "detail": "7% of 20-trade windows show profit factor below 1 by chance",
+      "frequency": 0.0704,
+      "proxy": "position-level returns, weights ignored"
+    },
+    "S3": {
+      "result": "NOT RUN",
+      "detail": "stage 2: PBO over the 81-variant family"
+    },
+    "S6": {
+      "result": "NOT RUN",
+      "detail": "stage 2: parameter neighbourhood"
+    },
+    "S7": {
+      "result": "NOT RUN",
+      "detail": "stage 2: placebo strategies"
+    },
+    "S8": {
+      "result": "NOT RUN",
+      "detail": "stage 2: shuffled-returns null"
+    },
+    "S9-shift": {
+      "result": "NOT RUN",
+      "detail": "stage 2: 1, 2, 5 day execution shifts"
+    },
+    "S15": {
+      "result": "NOT RUN",
+      "detail": "stage 2: corporate-action audit"
+    },
+    "S20": {
+      "result": "NOT RUN",
+      "detail": "stage 2: live-size feasibility at $50-$100"
+    },
+    "S4": {
+      "result": "NOT DUE",
+      "detail": "forward holdout (data after 2026-10-07), evaluated once at the end of the soak"
+    }
+  },
+  "years": 19.6,
+  "rebalances": 236,
+  "sample": [
+    "2007-03-01",
+    "2026-10-06"
+  ],
+  "trials": {
+    "n_total": 28,
+    "n_logged": 4,
+    "n_backfilled": 24,
+    "var_per_period": 0.0003242764550264549
+  },
+  "equity_sha256": "38c43052ee9ceba15ac661836dde52740dedbc35de8330e855fc5fff2ca49699",
+  "seed": 20261007,
+  "prereg": {
+    "ok": true,
+    "detail": "tag prereg-us-momentum committed 2026-10-07 06:59 UTC"
+  },
+  "s14": {
+    "result": "PASS",
+    "detail": "worst median return difference 1.534 bps, signals agree 97.4%"
+  },
+  "data_sha256": "e9524a2a60e1c609af72c991d1be8cc8d42f36d95bcafcf1b1b81dd1971ed9b6",
+  "code_sha256": "c879622ee75bc0aa97b9422649cda1fdc8f3a31b21a3ece9285e5ad78af69a7d",
+  "cache": "yf"
+}
