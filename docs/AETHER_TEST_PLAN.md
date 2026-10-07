@@ -1,0 +1,258 @@
+# AETHER Live-Readiness Test Plan
+
+Scope: US ETF engine, micro-live ($50-$100), human approval on entries, crypto live off.
+Status: LOCKED v2.1. Committed to the repo BEFORE any test is run. Criteria may not be edited after results are seen (see section 12 for the only allowed way to amend).
+
+## 0. Rules of the plan
+
+1. **Fail closed.** Every failure test passes only if AETHER places no unintended order, raises a Telegram alert, and leaves correct state.
+2. **One failed item = NO-GO.** No waivers after seeing results. A fix means the whole affected layer reruns.
+3. **Evidence, not claims.** Each test stores: ID, commit SHA, date, command, raw output, PASS/FAIL, under `tests/evidence/<ID>/<YYYY-MM-DD>.json`. Tests are scripts, not manual impressions.
+4. **Break it yourself first.** For each control, try to defeat it. If you cannot explain how it could fail, you have not tested it.
+5. **Kill criteria are written before the first live dollar** (section 9).
+6. **Prior passes do not count.** Earlier results (kill switch, rejected-order test, live reconciliation, `test_uslive.py` 23/23) are re-run under this plan to capture commit SHA and stored evidence.
+7. **Approval scope.** Human approval gates ENTRIES only. Exits, stops, and halt-driven flattening run automatically and must never wait for Telegram, approval, or the HALT file.
+8. **Traceability.** Every order and every decision-log row carries strategy version, commit SHA, config hash, and `client_order_id`.
+
+---
+
+## 1. Strategy truth (does an edge exist at all?)
+
+| ID | Test | Pass criterion |
+|----|------|----------------|
+| S1 | Pre-register, then run Tier A via import_strategy.py | Prereg commit timestamp precedes all results |
+| S2 | DSR with full N (incl. 24 backfilled estimates + all variants) | DSR >= 0.95 |
+| S3 | PBO (CSCV) | PBO <= 0.05 |
+| S4 | Holdout, single use | Net-positive AND holdout Sharpe >= 0.5 x in-sample Sharpe; lock then burned |
+| S4b | Holdout lock enforcement: attempt a second holdout run | Code refuses; attempt is logged |
+| S5 | Cost stress x2 and x3 (fees, SEC/TAF sell fees, slippage, spread on IEX quotes) | Net expectancy stays > 0 at x2 |
+| S6 | Parameter neighborhood: every param +/-20% | >= 80% of neighbors stay net-positive |
+| S7 | Placebo: 1,000 random-signal strategies through the same gate | <= 5% pass (else gate too loose) |
+| S8 | Shuffled-returns null: block-shuffle returns, rerun | Strategy edge disappears on shuffled data |
+| S9 | Time-shift test: delay signals 1, 2, 5 days | Edge decays smoothly; a huge cliff at +0 means lookahead |
+| S10 | Block bootstrap (21-day blocks, 5,000 draws) | 5th-percentile Sharpe > 0 |
+| S11 | Monte Carlo drawdown (10,000 trade-order permutations) | 95th-percentile max DD within strategy.md limit |
+| S12 | Regime slices: 2008, 2011, 2015-16, 2018Q4, 2020, 2022 | No slice breaches max-DD limit; no hidden single-regime dependence |
+| S13 | Leave-one-year-out | No single year contributes > 40% of total profit |
+| S14 | Data cross-check: yfinance vs Alpaca (IEX) closes, over the overlap period only | Median diff < 5 bps; signals agree >= 95% of days. Pre-overlap slices (S12) are marked "single-source data" |
+| S15 | Corporate-action audit (splits, dividends) on every ETF | Adjusted vs unadjusted returns reconcile |
+| S16 | Reproducibility: rerun any trial from stored hash + commit + pinned requirements | Returns byte-identical (SHA-256 equal) |
+| S17 | Benchmark: vs buy-and-hold SPY and vs 60/40 | Better risk-adjusted (Sharpe or Calmar), not just return |
+| S18 | Trade count | >= 100 round trips, or the claim is marked "insufficient evidence" |
+| S19 | Kill-rule calibration: from S10 bootstrap, frequency of any 20-trade window with PF < 1.0 | If > 20% of windows, the PF rule in strategy.md must be amended (section 12) before L1 |
+| S20 | Live-size feasibility: rerun sizing at $50-$100 capital with fractional rounding and Alpaca minimum notional | No signal sized to zero or below minimum; tracking error vs full-size backtest documented |
+
+## 2. Code correctness
+
+| ID | Test | Pass criterion |
+|----|------|----------------|
+| C1 | **Lookahead detector:** truncate data at day t, compute signal; compare with full-data signal for day t | Identical for every t in sample |
+| C2 | Determinism: same inputs twice | Identical orders and state |
+| C3 | Property tests (hypothesis lib): weights sum <= 1, no NaN, no negative cash, sizes <= limits for random inputs | 10,000 cases, 0 violations |
+| C4 | **Mutation testing on risk_controller.py** (mutmut): mutate each limit/comparison | Every mutant is killed by a test; any survivor = missing test |
+| C5 | Fuzz order inputs: qty 0, negative, NaN, inf, huge, wrong symbol, wrong side, below minimum notional, excess decimal places | All rejected, never crash into submitting |
+| C6 | Replay test: feed 1 year of recorded bars through the live code path | Decisions match backtest 100%, or every mismatch has a written root cause |
+| C7 | Time handling: naive vs aware datetimes, UTC vs ET, DST, leap day | No order on wrong-day signals |
+| C8 | Limit-price computation: wide spread, zero bid/ask, crossed quote, stale quote | Price within max-deviation of last trade, or no order |
+| C9 | `client_order_id` construction | Deterministic from (date, symbol, side, strategy version); unique across all decisions in replay |
+| C10 | Config drift: change `.env` while running | Takes effect only on restart; config hash logged at startup and on every decision |
+| C11 | Indicator correctness: compare every indicator the strategy uses (SMA, ATR, etc.) against a reference library (pandas-ta or TA-Lib, research env only) over the FULL series of real ETF data (>= 500 bars), calling the real functions used by the US ETF engine in us_strategy.py; plus known-answer tests (clear uptrend -> BUY, flat series -> HOLD, short history -> no signal) | SMA-type indicators: rtol 1e-9. Wilder-smoothed indicators (ATR): rtol 1e-6, compared only after a 200-bar warm-up (about 190 bars is needed at period 14 for the seed difference to fall below 1e-6). Tolerances and warm-up are fixed by this commit. All known-answer cases correct |
+| C12 | Signal-to-submit timing: measure with `time.monotonic()` (not wall clock) and write to the decision log: engine_delay = (risk check done - signal generated) + (submit - approval received; for exits, approval time = risk check done). Human approval wait is excluded | Engine delay p95 < 60 s and never > 5 min; warning logged at 60 s; every outlier has a root cause; every decision-log row has engine_delay_s |
+
+## 3. Failure injection (chaos)
+
+Run on paper account. For each, record: order sent? alert? state correct? recovery automatic?
+
+**3a. Crash points.** `kill -9` the engine at EVERY step: after signal, after risk check, after Telegram approval, after submit but before ack, after ack but before state write, mid state write.
+
+| ID | Test | Pass criterion |
+|----|------|----------------|
+| F1 | Crash at each of the 6 points above, restart | Never a duplicate order; state reconciles to Alpaca |
+| F2 | Idempotency: every order carries a deterministic `client_order_id` | Resubmitting same decision is rejected by Alpaca |
+| F3 | Delete all JSON state, restart | Rebuilds from Alpaca; no orders sent during rebuild |
+| F4 | Corrupt JSON state (truncate, garbage) | Refuses to trade, alerts, rebuilds from Alpaca |
+| F5 | Manual order placed in Alpaca UI | Detected within one cycle; entries halt until reconciled |
+| F6 | Manual position closed in Alpaca UI | Detected; engine does not "re-sell" a position it no longer holds |
+| F7 | VM hard reboot mid-session | Service auto-starts; reconciles; no duplicate |
+| F8 | Disk full / read-only filesystem | Fail closed + alert; no half-written state |
+| F9 | Clock skew +/-5 min and +/-1 hour; NTP sync disabled | Refuses to trade; alert |
+| F10 | **Dead-man's switch:** engine hung or VM down (it cannot alert about itself) | External heartbeat check (off-VM) alerts within 10 min |
+| F11 | Log growth: 90 days of logs simulated | Rotation works; disk usage bounded |
+| F12 | Alert storm: 100 errors in 1 minute | Alerts rate-limited and summarized; Telegram not banned; first alert still delivered |
+
+**3b. Data faults.**
+
+| ID | Test | Pass criterion |
+|----|------|----------------|
+| D1 | Block data feed (iptables) | Stale-data guard rejects new entries; exits still allowed |
+| D2 | Last bar older than strategy threshold | No entry |
+| D3 | Bad tick: price 0, NaN, negative, +/-10x spike | Rejected, alert, no order |
+| D4 | Missing bar in middle of series | Detected; no signal computed on gapped data |
+| D5 | Duplicate / out-of-order bars | Deduplicated or rejected |
+| D6 | IEX vs consolidated divergence injected | Limit orders protected by max-deviation check |
+| D7 | Symbol halted / delisted / renamed / ETF closure announced | No order; alert |
+| D8 | Split announced for held ETF | Position and stop levels adjusted or trading halted |
+| D9 | Cash dividend paid on held ETF | Reconciliation explains cash change; no false mismatch alarm |
+
+**3c. Broker and network faults.**
+
+| ID | Test | Pass criterion |
+|----|------|----------------|
+| B1 | Alpaca 429 / 500 / 503 / timeout | Bounded retries with backoff; no duplicate on retry |
+| B2 | Timeout AFTER order accepted (ack lost) | Engine queries order by client_order_id before retrying |
+| B3 | Order rejected (insufficient settled cash, PDT, fractional rule, market closed) | Logged, alerted, no retry storm |
+| B4 | Partial fill, then cancel | Position/stop sized to actual filled qty |
+| B5 | Limit order never fills; day order expires overnight | Cancel after timeout; no orphan open orders next session |
+| B6 | Websocket/stream drop | Falls back to polling or halts |
+| B7 | Broker returns unexpected schema | Fails closed, does not crash into default values |
+| B8 | DNS failure / full network loss for 10 min | Halts entries; resumes safely |
+| B9 | **Good-faith violation:** sell, then a buy signal before proceeds settle | Engine refuses the buy itself (settled-cash check), does not rely on broker rejection |
+
+**3d. Control-plane faults.**
+
+| ID | Test | Pass criterion |
+|----|------|----------------|
+| T1 | Telegram down | No approval -> no ENTRY; queued approvals expire; exits still execute |
+| T2 | Approval replay (same message tapped twice, or old approval reused) | Single use; expired after N minutes |
+| T3 | Approval from wrong chat ID | Ignored |
+| T4 | Approval arrives after price moved past tolerance | Order re-checked against current price, rejected if outside |
+| T5 | `touch ~/AETHER_HALT` mid-session | All entries stop within one cycle; exits and alerts still work |
+| T6 | Order 10x over `RISK_MAX_ORDER_USD_LIVE` | Blocked |
+| T7 | Daily buy cap reached, then retry across restart | Cap persists across restart |
+| T8 | Approval requested outside market hours or while you are asleep (UAE evening/night = US session) | Expires cleanly; no stale approval executes next session |
+| T9 | Approval message content | Shows symbol, side, qty, limit price, notional, account (paper/live), expiry; wrong or missing field -> not sendable |
+
+**3e. Mode isolation.**
+
+| ID | Test | Pass criterion |
+|----|------|----------------|
+| M1 | Paper mode with live keys present in env | Startup refuses |
+| M2 | Live mode with paper keys | Startup refuses |
+| M3 | Account-ID check at startup and before every order | Mismatch -> halt |
+| M4 | Both LIVE_TRADING=true and wrong base URL | Refuses |
+| M5 | Research env with live keys | Research scripts refuse to run (already coded) |
+| M6 | Dry-run: grep logs/records after a paper session | Zero live-account order IDs |
+| M7 | Crypto live path with LIVE_TRADING=true for US | Crypto and webhook live orders still blocked |
+
+**3f. Market calendar.**
+
+| ID | Test | Pass criterion |
+|----|------|----------------|
+| K1 | Holiday | No signal-driven orders |
+| K2 | Half-day (day after Thanksgiving, Christmas Eve) | Orders respect early close |
+| K3 | DST change weekends (UAE has none; US does) | Schedule still fires at correct ET time |
+| K4 | Market-closed submission | Rejected or queued deliberately, never silently |
+| K5 | After-hours spike: inject a bar/trade stamped 16:05 America/New_York (zoneinfo; EDT date 2026-07-15 and EST date 2027-01-13) at +10% deviation. Each run starts from a fresh deepcopy of the same initial state. Positive control: the same +10% bar at 15:55 ET must update intraday state (proves the test can detect a spike) | Engine logs a drop/bypass message (asserted via caplog); full state, signal, and orders after the 16:05 spike are IDENTICAL to a control run without the spike; no order generated; daily-close logic uses the official close only |
+
+**3g. Stops and exits (engine-managed, no broker brackets).**
+
+| ID | Test | Pass criterion |
+|----|------|----------------|
+| E1 | Stop level hit intraday | Exit submitted exactly once; no approval required |
+| E2 | Price gaps through stop at the open | Exit at market/aggressive limit; slippage logged vs stop |
+| E3 | Stop hit while engine is down, then restart | On restart, detects breached stop and exits before any other action |
+| E4 | Stop hit with HALT file present and Telegram down | Exit still executes |
+| E5 | Exit order rejected or unfilled | Retries with bounded backoff, escalating alert; never silently gives up |
+| E6 | Stop computed on partial-fill qty (with B4) | Exit qty equals held qty, never more |
+| E7 | Stop state survives restart and state rebuild (F3) | Stop levels recovered or recomputed from documented rule; alert if unknown |
+
+## 4. Security red team
+
+| ID | Test | Pass criterion |
+|----|------|----------------|
+| X1 | Forged TradingView webhook (no secret, wrong secret, old secret) | 401, no order, alert on repeats |
+| X2 | Webhook replay (valid payload re-sent later) | Rejected (timestamp/nonce) |
+| X3 | Malformed/oversized webhook payload | Rejected, no crash |
+| X4 | Dashboard: brute-force login, session fixation, no-cookie access | Locked out / denied |
+| X5 | Port scan the VM from outside | Only intended ports open; 8000 is localhost only |
+| X6 | Secrets scan (trufflehog/gitleaks) on repo AND history | Zero secrets |
+| X7 | `.env` permissions and backups encryption | 600; backup SAS is Create-only (verify you cannot read/list with it) |
+| X8 | Alpaca live key scope and IP restrictions (if available) | Minimal scope |
+| X9 | Dependency audit (pip-audit) | No known critical CVEs |
+| X10 | LLM isolation: confirm the lab and any LLM code cannot import engine or read live keys | Import test + env test |
+| X11 | External strategy catalog/import path isolation | Imported code can only reach `trials.log_trial`; cannot import engine, read `.env`, or open network to Alpaca |
+| X12 | Cloudflare Access on ops dashboard | Unauthenticated and non-allowlisted email denied; SSH tunnel fallback still works |
+| X13 | Secrets in logs, Telegram messages, and decision log | Zero keys, secrets, or full account numbers |
+
+## 5. Backup and recovery drills
+
+| ID | Test | Pass criterion |
+|----|------|----------------|
+| R1 | Restore from offsite backup onto a FRESH VM, using only the repo + password manager | Engine runs and reconciles within 60 min |
+| R2 | Restore with the newest backup corrupted | Falls back to previous |
+| R3 | Lose the VM entirely mid-position | Positions have exits or are manually closable from phone; runbook works |
+| R4 | Rotate every secret (webhook, dashboard, keys, backup SAS) | System back up with no stale credentials |
+| R5 | Backup failure (SAS expired, storage unreachable) | Alert within one backup cycle |
+
+## 6. Soak test (paper, minimum 30 calendar days)
+
+Run continuously with no code changes. Any code change restarts the clock.
+
+- **Daily reconciliation job:** Alpaca positions, orders, fills vs AETHER log. Zero unexplained differences.
+- **Per-fill comparison (primary):** replay each day through the backtest code; compare entry/exit price, slippage, missed trades.
+- **Minimum sample:** if fewer than 10 paper fills occur in 30 days, extend the soak until 10 fills.
+- **Pass:** average slippage <= modeled cost; zero missed trades without written cause; zero duplicate orders; zero unalerted errors; uptime >= 99% of scheduled cycles (cycles that ran / cycles scheduled).
+- **Secondary:** realized net return within the simulation's 90% confidence band (reported, low statistical power at this sample size).
+- **Weekly:** unannounced drill (random fault from section 3, chosen by a script, not by you).
+
+## 7. Game days (unannounced)
+
+Once per week during soak, a script picks one scenario from sections 3-5 and triggers it at a random time. You do not know which. Pass = alert received within 2 minutes (10 minutes for F10) and correct automatic behavior.
+
+## 8. Live ramp (human approval on every entry)
+
+| Stage | Size | Duration | Advance only if |
+|-------|------|----------|-----------------|
+| L0 | $0 (live account funded, orders disabled) | 1 week | Live reconciliation job clean; heartbeat (F10) live |
+| L1 | $50-$100, one position | >= 20 closed trades | Fills match paper within tolerance; zero incidents |
+| L2 | 2x | >= 20 more trades | Same, plus drawdown within limits |
+| L3 | Further steps | Per strategy.md | Each step needs written review |
+
+- Paper keeps running alongside live at every stage.
+- Before L1, confirmed with Alpaca in writing: cash vs margin account, PDT handling, fractional limit-order support.
+- At trend-following pace, L1's 20 trades may take several months. This is expected and is not a reason to raise size early.
+
+## 9. Kill criteria (fixed now, not later)
+
+Halt live entries immediately and require written review if ANY occur:
+- Drawdown > 2x out-of-sample worst (existing retirement rule), or PF < 1.0 over last 20 closed trades (thresholds confirmed or amended by S19 before L1).
+- Any duplicate order, wrong-account order, or order outside limits.
+- Any reconciliation difference unresolved after one cycle.
+- Realized slippage > 2x modeled over 20 trades.
+- Any unexplained engine restart, unalerted error, or missed heartbeat.
+- Any stop that failed to execute when breached.
+
+## 10. Go / No-Go scorecard
+
+| Layer | Items | Required |
+|-------|-------|----------|
+| 1 Strategy truth | S1-S20 (incl. S4b) | all |
+| 2 Code correctness | C1-C12 | 12/12 |
+| 3 Failure injection | F, D, B, T, M, K, E | all |
+| 4 Security | X1-X13 | 13/13 |
+| 5 Recovery | R1-R5 | 5/5 |
+| 6 Soak | 30 days and >= 10 fills, criteria met | yes |
+| 7 Game days | all passed | yes |
+
+NO-GO unless every row is satisfied and signed with evidence links.
+
+## 11. Known limits of any test plan
+
+- Backtests and paper cannot reproduce live market impact, queue position, or your own psychology under real loss.
+- Passing everything shows the known risks are controlled. It does not prove profit. Position size stays small precisely because of this.
+- Re-run layers 1-3 after every material code or strategy change.
+
+## 12. Amendments
+
+- The plan may be changed only by a commit made BEFORE the next test run, with a written reason in the changelog below.
+- Any amendment that touches a layer resets that layer: all its items rerun from scratch.
+- Loosening a criterion after seeing a failing result is not allowed under any wording.
+
+### Changelog
+
+| Date | Commit | Change | Reason |
+|------|--------|--------|--------|
+| | | v2: added S4b, S19, S20, C8-C10, F10-F12, D9, B9, T8-T9, M7, section 3g, X11-X13, R5, rules 0.6-0.8, section 12; tightened S4, C6, soak criteria | Review before first run |
+| | | v2.1: added C11 (indicator correctness), C12 (signal-to-submit timing), K5 (after-hours spike) | Gaps found vs external checklist |
+| | | v2.1 spec clarifications: C11 full-series comparison, 1e-9 SMA tolerance, ATR warm-up of 5 x period, real engine functions; K5 timezone-safe (zoneinfo, EST and EDT) with control-run identity check; C12 monotonic clock, approval wait excluded, 60 s warning (not 5 s), delay recorded in decision log | Pasted specs had loose tolerance, wall-clock/DST errors, and would have counted approval wait |
+| | | v2.1 patch 2: C11 warm-up set to 200 bars on >= 500-bar series (5 x period was too short for 1e-6), ATR rtol 1e-6, real ETF data and real us_strategy.py functions required; K5 adds fresh-state-per-run, EST and EDT dates, 15:55 positive control, caplog drop-message assertion | Warm-up math error; K5 test could not detect a spike or prove isolation |
