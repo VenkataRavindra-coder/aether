@@ -1,7 +1,7 @@
 # AETHER Live-Readiness Test Plan
 
 Scope: US ETF engine, micro-live ($50-$100), human approval on entries, crypto live off.
-Status: LOCKED v2.2 (amends v2.1, tag plan-v2.1). Commit to the repo BEFORE running any evidence test. Criteria may not be edited after results are seen (see section 12 for the only allowed way to amend).
+Status: LOCKED v2.3 (amends v2.2, tag plan-v2.2). Commit to the repo BEFORE running any evidence test. Criteria may not be edited after results are seen (see section 12 for the only allowed way to amend).
 
 ## 0. Rules of the plan
 
@@ -94,7 +94,8 @@ Run on paper account. For each, record: order sent? alert? state correct? recove
 | D7 | Symbol halted / delisted / renamed / ETF closure announced | No order; alert |
 | D8 | Split announced for held ETF | Position and stop levels adjusted or trading halted |
 | D9 | Cash dividend paid on held ETF | Reconciliation explains cash change; no false mismatch alarm |
-| D10 | Signal-path validation failure (stale, bad close, gap, duplicate, spike, short history) | us_cycle places no orders and raises an alert, verified with an injected fake feed; tests/test_data_layer.py (D2-D5) passes |
+| D10 | Rebalance-time validation failure (stale, bad close, gap, duplicate, spike, short history) | us_cycle places no orders and sends an alert, verified with an injected fake feed and the real alert path; tests/test_data_layer.py (D2-D5) passes |
+| D10b | Hourly signal-preview failures (invisible while the market is closed: the status note is overwritten) | Surfaced by the daily real-data check (A2), which alerts on any validation failure the same day |
 
 **3c. Broker and network faults.**
 
@@ -150,12 +151,15 @@ Run on paper account. For each, record: order sent? alert? state correct? recove
 
 | ID | Test | Pass criterion |
 |----|------|----------------|
-| E1 | Exit never blocked: HALT file present, drawdown kill active, daily caps hit, Telegram down; a closing SELL is sent | Sell reaches the broker; entries stay blocked |
+| E1 | Exit never blocked at the executor: HALT file present, drawdown kill active, daily caps hit, Telegram down; a manual closing SELL is sent. The US engine has NO automatic exit path (rotation only), so this is a manual-exit guarantee | Sell reaches the broker (test_halt_allows_exit.py); entries stay blocked; the kill alert says nothing sells automatically |
 | E2 | Rotation is all-or-nothing: a plan whose buys would be refused (halt appears mid-plan, per-order cap, daily budget) | No order is submitted (risk_controller.preflight), so sells never liquidate without the replacement buys |
-| E3 | Drawdown kill switch (US_MAX_DRAWDOWN_PCT, default 27): equity paths just below and just above the limit | Entries blocked plus alert at or above the limit, allowed below; exits still work; does not clear itself on unknown data while positions are open |
+| E3 | Drawdown kill switch (US_MAX_DRAWDOWN_PCT, default 27): equity paths just below and just above the limit; recovery after a trip; engine restart after a trip; positions closed by hand after a trip | Below the limit entries are allowed; at or above, entries and rotations are blocked with an alert; the trip is latched in state and survives recovery, restart and manual closes; it clears only by the manual procedure (stop the service, written review, null us.dd_latched AND re-baseline us.equity_history); the 3% daily-loss kill still clears itself; unknown data never clears a trip (tests/test_kill_latch.py) |
+| E3b | State lost: delete or corrupt aether_state.json while the paper account holds positions (with F3/F4) | The engine refuses to take over unknown positions and alerts; the equity peak and the latch come back from the latest backup or are re-baselined only by the written-review procedure; a lost peak must not silently re-arm entries |
 | E4 | Engine down across a month-end and first trading day, then restart | The rebalance runs exactly once after restart: not missed, not duplicated |
-| E5 | Crash mid-rotation (some sells filled, buys not yet sent), then restart | Reconciles to Alpaca; completes or halts with an alert; never doubles an order |
+| E5 | Crash mid-rotation (kill -9 after some sells filled, before the state save), then restart, on the paper account | No duplicate order; the engine reconciles to Alpaca; paper-sleeve cash and equity are not understated (no false daily-loss or drawdown kill), or the engine halts with an alert and the runbook fixes it; never doubles an order |
 | E6 | strategy.md versus code | strategy.md states the US engine has no per-position stops; every statement about stop-loss or stop-protected positions is corrected or scoped to the crypto engine; doc and code agree |
+| E7 | A SELL that is rejected, canceled, errored or only partly filled during a rotation | The buys are skipped (skipped_after_failed_sell), the month stays incomplete, an alert is sent, and the retry waits US_RETRY_SECONDS (tests/test_rotation_safety.py) |
+| E8 | Retry after a partial fill or cancel in the same month (client_order_id is one per symbol, side and month) | A retry never re-reads the old order as new and never double-books its fill; the missing quantity is bought or the engine halts with an alert; verified on the paper account |
 
 ## 4. Security red team
 
@@ -195,6 +199,7 @@ Run continuously with no code changes. Any code change restarts the clock.
 - **Pass:** average slippage <= modeled cost; zero missed trades without written cause; zero duplicate orders; zero unalerted errors; uptime >= 99% of scheduled cycles (cycles that ran / cycles scheduled).
 - **Secondary:** realized net return within the simulation's 90% confidence band (reported, low statistical power at this sample size).
 - **Weekly:** unannounced drill (random fault from section 3, chosen by a script, not by you).
+- **Daily automation (11a) and daily recovery checks (11b) run every day of the soak.** A missing daily heartbeat counts as a failure.
 
 ## 7. Game days (unannounced)
 
@@ -220,7 +225,7 @@ Halt live entries immediately and require written review if ANY occur:
 - Any duplicate order, wrong-account order, or order outside limits.
 - Any reconciliation difference unresolved after one cycle.
 - Realized slippage > 2x modeled over 20 trades.
-- Any unexplained engine restart, unalerted error, or missed heartbeat.
+- Any unexplained engine restart, unalerted error, or missed heartbeat, or deployed code (code_version) that differs from git HEAD.
 - Any stop that failed to execute when breached.
 
 ## 10. Go / No-Go scorecard
@@ -234,6 +239,7 @@ Halt live entries immediately and require written review if ANY occur:
 | 5 Recovery | R1-R5 | 5/5 |
 | 6 Soak | 30 days, two month-end rebalances, >= 10 fills, criteria met | yes |
 | 7 Game days | all passed | yes |
+| 8 Daily automation and recovery | A1-A6, RD1-RD5 | green on every day of the soak; a red day is an incident |
 
 NO-GO unless every row is satisfied and signed with evidence links.
 
@@ -242,6 +248,33 @@ NO-GO unless every row is satisfied and signed with evidence links.
 - Backtests and paper cannot reproduce live market impact, queue position, or your own psychology under real loss.
 - Passing everything shows the known risks are controlled. It does not prove profit. Position size stays small precisely because of this.
 - Re-run layers 1-3 after every material code or strategy change.
+
+## 11a. Daily automation (starts with the soak)
+
+One systemd timer, run as azureuser, read-only on engine state. The runner never restarts aether.service, never touches ~/AETHER_HALT, never uses the strategy or live API keys, and unit tests replace Telegram with fakes. Every run writes tests/evidence/daily/<YYYY-MM-DD>.json (commit SHA, results, hash of the raw output), sends one Telegram summary line, and pings the off-VM dead-man's switch. A missing run is a failure.
+
+| ID | Check | Pass criterion |
+|----|-------|----------------|
+| A1 | Regression suite: tests/ (all), test_uslive.py, test_halt_allows_exit.py | All pass at the deployed commit |
+| A2 | Real-data check (read-only): fetch_us_daily for the universe, validate_bars, us_signals dry run for the current month | No ValueError; newest completed-month bar within MAX_STALENESS_DAYS; the current target weights are logged |
+| A3 | Reconciliation: Alpaca positions and open orders versus aether_state.json (paper) | Zero unexplained differences |
+| A4 | Version and tree: code_version in the newest decision-log row equals git HEAD, and git status is clean | Equal and clean; anything else is an unexplained change |
+| A5 | Stress test on the dedicated stress account (stress_test.py) | Passes; never touches the strategy account or ~/AETHER_HALT |
+| A6 | Runner heartbeat: summary sent and off-VM ping received | A missing day is a failure |
+
+## 11b. Daily recovery checks
+
+Non-destructive: restores go into a temporary folder, never over live files.
+
+| ID | Check | Pass criterion |
+|----|-------|----------------|
+| RD1 | Newest local backup archive | Under 26 h old; size within 50% of the median of the last 7; 14-day rotation intact |
+| RD2 | Archive re-opened: extract the newest archive into a temporary folder | tar extracts; both SQLite files pass integrity_check; aether_state.json parses and has the us_paper and us_live keys; git_commit.txt present |
+| RD3 | Offsite upload | The aether-backup.service log shows "uploaded <archive>" for the newest archive within 26 h |
+| RD4 | Recovery configuration | aether.service has Restart=always and WatchdogSec set; HEALTHCHECK_URL is set; the backup, watchdog and health timers are active |
+| RD5 | Backup coverage | The archive holds every file needed to resume safely: aether_state.json, .aether_risk_state.json, live_risk_ledger.json (once it exists), the decision log, research.sqlite, git_commit.txt |
+
+Monthly, by hand, with the evidence stored: R1 fresh-VM restore (60-minute target); R2 corrupted-newest fallback; offsite readability check with a read-capable credential kept off the VM (the VM's upload credential is Create-only); F10 drill (stop the watchdog timer for 15 minutes; the external alert must arrive within 10 minutes).
 
 ## 12. Amendments
 
@@ -260,3 +293,4 @@ NO-GO unless every row is satisfied and signed with evidence links.
 | | | v2.1 patch 2: C11 warm-up set to 200 bars on >= 500-bar series (5 x period was too short for 1e-6), ATR rtol 1e-6, real ETF data and real us_strategy.py functions required; K5 adds fresh-state-per-run, EST and EDT dates, 15:55 positive control, caplog drop-message assertion | Warm-up math error; K5 test could not detect a spike or prove isolation |
 | 2026-10-07 | 2da6fe1b19eb58cbda8dda3134426f682d882cb0 (tag plan-v2.1) | v2.1 locked: this commit fixed the criteria; earlier changelog rows are drafts of the same file | Commit and tag pushed to origin before any test run |
 | 2026-10-07 | 8f139232e73fbde4d428f596c3b5bce6a969a7df (tag plan-v2.2) | v2.2: C11 retargeted to the real monthly-rotation code (no SMA/ATR exist); C11b real-data repeat of C1/C11; K5 retargeted to current-month and partial bars (same EST/EDT dates); 3g retargeted from stops to exits, drawdown kill and rotation safety (E1-E6); D10 added; soak must span two month-end rebalances; L1 sized as the full rotation; PF rule is a manual month-end review per strategy.md and the drawdown rule is automated; section 12 states development runs are not evidence | Plan assumed a daily trend strategy with stops; reading us_strategy.py, strategy.md and fetch_us_daily showed otherwise. No evidence test had been run. Development runs are in the commit history (d1eac5f, 15540b4). The only criterion removed is the SMA/ATR check, which cannot apply to this strategy. |
+| 2026-10-07 | (v2.3 commit and tag plan-v2.3: fill in after committing) | v2.3: E1 reworded (the US engine has no automatic exit), E3 latched drawdown kill, E3b/E5/E7/E8 added or rewritten for the rotation engine, D10 split into the rebalance path and a daily preview check (D10b), new sections 11a daily automation and 11b daily recovery checks, scorecard layer 8, kill criterion on code/HEAD mismatch | Findings from reading _us_rebalance, _us_execute_paper, the kill-switch code and the backup script; code fixes in commit 0399606 (rotation safety, latch). No evidence test had been run. |
