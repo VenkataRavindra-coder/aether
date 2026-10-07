@@ -1,7 +1,7 @@
 """Offline tests for load_state()/save_state()'s corruption recovery (A4.2/A4.3). Imports the
 real aether_engine.py (every execution mode forced off) and redirects its module-level
 STATE_FILE to a throwaway temp path -- this must never touch the real
-/home/azureuser/aether_state.json. Run: python3 test_state_recovery.py
+/home/ratelark/ratelark/aether_state.json. Run: python3 test_state_recovery.py
 """
 import os
 import json
@@ -18,7 +18,7 @@ os.environ.update(
     AETHER_RISK_STATE=os.path.join(tmpdir, "risk.json"),
 )
 
-PATH = "/home/azureuser/aether_engine.py"
+PATH = "/home/ratelark/ratelark/aether_engine.py"
 spec = importlib.util.spec_from_file_location("aether_engine_staterecovery_test", PATH)
 m = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(m)

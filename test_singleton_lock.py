@@ -16,7 +16,7 @@ os.environ.update(
     AETHER_LOCK_FILE=os.path.join(tmpdir, "lock"),
 )
 
-PATH = "/home/azureuser/aether_engine.py"
+PATH = "/home/ratelark/ratelark/aether_engine.py"
 spec = importlib.util.spec_from_file_location("aether_engine_lock_test", PATH)
 m = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(m)

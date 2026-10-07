@@ -4,8 +4,8 @@ After=network-online.target
 
 [Service]
 Type=oneshot
-User=azureuser
-WorkingDirectory=/home/azureuser
-ExecStart=/bin/bash /home/azureuser/run_stress.sh
+User=ratelark
+WorkingDirectory=/home/ratelark/ratelark
+ExecStart=/bin/bash /home/ratelark/ratelark/run_stress.sh
 TimeoutStartSec=1500
 Nice=10

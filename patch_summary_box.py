@@ -1,5 +1,5 @@
 """Adds the "Today in plain English" box to the dashboard. Run once from ~ on the VM:
-    /home/azureuser/venv/bin/python3 patch_summary_box.py
+    /home/ratelark/ratelark/.venv/bin/python3 patch_summary_box.py
 Display-only: extends the read-only /api/safety route with the US proposal status and last
 rebalance month, and adds one script to the page. No trading logic changes.
 Changes nothing unless every anchor is found exactly once. Keeps .bak-summary copies."""

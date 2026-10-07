@@ -4,9 +4,9 @@
 # Offsite: Azure Blob via BACKUP_SAS_URL in .env (container SAS, Create permission only).
 # Never includes .env or keys: secrets live in the password manager.
 set -euo pipefail
-trap '/home/azureuser/venv/bin/python3 /home/azureuser/backup_alert.py "backup failed at line $LINENO"' ERR
+trap '/home/ratelark/ratelark/.venv/bin/python3 /home/ratelark/ratelark/backup_alert.py "backup failed at line $LINENO"' ERR
 
-HOME_DIR=/home/azureuser
+HOME_DIR=/home/ratelark/ratelark
 OUT="$HOME_DIR/backups"
 TS=$(date -u +%Y%m%dT%H%M%SZ)
 WORK="$OUT/$TS"
@@ -27,7 +27,7 @@ git rev-parse HEAD > "$WORK/git_commit.txt"
 for db in "$WORK"/*.sqlite; do
   [ "$(sqlite3 "$db" 'pragma integrity_check;')" = "ok" ] || { echo "integrity failed: $db"; false; }
 done
-/home/azureuser/venv/bin/python3 -c "import json,sys; json.load(open(sys.argv[1]))" "$WORK/aether_state.json"
+/home/ratelark/ratelark/.venv/bin/python3 -c "import json,sys; json.load(open(sys.argv[1]))" "$WORK/aether_state.json"
 
 # 3. Pack.
 ARCHIVE="$OUT/aether-$TS.tar.gz"

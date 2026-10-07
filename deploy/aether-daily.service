@@ -4,8 +4,8 @@ After=network-online.target
 
 [Service]
 Type=oneshot
-User=azureuser
-WorkingDirectory=/home/azureuser
-ExecStart=/home/azureuser/venv/bin/python3 /home/azureuser/aether_daily.py
+User=ratelark
+WorkingDirectory=/home/ratelark/ratelark
+ExecStart=/home/ratelark/ratelark/.venv/bin/python3 /home/ratelark/ratelark/aether_daily.py
 TimeoutStartSec=1800
 Nice=10

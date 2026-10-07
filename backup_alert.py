@@ -3,9 +3,9 @@ Loads .env itself because the backup runs from a systemd timer, outside the engi
 import os
 import sys
 
-sys.path.insert(0, "/home/azureuser")
+sys.path.insert(0, "/home/ratelark/ratelark")
 try:
-    with open("/home/azureuser/.env") as f:
+    with open("/home/ratelark/ratelark/.env") as f:
         for line in f:
             line = line.strip()
             if line and not line.startswith("#") and "=" in line:

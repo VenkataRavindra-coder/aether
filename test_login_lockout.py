@@ -12,7 +12,7 @@ os.environ.update(
     APCA_API_KEY_ID="", APCA_API_SECRET_KEY="", APCA_LIVE_API_KEY_ID="", APCA_LIVE_API_SECRET_KEY="",
 )
 
-PATH = "/home/azureuser/aether_engine.py"
+PATH = "/home/ratelark/ratelark/aether_engine.py"
 spec = importlib.util.spec_from_file_location("aether_engine_login_test", PATH)
 m = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(m)

@@ -8,10 +8,10 @@ StartLimitIntervalSec=0
 # notify (not simple): the app calls sd_notify READY=1 once started and WATCHDOG=1 at the
 # end of every successful monitor cycle. WatchdogSec below depends on this.
 Type=notify
-User=azureuser
-WorkingDirectory=/home/azureuser
+User=ratelark
+WorkingDirectory=/home/ratelark/ratelark
 Environment=PYTHONUNBUFFERED=1
-ExecStart=/home/azureuser/venv/bin/python3 -m uvicorn aether_engine:app --host 127.0.0.1 --port 8000 --no-access-log
+ExecStart=/home/ratelark/ratelark/.venv/bin/python3 -m uvicorn aether_engine:app --host 127.0.0.1 --port 8000 --no-access-log
 Restart=always
 RestartSec=5
 # If WATCHDOG=1 stops arriving (the process hangs, not just crashes -- e.g. a thread

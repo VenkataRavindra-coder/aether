@@ -1,5 +1,5 @@
 """Display-only dashboard fixes. Run once from ~ on the VM:
-    /home/azureuser/venv/bin/python3 patch_dashboard_safety.py
+    /home/ratelark/ratelark/.venv/bin/python3 patch_dashboard_safety.py
 Changes nothing unless every anchor is found exactly once. Keeps .bak copies.
 No trading logic changes: one read-only route, page rendering, one Telegram header line."""
 import pathlib

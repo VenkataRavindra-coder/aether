@@ -1,12 +1,12 @@
 """AETHER live-readiness check #5.1: credentials and account state.
 READ-ONLY: places no orders, changes no settings. Run from ~ on the VM:
-    /home/azureuser/venv/bin/python3 live_check.py
+    /home/ratelark/ratelark/.venv/bin/python3 live_check.py
 """
 import os
 import sys
 
-sys.path.insert(0, "/home/azureuser")
-with open("/home/azureuser/.env") as f:
+sys.path.insert(0, "/home/ratelark/ratelark")
+with open("/home/ratelark/ratelark/.env") as f:
     for line in f:
         line = line.strip()
         if line and not line.startswith("#") and "=" in line:
