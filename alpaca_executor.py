@@ -109,7 +109,7 @@ class AlpacaExecutionClient:
             return None
 
     def execute_order(self, symbol: str, qty: float, side: str, limit_price: float,
-                       is_closing: bool = False, available_long: float = 0.0):
+                       is_closing: bool = False, available_long: float = 0.0, strategy: str = "crypto"):
         """Dispatches orders to Alpaca with position guards to prevent naked shorts on
         crypto assets where Alpaca does not support short selling. Returns the ACTUAL
         quantity sent to the broker as `qty` in the response — callers must book state
@@ -129,7 +129,7 @@ class AlpacaExecutionClient:
             return {"status": "rejected", "reason": "zero_quantity", "filled": False, "qty": 0.0}
 
         allowed, risk_reason = risk_controller.check(
-            "crypto", symbol, side_upper, effective_qty * float(limit_price), is_closing,
+            strategy, symbol, side_upper, effective_qty * float(limit_price), is_closing,
             real_money=(not self.paper) and self.live_trading)
         if not allowed:
             return {"status": "rejected", "reason": f"risk:{risk_reason}", "filled": False, "qty": 0.0}
@@ -242,7 +242,7 @@ class AlpacaExecutionClient:
             return None
 
     def submit_market_order(self, symbol: str, side: str, qty: float = None, notional: float = None,
-                             client_order_id: str = None):
+                             client_order_id: str = None, strategy: str = "us"):
         """Fractional-capable DAY market order for stocks/ETFs (paper account only: client is paper=True).
 
         client_order_id makes a retry idempotent. If we submit, the request reaches Alpaca, but the
@@ -253,7 +253,7 @@ class AlpacaExecutionClient:
         side_upper = side.upper()
         # US engine is long-only: SELLs only reduce holdings, so they count as closing.
         allowed, risk_reason = risk_controller.check(
-            "us", symbol, side_upper, notional, side_upper == "SELL", real_money=not self.paper)
+            strategy, symbol, side_upper, notional, side_upper == "SELL", real_money=not self.paper)
         if not allowed:
             return {"status": "error", "message": f"risk:{risk_reason}"}
         if not self.paper:

@@ -39,6 +39,9 @@ HALT_FILE = Path(os.getenv("AETHER_HALT_FILE", str(Path.home() / "AETHER_HALT"))
 # "us" is registered as well: it is the only engine that can spend real money, so its
 # entries stay blocked until it has reported a kill-switch state at least once.
 _KILL = {"crypto": None, "us": None}
+# Engine keys allowed to call check()/preflight(). Anything else is refused (entries only;
+# closing orders stay allowed, rule 0.7). "stress" is the paper-only stress-test key.
+_VALID_ENGINES = frozenset({"crypto", "us", "stress"})
 _LOCK = threading.Lock()
 
 
@@ -130,8 +133,12 @@ def _decide(engine, side, notional, is_closing, real_money, record=True, spent_e
         return True, "closing_always_allowed"
     if halted():
         return False, "halted"
+    if engine not in _VALID_ENGINES:
+        return False, "unknown_engine"
     if real_money and engine == "crypto":
         return False, "crypto_live_disabled"
+    if real_money and engine != "us":
+        return False, "live_engine_not_allowed"
     if engine in _KILL:
         state = _KILL[engine]
         if state is None:
