@@ -914,11 +914,16 @@ async def _dashboard_auth(request: _Request, call_next):
     if path == "/webhook/tradingview":
         return await call_next(request)
     host = (request.headers.get("host") or "").split(":")[0].strip().lower()
+    cf_login = False
     if host not in _LOOPBACK_HOSTS:
         if not cf_access.verify(request.headers.get("cf-access-jwt-assertion", "")):
             return _JSONResponse({"detail": "Access verification failed."}, status_code=401)
+        # Password-free mode: a valid Access JWT means the request already passed the
+        # "Only Me" email login at Cloudflare, so that IS the dashboard login. Only when
+        # Access verification is configured -- verify() returns True when it is not.
+        cf_login = cf_access.configured()
     sid = request.cookies.get(_SESSION_COOKIE, "")
-    if path == "/login" or (sid and _session_ok(sid)):
+    if path == "/login" or cf_login or (sid and _session_ok(sid)):
         return await call_next(request)
     if request.method == "GET" and path == "/":
         return _RedirectResponse("/login", status_code=303)
