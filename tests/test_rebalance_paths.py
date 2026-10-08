@@ -36,10 +36,11 @@ class FakeBroker:
     paper = True
     client = object()
 
-    def __init__(self, script=None, positions=None, open_syms=None):
+    def __init__(self, script=None, positions=None, open_syms=None, cash=99000.0):
         self.script = script or {}
         self.positions = positions
         self.open = set() if open_syms is None else open_syms
+        self.cash = cash                      # the paper ACCOUNT's cash, which the engine reads to reconcile its sleeve
         self.consecutive_errors = 0
         self.submitted = []
         self._orders = {}
@@ -61,6 +62,7 @@ class FakeBroker:
         if mode in ("filled", "partial_canceled"):
             q = full if mode == "filled" else full / 2
             pos = self.positions
+            self.cash += (-q if side == "BUY" else q) * 100.0
             pos[symbol] = pos.get(symbol, 0.0) + (q if side == "BUY" else -q)
             if pos[symbol] <= 1e-9:
                 del pos[symbol]
@@ -82,7 +84,7 @@ class FakeBroker:
         return "ACC-1"
 
     def get_account_balance(self):
-        return {"source": "paper", "cash": "0", "portfolio_value": "0"}
+        return {"source": "live", "cash": str(self.cash), "portfolio_value": str(self.cash)}   # "live" = real broker data
 
 
 @pytest.fixture

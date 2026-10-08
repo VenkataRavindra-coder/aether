@@ -1408,7 +1408,7 @@ def _us_execute_shadow(orders, prices, holdings, cash):
 _US_FINAL_STATES = {"filled", "canceled", "expired", "rejected", "done_for_day"}
 
 
-def _us_execute_paper(orders, prices, cash, holdings_before=None, mkey=""):
+def _us_execute_paper(orders, prices, cash, holdings_before=None, mkey="", attempt=0):
     """Sends orders and books only broker-confirmed fills. An order still open at the poll timeout is
     cancelled and re-read, so a late fill cannot leave cash stale. An order that still cannot be
     reconciled is marked 'unreconciled' (the engine then freezes). If positions cannot be read after
@@ -1428,7 +1428,7 @@ def _us_execute_paper(orders, prices, cash, holdings_before=None, mkey=""):
         if o["side"] == "BUY" and sell_failed:
             results.append({**o, "state": "skipped_after_failed_sell"})
             continue
-        coid = f"us-{mkey}-{sym}-{o['side']}"[:48] if mkey else None
+        coid = f"us-{mkey}-{sym}-{o['side']}-{attempt}"[:48] if mkey else None   # one id per ATTEMPT
         if o["side"] == "SELL":
             r = us_broker.submit_market_order(sym, "SELL", qty=o["qty"], client_order_id=coid)
         else:
@@ -1466,6 +1466,52 @@ def _us_execute_paper(orders, prices, cash, holdings_before=None, mkey=""):
         results.append({"symbol": "*", "side": "CHECK", "qty": 0.0, "notional": 0.0, "state": "positions_unreadable"})
         return results, book, cash
     return results, {s: q for s, q in pos.items() if s in us_strategy.UNIVERSE and q > 1e-9}, cash
+
+
+def _us_broker_cash():
+    """The paper account's cash as a float, or None if the broker did not give a usable number."""
+    bal = us_broker.get_account_balance() or {}
+    try:
+        v = float(bal["cash"]) if bal.get("source") == "live" else float("nan")
+    except (KeyError, TypeError, ValueError):
+        v = float("nan")
+    return None if (v != v or abs(v) == float("inf")) else v
+
+
+def _us_reconcile_cash(us: dict):
+    """PAPER mode runs a sleeve of a much larger paper account and keeps the sleeve's cash in its state file, saved
+    only at the end of a rotation. A crash in the middle therefore leaves that number behind the account. Each save
+    also records the account cash (`broker_cash_at_save`); here the sleeve cash is corrected, in memory, by how much
+    the account cash has moved since, and the holdings are refreshed from the broker so the two stay consistent.
+
+    Returns None when fine, or a short reason the engine must pause: the account cash is unreadable, or it moved by
+    more than max($100, half the allocation) outside the engine (for example the paper account was reset)."""
+    if not US_EXECUTE or US_LIVE or us.get("cash") is None:
+        return None
+    now = _us_broker_cash()
+    if now is None:
+        return "the paper account cash could not be read"
+    base = us.get("broker_cash_at_save")
+    if base is None:
+        us["broker_cash_at_save"] = now      # state saved before this check existed: trust it once, and SAVE that
+        try:                                 # now, so even the first rotation after the upgrade is crash-safe
+            with STATE_LOCK:
+                st = load_state()
+                _us_state(st)["broker_cash_at_save"] = now
+                save_state(st)
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"Could not save the paper cash baseline: {type(e).__name__}: {str(e)[:120]}")
+    else:
+        delta = now - float(base)
+        limit = max(100.0, 0.5 * US_ALLOCATION_USD)
+        if abs(delta) > limit:
+            return f"the paper account cash moved ${delta:,.2f} outside the engine (limit ${limit:,.0f})"
+        us["cash"] = float(us["cash"]) + delta
+        us["broker_cash_at_save"] = now
+    held = _us_holdings(us)
+    if held is not None:
+        us["holdings"] = held
+    return None
 
 
 def _us_rebalance(us: dict, today: str, mkey: str, now_et: datetime, fetch_daily, fetch_prices):
@@ -1529,6 +1575,7 @@ def _us_rebalance(us: dict, today: str, mkey: str, now_et: datetime, fetch_daily
                          reason="; ".join(problems)[:300], month=mkey)
         return
 
+    bc0, cash_start = None, None
     if US_LIVE:
         bal = us_broker.get_account_balance() or {}
 
@@ -1592,6 +1639,14 @@ def _us_rebalance(us: dict, today: str, mkey: str, now_et: datetime, fetch_daily
 
     else:
         cash = us["cash"] if us["cash"] is not None else US_ALLOCATION_USD
+        cash_start = cash
+        if US_EXECUTE:
+            bc0 = _us_broker_cash()
+            if bc0 is None:
+                US_STATUS["note"] = "no rebalance: paper account cash unreadable"
+                notify.send("[ALERT] US paper rebalance blocked: the paper account cash could not be read. "
+                            "No orders sent.", key="us-paper-cash", cooldown=6 * 3600)
+                return
         equity_before = cash + sum(
             q * prices[x] for x, q in holdings.items()
         )
@@ -1630,7 +1685,8 @@ def _us_rebalance(us: dict, today: str, mkey: str, now_et: datetime, fetch_daily
     if _us_gate_active() and not _us_live_gate(orders, sig, mkey, today, now_et, equity_before):
         return
     if US_EXECUTE:
-        results, holdings, cash = _us_execute_paper(orders, prices, cash, holdings, mkey=mkey)
+        attempt = sum(1 for h in (us.get("history") or []) if h.get("month") == mkey)   # earlier attempts this month
+        results, holdings, cash = _us_execute_paper(orders, prices, cash, holdings, mkey=mkey, attempt=attempt)
     else:
         results, holdings, cash = _us_execute_shadow(orders, prices, holdings, cash)
     failed = [r for r in results if r["state"] not in ("filled", "simulated")]
@@ -1641,6 +1697,8 @@ def _us_rebalance(us: dict, today: str, mkey: str, now_et: datetime, fetch_daily
         u = _us_state(state)
         u.update(cash=cash, holdings=holdings, targets=sig["weights"], scores=sig["scores"],
                  selected=sig["selected"], signal_date=sig["signal_date"], last_prices=prices)
+        if bc0 is not None:   # the account cash that matches the sleeve cash just stored
+            u["broker_cash_at_save"] = bc0 + (cash - cash_start)
         if not failed:
             u["last_rebalance_month"] = mkey
             u["last_rebalance_at"] = utcnow_str()
@@ -1840,6 +1898,8 @@ def _us_snapshot(fetch_prices, today: str):
     prices = fetch_prices(sorted(set(holdings) | {"SPY"}))
     if any(x not in prices for x in set(holdings) | {"SPY"}):
         return
+    if _us_reconcile_cash(us):
+        return
     equity = us["cash"] + sum(q * prices[x] for x, q in holdings.items())
     with STATE_LOCK:
         state = load_state()
@@ -1954,6 +2014,13 @@ def _us_cycle_inner(fetch_daily=None, fetch_prices=None, market=None):
         US_STATUS["last_check_ts"] = time.time()
         with STATE_LOCK:
             us = _us_state(load_state())
+        cash_problem = _us_reconcile_cash(us)
+        if cash_problem:
+            US_STATUS["note"] = f"paper cash needs review: {cash_problem}"
+            notify.send(f"[ALERT] US paper engine paused: {cash_problem}. No orders will be sent until it is "
+                        f"resolved (stop the service, check the paper account, then clear "
+                        f"us_paper.broker_cash_at_save in the state file).", key="us-paper-cash", cooldown=6 * 3600)
+            return
         _us_evaluate_kill_switch(us, today)
         if (not is_open) and now_et.weekday() < 5 and now_et.hour >= 16 and us["cash"] is not None \
                 and us["last_snapshot_date"] != today:
