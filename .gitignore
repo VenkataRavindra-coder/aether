@@ -14,3 +14,5 @@
 !aether-research/
 !aether-research/*/
 !aether-research/**/*.md
+!*.html
+!tests/

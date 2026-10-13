@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Aether · US desk</title>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@380;500;600;560&display=swap" rel="stylesheet" />
+<style>
+  :root { --ink:#e7f3ff; --muted:#8eafc6; --bg:#071018; --card:#10202e; --line:#234156; --good:#3ddc97; --bad:#ff6b81; --amber:#f0b429; --accent:#f0b429; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:radial-gradient(800px 320px at 90% -10%, #1c3348, transparent 55%), var(--bg); color:var(--ink); font-family:Outfit, system-ui, sans-serif; }
+  .wrap { max-width:1180px; margin:0 auto; padding:28px 22px 48px; }
+  header { display:flex; justify-content:space-between; gap:16px; align-items:flex-end; margin-bottom:18px; flex-wrap:wrap; }
+  h1 { font-weight:560; font-size:34px; margin:0; letter-spacing:-.03em; }
+  h1 span { color:var(--accent); }
+  .sub { color:var(--muted); }
+  .pill { background:var(--card); border:1px solid var(--line); border-radius:999px; padding:8px 12px; font-size:13px; font-weight:600; }
+  .pill.bad { background:#2a1620; border-color:#4a2230; color:var(--bad); } .pill.amber { background:#2a2012; border-color:#4a3a18; color:var(--amber); }
+  .row2 { display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-bottom:14px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:18px; padding:18px; min-width:0; }
+  .k { color:var(--muted); font-size:13px; letter-spacing:.08em; text-transform:uppercase; }
+  .tag { display:inline-block; font-size:11px; letter-spacing:.08em; text-transform:uppercase; border-radius:99px; padding:2px 8px; margin-left:6px; background:#17293a; color:var(--muted); vertical-align:middle; }
+  .tag.live { background:var(--accent); color:#1a1406; }
+  .big { font-size:46px; font-weight:560; line-height:.95; margin:8px 0; }
+  .good { color:var(--good); } .bad { color:var(--bad); } .amber { color:var(--amber); } .muted { color:var(--muted); }
+  .say { font-size:17px; line-height:1.4; margin-bottom:8px; }
+  .btn { border:0; border-radius:999px; padding:10px 14px; font:inherit; font-weight:600; cursor:pointer; background:var(--accent); color:#1a1406; }
+  .btn:disabled { opacity:.5; cursor:default; }
+  .scroll { overflow-x:auto; }
+  table { width:100%; border-collapse:collapse; }
+  td { padding:10px 4px; border-top:1px solid var(--line); vertical-align:top; }
+  .meter { margin:10px 0 4px; }
+  .meter .lab { display:flex; justify-content:space-between; font-size:14px; }
+  .bar { height:6px; background:#0b1824; border-radius:99px; overflow:hidden; margin-top:6px; }
+  .bar i { display:block; height:100%; background:var(--accent); }
+  .bar i.amber { background:var(--amber); } .bar i.bad { background:var(--bad); }
+  .note { background:#0d1c28; border:1px solid var(--line); border-radius:14px; padding:10px; font-size:14px; margin-top:10px; }
+  .err { color:var(--bad); font-size:14px; }
+  footer { margin-top:14px; color:var(--muted); font-size:13px; line-height:1.5; }
+  code { background:#0b1824; border:1px solid var(--line); border-radius:4px; padding:1px 5px; }
+  @media (max-width:760px) { .row2 { grid-template-columns:1fr; } .big { font-size:36px; } h1 { font-size:28px; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>US <span>desk</span>.</h1>
+      <div class="sub" id="clk">Loading…</div>
+    </div>
+    <div class="pill" id="state">…</div>
+  </header>
+
+  <section class="row2">
+    <div class="card" id="liveCard"><div class="k">Live <span class="tag live">real money</span></div><div class="muted">Loading…</div></div>
+    <div class="card" id="paperCard"><div class="k">Practice <span class="tag">paper</span></div><div class="muted">Loading…</div></div>
+  </section>
+
+  <section class="row2">
+    <div class="card">
+      <div class="k">Safety · live account</div>
+      <div id="risk" class="muted">Loading…</div>
+      <div id="haltBox"></div>
+    </div>
+    <div class="card">
+      <div class="k">Your open trades</div>
+      <div class="scroll"><table id="lots"></table></div>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="k">Today's signals</div>
+    <div class="scroll"><table id="signals"></table></div>
+  </section>
+
+  <footer id="tape">
+    Read-only page. The one button here pauses new entries; exits and stops always run.
+    To resume after a pause: <code>ssh aether</code> then <code>rm ~/AETHER_HALT</code>. A signal is not an order.
+  </footer>
+</div>
+<script>
+const CSRF = "__CSRF__";
+const esc = v => String(v ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const money = (n, d=2) => n == null ? "—" : n.toLocaleString("en-US",{style:"currency",currency:"USD",minimumFractionDigits:d,maximumFractionDigits:d});
+const signed = n => n == null ? "—" : (n >= 0 ? "+" : "−") + money(Math.abs(n));
+const pct = n => n == null ? "—" : (n*100).toFixed(1) + "%";
+const $ = id => document.getElementById(id);
+
+function dayWords(n){
+  if (n == null) return "";
+  return n >= 0
+    ? "Gain means the account is higher than at the last close. It can disappear. It is not a reason to add risk."
+    : "Loss means the account is lower than at the last close. Do not try to win it back in one trade.";
+}
+
+function accountCard(el, title, tag, a, extra){
+  if (!a || a.error) { el.innerHTML = `<div class="k">${title} ${tag}</div><div class="err">Not available: ${esc(a && a.error)}</div>`; return; }
+  el.innerHTML = `<div class="k">${title} ${tag}</div>${extra(a)}`;
+}
+
+function meter(label, val, limit, warnAt){
+  if (val == null) return `<div class="meter"><div class="lab"><span>${label}</span><span class="muted">no data</span></div></div>`;
+  const used = Math.max(0, val) / limit;
+  const cls = used >= 1 ? "bad" : (used >= (warnAt ?? .5) ? "amber" : "");
+  return `<div class="meter"><div class="lab"><span>${label}</span><span class="${cls}">${pct(Math.max(0,val))} of ${pct(limit)}</span></div>
+          <div class="bar"><i class="${cls}" style="width:${Math.min(100, used*100).toFixed(0)}%"></i></div></div>`;
+}
+
+function render(d){
+  const states = {running:["Running",""], paused:["Paused · no new entries","amber"], latched:["Breaker tripped · review needed","bad"], engine_down:["Engine not responding","bad"]};
+  const [txt, cls] = states[d.state] || [d.state, ""];
+  $("state").textContent = txt; $("state").className = "pill " + cls;
+  const t = new Date(d.generated_at).toLocaleTimeString();
+  const mkt = d.market_open == null ? "market: unknown" : (d.market_open ? "market open" : "market closed");
+  const hb = d.health.heartbeat_age_sec == null ? "no heartbeat" : `heartbeat ${Math.round(d.health.heartbeat_age_sec)}s ago`;
+  $("clk").textContent = `${mkt} · ${hb} · crypto strategy: ${d.health.crypto_strategy} (not shown here) · updated ${t}`;
+
+  accountCard($("liveCard"), "Live", '<span class="tag live">real money</span>', d.live, a => {
+    if (!d.risk.initialised) return `<div class="big">${money(a.equity)}</div><div class="say amber">Live ledger not started. New live trades stay blocked until the first risk mark (after funding).</div>`;
+    return `<div class="big ${a.account_day_pl>=0?"good":"bad"}">${signed(a.account_day_pl)}</div>
+      <div class="say">${dayWords(a.account_day_pl)}</div>
+      <div>Account <b>${money(a.equity)}</b> · Cash left <b>${money(a.cash)}</b> · Open trades <b>${a.positions.length}</b></div>`;
+  });
+  accountCard($("paperCard"), "Practice", '<span class="tag">paper</span>', d.paper, a => `
+      <div class="big ${a.us_open_day_pl>=0?"good":"bad"}" style="font-size:38px">${signed(a.us_open_day_pl)}</div>
+      <div class="say muted">Today's move on open US trades. Practice money, same rules.</div>
+      <div>AETHER allocation <b>${money(d.us_allocation,0)}</b> · Open US trades <b>${a.positions.length}</b></div>
+      <div class="muted" style="font-size:13px;margin-top:6px">Whole paper account ${money(a.equity,0)} (includes non-AETHER money)</div>`);
+
+  const r = d.risk, L = r.limits;
+  if (!r.initialised) {
+    $("risk").innerHTML = `<div class="note">Breakers start after the first live mark. Until then every new live entry is blocked on purpose.</div>`;
+  } else {
+    const asOf = `as of mark ${esc(r.last_mark.date)}` + (r.mark_age_days > L.max_mark_age_days ? ' <b class="bad">(stale: entries blocked)</b>' : "");
+    $("risk").innerHTML =
+      `<div class="muted" style="font-size:13px">Today is live. Week, month and drop are ${asOf}.</div>` +
+      meter("Today", r.daily_loss, L.daily) +
+      meter("This week", r.weekly_loss, L.weekly) +
+      meter("This month", r.monthly_loss, L.monthly) +
+      meter("Drop from best point", r.drawdown, L.dd_halt, 0.5) +
+      `<div class="note">Size is cut in half at ${pct(L.dd_reduce)} drop. New trades stop at ${pct(L.dd_halt)}.
+       One trade can risk at most 1% of the account. Trades under ${money(L.min_notional)} are skipped, never rounded up.</div>` +
+      (r.latched ? `<div class="note bad"><b>Breaker tripped:</b> ${esc(r.latched.reasons.join("; "))}. Review first, then <code>risk_admin.py reset</code>.</div>` : "");
+  }
+  $("haltBox").innerHTML = r.halted
+    ? `<div class="note"><b>New trades are paused.</b> Exits and stops still run.<br><span class="muted">${esc(r.halt_reason)}</span><br>Resume only from the server: <code>rm ~/AETHER_HALT</code></div>`
+    : `<button class="btn" id="haltBtn" style="margin-top:12px">Pause new trades</button>`;
+  const hbtn = $("haltBtn"); if (hbtn) hbtn.onclick = pause;
+
+  const lots = [];
+  for (const [name, a] of [["live", d.live], ["paper", d.paper]]) {
+    if (a && !a.error) for (const p of a.positions) lots.push({...p, acct:name});
+  }
+  $("lots").innerHTML = lots.length ? lots.map(p => {
+    let stopTxt;
+    if (p.stop_state === "not_connected") stopTxt = `<span class="amber">Stop not shown (state file not connected)</span>`;
+    else if (p.stop_state === "missing") stopTxt = `<span class="bad">No stop on file. Check the engine.</span>`;
+    else stopTxt = (p.stop_gap < 0.03 ? "Close to stop. Leave it." : "Stop is set. Do not move it wider.") + `<div class="muted">Stop ${p.stop.toFixed(2)} · now ${p.price.toFixed(2)}</div>`;
+    return `<tr><td><b>${esc(p.symbol)}</b><span class="tag ${p.acct==="live"?"live":""}">${p.acct}</span>
+      <div class="muted">${+p.qty.toFixed(4)} sh · bought ${p.avg.toFixed(2)}</div></td>
+      <td class="${p.upl>=0?"good":"bad"}">${p.upl>=0?"Gain":"Loss"} ${money(Math.abs(p.upl))}</td><td>${stopTxt}</td></tr>`;
+  }).join("") : `<tr><td class="muted">No open US trades.</td></tr>`;
+
+  const s = d.signals;
+  if (!s || s.error) $("signals").innerHTML = `<tr><td class="err">Decision log error: ${esc(s && s.error)}</td></tr>`;
+  else if (!s.connected) $("signals").innerHTML = `<tr><td class="muted">Decision log not connected (${esc(s.note)}).</td></tr>`;
+  else $("signals").innerHTML = `<tr><td class="k">Time</td><td class="k">Name</td><td class="k">Signal</td><td class="k">Safety check</td><td class="k">Why</td></tr>` +
+    (s.rows.length ? s.rows.map(x => `<tr><td class="muted">${esc(x.ts)}</td><td><b>${esc(x.symbol)}</b></td><td>${esc(x.action)}</td>
+      <td class="${/allow|pass|ok/i.test(x.gate||"")?"good":(/block|reject|skip/i.test(x.gate||"")?"bad":"")}">${esc(x.gate)}</td><td>${esc(x.reason)}</td></tr>`).join("")
+      : `<tr><td class="muted" colspan="5">No signals yet today.</td></tr>`);
+}
+
+async function load(){
+  try {
+    const r = await fetch("/api/us/summary", {credentials:"same-origin", cache:"no-store"});
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    render(await r.json());
+  } catch (e) {
+    $("state").textContent = "Dashboard offline"; $("state").className = "pill bad";
+    $("clk").textContent = "Could not load data: " + e.message;
+  }
+}
+
+async function pause(){
+  if (!confirm("Pause all NEW trades? Exits and stops keep running. Resuming needs the server.")) return;
+  const b = $("haltBtn"); if (b) b.disabled = true;
+  try {
+    const r = await fetch("/api/us/pause", {method:"POST", credentials:"same-origin", headers:{"X-Aether-CSRF": CSRF}});
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    $("tape").textContent = "Paused. New entries are blocked. Exits and stops still run.";
+  } catch (e) {
+    alert("Pause failed: " + e.message + ". Use SSH: touch ~/AETHER_HALT");
+    if (b) b.disabled = false;
+  }
+  load();
+}
+
+load();
+setInterval(load, 15000);
+</script>
+</body>
+</html>
