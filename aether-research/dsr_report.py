@@ -88,7 +88,7 @@ def pbo_section(db, only_batch=None):
             continue
         gate = "PASS" if r["pbo"] <= PBO_MAX else "FAIL"
         print(f"  {batch:<20} trials={r['n_trials']:<3} days={r['n_days']:<5} "
-              f"PBO={r['pbo']:.3f}  P(OOS loss)={r['prob_oos_loss']:.2f}  {gate}")
+              f"PBO={r['pbo']:.3f}  mean logit={r['mean_logit']:.2f}  {gate}")
 
 
 def main(argv):

@@ -95,3 +95,10 @@ def test_rejects_bad_input():
         pbo.cscv_pbo(rng.normal(0, 0.01, (1600, 5)), S=15)
     with pytest.raises(ValueError):
         pbo.cscv_pbo(rng.normal(0, 0.01, (100, 5)))
+
+
+def test_wrapper_matches_research_gate_s3():  # one implementation: no drift possible
+    import research_gate as rg
+    M = np.random.default_rng(6).normal(0, 0.01, (1600, 12))
+    M[:, 3] += 0.0005
+    assert pbo.cscv_pbo(M)["pbo"] == rg.pbo_cscv(M, n_blocks=16)["pbo"]
