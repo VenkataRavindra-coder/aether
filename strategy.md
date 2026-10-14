@@ -405,6 +405,25 @@ once at import instead of lazily on the first log() call during live trading.
     It is a **forward consistency check**, not statistical proof of an edge: a few monthly
     rebalances cannot establish significance. No interim peeking, no threshold changes, no
     window changes. Passing S4 does not by itself reverse the NO-GO; every gate still applies.
+  - **S4 outcomes, fixed now (2026-10-14), before any holdout data is examined:**
+    - *Measure:* the frozen rule simulated by `strategy_truth.py` over all data after 2026-10-07
+      up to the soak's completion date, same costs and execution model as S2.
+    - *Pass* = net return > 0 **and** annualised Sharpe >= 0.5 x 0.779 = **0.39** (test plan S4;
+      in-sample Sharpe frozen at the S2 value). Anything else is a fail. No tolerance band, no
+      rounding, no "broadly consistent".
+    - *If pass:* recorded as "not falsified forward". The NO-GO stands (S2 failed); live strategy
+      trading still requires every gate or a written risk acceptance. Nothing else follows.
+    - *If fail:* `us_etf_momentum_v1` is retired from any live consideration permanently. Paper
+      may continue only as operational testing of the engine.
+    - *Power caveat:* two or three monthly rebalances make this Sharpe extremely noisy; either
+      outcome is weak evidence. That is why S4 can only falsify, never establish, an edge.
+    - *Paper-vs-simulation (test plan section 6, secondary, reported only):* realised paper net
+      return inside the simulation's 90% band. Reported, never used to override S4.
+    - *Endpoint:* S4 is evaluated once and is final. It is not a trigger for further tests,
+      re-runs or a longer window.
+  - **What can extend the soak:** only the section 6 conditions not yet being met (days,
+    completed rebalances, fewer than 10 qualifying fills, a non-green day, or an engine code
+    change restarting the clock). Never the results.
   - **Incidents on record (no trades resulted from either):**
     - 2026-10-13 18:42 UTC: the `/us` dashboard "Pause new trades" wrote
       `~/ratelark/AETHER_HALT` (old breaker path). The engine read `~/AETHER_HALT` and never saw
