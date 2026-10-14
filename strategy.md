@@ -350,8 +350,13 @@ once at import instead of lazily on the first log() call during live trading.
     | Bootstrap Sharpe, 5th pct | 0.46 | 0.28 |
     | Turnover per year | 6.0x | 0.4x |
 
-    Timing value: +3.5 pp a year, information ratio 0.28 over 19.6 years, **t = 1.24: not
-    statistically significant.** It is concentrated: 2008 alone contributed about 24 pp; excluding
+    Timing value: +3.5 pp a year, information ratio 0.28 over 19.6 years, **not statistically
+    significant.** Method: the series tested is the daily return difference (timing minus
+    passive), 4,931 days. t = 1.24 assuming independent days; Newey-West (HAC) t = 1.54 with 21
+    lags and 1.66 with 63 lags; a 21-day block bootstrap (5,000 draws, seed 20261007) gives
+    P(mean <= 0) = 0.07, one-sided. The robust figures are a little higher (daily active returns
+    are negatively autocorrelated) but all remain below conventional significance, and this
+    comparison was chosen after S2 failed. It is concentrated: 2008 alone contributed about 24 pp; excluding
     2008 the information ratio is 0.22 (t = 0.97). Timing beat passive in 13 of 20 years.
   - **Reading.** On point estimates the timing does add value over its own universe, mostly by
     avoiding the 2008 drawdown, which is why its Calmar is better. The margin cannot be told apart
