@@ -1,0 +1,7 @@
+[Unit]
+Description=AETHER health check (restart the engine if its local API stops answering)
+
+[Service]
+Type=oneshot
+EnvironmentFile=/home/ratelark/ratelark/.env
+ExecStart=/bin/bash /home/ratelark/ratelark/deploy/aether-health.sh

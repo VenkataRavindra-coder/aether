@@ -29,8 +29,14 @@ import urllib.request
 HOME = pathlib.Path(os.environ.get("AETHER_HOME", str(pathlib.Path.home())))
 MAX_BACKUP_AGE_H = 26
 MAX_ARCHIVES = 14
-REQUIRED_IN_ARCHIVE = ["aether_state.json", ".aether_risk_state.json", "aether_decisions.sqlite",
-                       "research.sqlite", "git_commit.txt"]
+REQUIRED_IN_ARCHIVE = ["aether_state.json", "aether_decisions.sqlite", "research.sqlite", "git_commit.txt"]
+# Created on first use (first live buy / first canary buy). Required in the archive once they exist.
+OPTIONAL_STATE_FILES = (".aether_risk_state.json", ".aether_canary_risk_state.json", "live_risk_ledger.json")
+
+
+def engine_service() -> str:
+    """The engine's systemd unit. On Hetzner it is ratelark.service (set AETHER_SERVICE in .env)."""
+    return os.environ.get("AETHER_SERVICE", "aether.service").strip() or "aether.service"
 REQUIRED_STATE_KEYS = ("us_paper", "us_live")
 TIMERS = ("aether-backup.timer", "aether-watchdog.timer", "aether-health.timer")
 # Code the engine runs. Tests, the stress script, this runner, patches and research do not count, so a
@@ -69,7 +75,10 @@ def load_env(home=HOME):
 
 # ------------------------------------------------------------------ 11a: daily automation
 def check_a1(home=HOME, run=run):
-    py = pathlib.Path(home) / "venv" / "bin" / "python3"
+    # The server venv is .venv (Hetzner); older hosts used venv. Fall back to this interpreter.
+    py = next((p for p in (pathlib.Path(home) / ".venv" / "bin" / "python3",
+                           pathlib.Path(home) / "venv" / "bin" / "python3") if p.exists()),
+              pathlib.Path(sys.executable))
     suites = [("pytest", [py, "-m", "pytest", "-q", "tests/", "test_risk_engine_keys.py"]),
               ("test_uslive", [py, "test_uslive.py"]),
               ("test_halt_allows_exit", [py, "test_halt_allows_exit.py"])]
@@ -273,7 +282,7 @@ def check_rd3(home=HOME, run=run):
 
 def check_rd4(home=HOME, run=run):
     problems = []
-    rc, out = run(["systemctl", "show", "aether.service", "-p", "Restart", "-p", "WatchdogUSec"], timeout=30)
+    rc, out = run(["systemctl", "show", engine_service(), "-p", "Restart", "-p", "WatchdogUSec"], timeout=30)
     props = dict(ln.split("=", 1) for ln in out.splitlines() if "=" in ln)
     if props.get("Restart") != "always":
         problems.append(f"Restart={props.get('Restart')}")
@@ -300,8 +309,7 @@ def check_rd5(home=HOME):
         names = {os.path.basename(m.name) for m in tf.getmembers() if m.isfile()}
         has_evidence = any("evidence" in pathlib.PurePosixPath(m.name).parts for m in tf.getmembers())
     required = list(REQUIRED_IN_ARCHIVE)
-    if (pathlib.Path(home) / "live_risk_ledger.json").exists():
-        required.append("live_risk_ledger.json")
+    required += [f for f in OPTIONAL_STATE_FILES if (pathlib.Path(home) / f).exists()]
     missing = [r for r in required if r not in names]
     if (pathlib.Path(home) / "tests" / "evidence").exists() and not has_evidence:
         missing.append("tests/evidence")

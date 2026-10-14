@@ -510,7 +510,8 @@ def safety():
     halt = safety_guard.halt_file().exists()
     spent = 0.0
     try:
-        s = json.loads(Path(os.getenv("AETHER_RISK_STATE", str(home / ".aether_risk_state.json"))).read_text())
+        import risk_controller
+        s = json.loads(risk_controller._state_path("us").read_text())
         if s.get("day") == time.strftime("%Y-%m-%d", time.gmtime()):
             spent = float(s.get("usd", 0.0))
     except FileNotFoundError:

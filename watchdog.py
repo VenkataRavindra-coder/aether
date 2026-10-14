@@ -21,7 +21,7 @@ def assess(now: float, heartbeat: dict, service_active: bool, ledger: dict,
            stale_min: float = 15, mark_age_days: int = 4, today: date | None = None) -> list[str]:
     problems = []
     if not service_active:
-        problems.append("aether.service is NOT active")
+        problems.append(f"{_service_name()} is NOT active")
     hb = heartbeat.get("engine", {}).get("ts")
     if hb is None:
         problems.append("no engine heartbeat recorded")
@@ -36,8 +36,13 @@ def assess(now: float, heartbeat: dict, service_active: bool, ledger: dict,
     return problems
 
 
+def _service_name() -> str:
+    """The engine's systemd unit. On Hetzner it is ratelark.service (set AETHER_SERVICE in .env)."""
+    return os.environ.get("AETHER_SERVICE", "aether.service").strip() or "aether.service"
+
+
 def _service_active() -> bool:
-    r = subprocess.run(["systemctl", "is-active", "--quiet", "aether.service"])
+    r = subprocess.run(["systemctl", "is-active", "--quiet", _service_name()])
     return r.returncode == 0
 
 
@@ -46,7 +51,7 @@ def _live_positions() -> str:
         pos = aether_ops.alpaca_live_get("/v2/positions")
         if not pos:
             return "live positions: none"
-        return "LIVE POSITIONS UNPROTECTED (engine-managed stops): " + ", ".join(
+        return "LIVE POSITIONS (no stop orders; nothing manages them while the engine is down): " + ", ".join(
             f"{p['symbol']} {p['qty']}" for p in pos)
     except Exception as e:
         return f"live positions: unknown ({e})"

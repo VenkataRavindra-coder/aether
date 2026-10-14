@@ -30,6 +30,10 @@ os.environ["US_LIVE"] = "false"
 # Never let a test resolve the REAL halt file (on the server .env sets AETHER_HALT_FILE).
 TEST_SCRATCH = tempfile.mkdtemp(prefix="aether-tests-")
 os.environ["AETHER_HALT_FILE"] = os.path.join(TEST_SCRATCH, "AETHER_HALT")
+# Same reason for the ledger folder and the live-buy budget files (.env sets AETHER_HOME).
+os.environ["AETHER_HOME"] = TEST_SCRATCH
+os.environ["AETHER_RISK_STATE"] = os.path.join(TEST_SCRATCH, ".aether_risk_state.json")
+os.environ["AETHER_CANARY_RISK_STATE"] = os.path.join(TEST_SCRATCH, ".aether_canary_risk_state.json")
 
 _ROOT = Path(__file__).resolve().parent
 _EXITS = re.compile(r"sys\.exit\(|raise SystemExit")

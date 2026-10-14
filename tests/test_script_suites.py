@@ -21,7 +21,11 @@ def test_script_suite(script):
     env = {k: v for k, v in os.environ.items() if not k.startswith(_LEAKY)}
     # Stripping AETHER_* would let load_dotenv() restore the server's REAL halt path; pin a
     # throwaway one instead (suites that set their own path still override it).
-    env["AETHER_HALT_FILE"] = os.path.join(tempfile.mkdtemp(prefix="aether-script-"), "AETHER_HALT")
+    scratch = tempfile.mkdtemp(prefix="aether-script-")
+    env["AETHER_HALT_FILE"] = os.path.join(scratch, "AETHER_HALT")
+    env["AETHER_HOME"] = scratch
+    env["AETHER_RISK_STATE"] = os.path.join(scratch, ".aether_risk_state.json")
+    env["AETHER_CANARY_RISK_STATE"] = os.path.join(scratch, ".aether_canary_risk_state.json")
     r = subprocess.run(
         [sys.executable, str(ROOT / script)],
         cwd=(ROOT / script).parent, env=env,

@@ -1,0 +1,11 @@
+[Unit]
+Description=AETHER external watchdog (service down, stale heartbeat, stale live risk mark)
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=ratelark
+WorkingDirectory=/home/ratelark/ratelark
+EnvironmentFile=/home/ratelark/ratelark/.env
+ExecStart=/home/ratelark/ratelark/.venv/bin/python3 /home/ratelark/ratelark/watchdog.py
+SuccessExitStatus=1
