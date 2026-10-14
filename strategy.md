@@ -366,6 +366,53 @@ once at import instead of lazily on the first log() call during live trading.
   - Going live with this rule anyway would be a written RISK ACCEPTANCE in this file (amount,
     reason, sunset date, stop rule), never a pass. Any changed rule (e.g. a regime filter) is a
     new rule with its own pre-registration, and every variant adds to N.
+- **Decision 2026-10-14: Option 1 (continue observation), trial 29 deferred.** Recorded before
+  any soak or holdout result exists. Supplements the S2 record above; changes no code, no
+  threshold and no existing result.
+  - **Selected:** paper observation continues; the $15 VTI execution canary (section 10) runs
+    after the wire credits and `canary.py preflight` passes. A clean canary validates execution
+    only and never authorizes strategy-driven live orders.
+  - **Unchanged:** S2 verdict NO-GO; N = 28; trial 29 deferred (it needs a genuinely different,
+    independently motivated hypothesis and its own pre-registration). Autonomous live strategy
+    orders stay disabled (`US_LIVE=false`).
+  - **Strategy freeze:** no rule or parameter changes to `us_strategy.py` during the soak. Per
+    test plan section 6, any engine code change (as defined by check A4) restarts the soak clock.
+  - **Soak start (not backdated):** the first server-verified timestamp at which every soak
+    prerequisite is green, including daily automation A1-A6 and the A5 stress record, at a
+    deployed commit with no later engine code change. **Not yet established**; to be filled in
+    here from server evidence: `SOAK_START = (pending)`. Earlier paper activity (resumed
+    2026-10-13 after stale positions were closed) is kept as records but is not qualifying soak
+    evidence. Engine code was changed and redeployed on 2026-10-14 (PR #1, PR #2, dashboard
+    extras), so no soak clock can predate that deployment.
+  - **Soak completion (all required, test plan section 6):** at least 30 calendar days from
+    SOAK_START; at least two completed month-end rebalances; at least 10 qualifying paper fills
+    (if fewer, extend until 10); plus the section 6 pass criteria and green daily automation
+    every day.
+    - *Qualifying paper fill:* an order placed by the US engine on the strategy paper account
+      (`client_order_id` starting `us-`) that reached a final broker state with filled quantity
+      above zero, booked by the engine and reconciled. Excludes the stress account, canary orders
+      (live account), manual trades and the 2026-10-13 closing of stale positions.
+    - *Completed rebalance:* a decision-log `rebalance` event with `decision=complete` for a
+      month key after SOAK_START (one per month; an `incomplete` run counts only if a retry in
+      the same month completes it).
+  - **Earliest evaluation:** early December 2026 (the two-rebalance condition binds), and only if
+    every condition is met by then. Otherwise the soak extends; January is a possible checkpoint,
+    not an automatic opening date. The decision point is the conditions being met, not a date.
+  - **S4 holdout:** all market data after 2026-10-07 (prereg section 6), the same calendar period
+    as the soak, so it is a forward period, not a dataset set aside in advance. Evaluated
+    **once**, after soak completion, with the frozen rule and the frozen criterion (test plan S4:
+    net-positive AND holdout Sharpe >= 0.5 x in-sample Sharpe), recorded in `docs/holdout.lock`.
+    It is a **forward consistency check**, not statistical proof of an edge: a few monthly
+    rebalances cannot establish significance. No interim peeking, no threshold changes, no
+    window changes. Passing S4 does not by itself reverse the NO-GO; every gate still applies.
+  - **Incidents on record (no trades resulted from either):**
+    - 2026-10-13 18:42 UTC: the `/us` dashboard "Pause new trades" wrote
+      `~/ratelark/AETHER_HALT` (old breaker path). The engine read `~/AETHER_HALT` and never saw
+      it, so the pause had no effect while the dashboard showed paused. No orders were placed in
+      that window. Removed 2026-10-14; root cause fixed by the one-resolver change (PR #1).
+    - 2026-10-14, about 06:37-06:46 UTC: a server test run created the real `~/AETHER_HALT`
+      (content `x`); paper entries were blocked for about 10 minutes. No rebalance was due and
+      no orders were affected. Removed by hand; test isolation fixed (PR #2).
 - **Before scaling above micro-live:** walk-forward validation, Key Vault for secrets,
   a full restore drill, and at least several months of live results matching paper.
 - **Strategy retirement rule (2026-10-03):** retire (stop new entries + alert) when EITHER
