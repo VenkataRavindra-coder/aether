@@ -311,6 +311,71 @@ class AlpacaExecutionClient:
             return {"status": "error", "message": str(e), "error_class": error_class,
                     "consecutive_errors": self.consecutive_errors}
 
+    def _canary_submit_limit_order(self, symbol: str, side: str, qty: float, limit_price: float,
+                                   client_order_id: str):
+        """Micro-live phase 1 ONLY. Called by canary.py, never by aether_engine.py (a test asserts
+        the engine source does not reference it). Fractional DAY limit order on the LIVE account,
+        under the "canary" risk key: same risk_controller and safety_guard gates as the engine's
+        live path, but the canary's own notional caps and daily budget (strategy.md, "Micro-live
+        phase 1"). Exits pass the halt like every other exit."""
+        side_upper = (side or "").upper()
+        if self.paper:
+            return {"status": "error", "message": "canary:live_account_only"}
+        if not (client_order_id or "").startswith("canary-"):
+            return {"status": "error", "message": "canary:client_order_id_must_start_with_canary-"}
+        try:
+            qty = float(qty)
+            limit_price = round(float(limit_price), 2)
+        except (TypeError, ValueError):
+            return {"status": "error", "message": "canary:bad_qty_or_price"}
+        if not (qty > 0 and limit_price > 0):
+            return {"status": "error", "message": "canary:bad_qty_or_price"}
+        is_closing = side_upper == "SELL"
+        notional = round(qty * limit_price, 2)
+        allowed, risk_reason = risk_controller.check(
+            "canary", symbol, side_upper, notional, is_closing, real_money=True)
+        if not allowed:
+            return {"status": "error", "message": f"risk:{risk_reason}"}
+        from safety_guard import check_live_order
+        position_qty = self.get_position_qty(symbol) or 0.0
+        bal = self.get_account_balance()
+        live_equity = float(bal["portfolio_value"]) if bal.get("source") == "live" else None
+        d = check_live_order(side_upper, symbol, notional, position_qty, live_equity,
+                             sell_qty=qty if is_closing else None)
+        if not d.allowed:
+            if not is_closing:
+                risk_controller.release_live_buy(notional, engine="canary")
+            return {"status": "error", "message": f"guard:{d.reason}"}
+        if not is_closing and d.notional and d.notional < notional:
+            # drawdown "reduce" level halved the entry: shrink qty to match, release the rest
+            risk_controller.release_live_buy(notional - d.notional, engine="canary")
+            qty = round(d.notional / limit_price, 6)
+        if not self.client:
+            if not is_closing:
+                risk_controller.release_live_buy(notional, engine="canary")
+            return {"status": "error", "message": "Alpaca client uninitialized."}
+        try:
+            order = self.client.submit_order(order_data=LimitOrderRequest(
+                symbol=symbol, qty=qty, limit_price=limit_price,
+                side=OrderSide.BUY if side_upper == "BUY" else OrderSide.SELL,
+                time_in_force=TimeInForce.DAY, client_order_id=client_order_id))
+            self.consecutive_errors = 0
+            logger.info(f"CANARY ORDER PLACED: {order.id} | {side_upper} {qty} {symbol} @ {limit_price}")
+            return {"status": "submitted", "order_id": str(order.id), "qty": qty,
+                    "limit_price": limit_price, "state": status_value(order.status)}
+        except Exception as e:
+            try:
+                existing = self.client.get_order_by_client_id(client_order_id)
+                self.consecutive_errors = 0
+                return {"status": "submitted", "order_id": str(existing.id), "qty": qty,
+                        "limit_price": limit_price, "recovered": True}
+            except Exception:
+                pass
+            self.consecutive_errors += 1
+            if not is_closing:
+                risk_controller.release_live_buy(notional, engine="canary")
+            return {"status": "error", "message": str(e), "error_class": classify_broker_error(e)}
+
     def cancel_order(self, order_id: str) -> bool:
         """Cancels an open order. False if it could not be cancelled (e.g. it already filled)."""
         if not self.client:

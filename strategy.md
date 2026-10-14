@@ -72,6 +72,8 @@ Crypto live trading is **hard-blocked** in the Risk Controller regardless of set
 | **US daily-loss kill switch** | 3% below day-start equity → no new US entries | `US_MAX_DAILY_LOSS_PCT` + Risk Controller |
 | **US peak-drawdown kill switch** | 27% below peak equity history → no new US entries. This automates the §8 retirement level (-13.5% worst out-of-sample → retire at -27%) instead of relying on a manual monthly check | `US_MAX_DRAWDOWN_PCT` + Risk Controller |
 | Approval tolerance | executed plan may differ ≤ 2% from the approved one | `US_APPROVAL_TOLERANCE` |
+| Canary order cap (phase 1) | $15 per order, notional; never looser than `RISK_MAX_ORDER_USD_LIVE` | `CANARY_MAX_ORDER_USD` + Risk Controller (key `canary`) |
+| Canary daily buy budget (phase 1) | $30 per UTC day, own state file; never consumes the engine's live budget | `CANARY_MAX_DAILY_BUY_USD`, `AETHER_CANARY_RISK_STATE` |
 | Malformed limit config | blocks all entries (fails closed) | `risk_controller.py` |
 
 `RISK_MAX_ORDER_USD_LIVE` and `RISK_MAX_DAILY_BUY_USD_LIVE` are **independent of**
@@ -113,6 +115,24 @@ For new entries, in order:
 
 **Exits are never blocked — by the halt, the kill switches, or the caps.** A stop must not trap
 you in a position.
+
+**The `canary` key (micro-live phase 1, section 10).** The only key besides `us` allowed to
+place real-money entries. It has no daily-loss kill switch (it never holds more than one tiny
+position); rules 5 and 6 use the canary's own caps instead (`CANARY_MAX_ORDER_USD`, default $15,
+capped by `RISK_MAX_ORDER_USD_LIVE`; `CANARY_MAX_DAILY_BUY_USD`, default $30, in its own state
+file). A canary buy can therefore never use up the budget a live rebalance needs. Rule 1 (halt)
+and the safety_guard live gate apply unchanged; canary exits pass the halt like every exit.
+
+**One halt file (2026-10-14).** Every component resolves the halt file through
+`safety_guard.halt_file()`: `AETHER_HALT_FILE` if set, else `AETHER_HOME/AETHER_HALT`, else
+`~/AETHER_HALT`. Before this, breaker latches were written to `AETHER_HOME/AETHER_HALT` while
+`risk_controller` and the main dashboard read `AETHER_HALT_FILE`. `canary.py preflight` fails if the
+paths diverge or a stale file sits at the old breaker path.
+
+**A latched live breaker refuses real-money entries in `risk_controller` too (2026-10-14).** Not
+only at submit time in `safety_guard`: because `preflight()` runs the same rule, a latch refuses
+a whole live rotation, even if the halt file was removed without `risk_admin.py reset`. An
+unreadable ledger counts as latched. Exits and paper are unaffected.
 
 Both engines are registered in `_KILL` and start as `None` (not yet evaluated), so entries for an
 engine are blocked from process start until that engine has reported at least once. Fail closed;
@@ -281,8 +301,15 @@ once at import instead of lazily on the first log() call during live trading.
   including losers. Judge strategies by deflated Sharpe on the true trial count.
 - Rules are written down before testing; no tuning on out-of-sample data.
 - A new strategy runs in shadow first; forward results decide, not the backtest.
-- **Micro-live entry criteria (US only):** all blockers done (done 2026-10-03), this file
-  current, account funded with $50–100, `US_LIVE=true`, first rebalance approved by hand.
+- **Micro-live entry criteria (US only), in two phases (2026-10-14):**
+  - **Phase 1, canary (execution only):** all blockers done (done 2026-10-03), this file
+    current, account funded with $50–100, `US_LIVE=false`, orders only from `canary.py`
+    (section 10). No strategy signal reaches the live account. A clean phase 1 validates
+    execution only.
+  - **Phase 2, strategy signals at micro size:** phase 1 conclusive, `canary.py assert-flat`
+    passes, **and** the strategy has passed its validation gate (DSR >= 0.95, PBO <= 0.05)
+    and the Monte Carlo drawdown is within the 27% limit. Only then `US_LIVE=true`, first
+    rebalance approved by hand. Phase 1's result has no bearing on this gate.
 - **Before scaling above micro-live:** walk-forward validation, Key Vault for secrets,
   a full restore drill, and at least several months of live results matching paper.
 - **Strategy retirement rule (2026-10-03):** retire (stop new entries + alert) when EITHER
@@ -302,6 +329,87 @@ once at import instead of lazily on the first log() call during live trading.
 2. Change code; run `test_risk_controller.py` and `test_uslive.py` (both must pass).
 3. Commit and push; restart `aether`; check `journalctl -u aether` for errors.
 4. Never test with real ETF symbols outside market hours (orders queue and fill later).
+
+---
+
+## 10. Micro-live phase 1 (canary)
+
+**Purpose.** Validate execution plumbing against the live Alpaca account with real money at
+minimum size. Not a strategy test: no strategy signal drives any order in this phase.
+
+**How it is built (2026-10-14).**
+- `canary.py` is a standalone script with its own LIVE client. The engine is not involved and
+  stays `US_LIVE=false`, so it never reads or trades the live account in this phase. There is
+  no live override inside the engine; `tests/test_canary.py` asserts the engine source never
+  references the canary path.
+- Same plumbing as the engine's live path: orders go through `alpaca_executor`
+  (`_canary_submit_limit_order`, called only by `canary.py`), `risk_controller` under the
+  `canary` key (section 4), and the `safety_guard` live gate and ledger. `canary.py` loads the
+  repo `.env` before importing them, so it sees the same halt file, risk state and ledger as
+  the engine.
+- Orders are fractional DAY limit orders on **VTI**, which is outside the strategy universe.
+  SPY is in the universe: a leftover canary on it would block the first live rebalance.
+- Every canary `client_order_id` starts with `canary-` (+ UUID, well under Alpaca's 128-char
+  limit). Nothing is stored locally: each run re-reads the broker and classifies from
+  `client_order_id` alone, so every invocation is a cold start. The position-to-order mapping
+  is canary-only (one-in-one-out means one originating order); do not reuse it for strategy
+  positions. A canary position with any non-canary fill is "unknown" and `canary.py` refuses to
+  touch it.
+- One in, one out: `buy` refuses while a canary position or canary open order exists.
+- Canaries run only while the live account holds no strategy positions and `US_LIVE=false`;
+  `canary.py` refuses otherwise. In phase 2, canaries stop.
+
+**Prerequisites, in this order (checked by `python3 canary.py preflight`).**
+1. The wire has credited (pending is not credited).
+2. Initialise the live ledger: `python3 risk_admin.py mark` (reads live equity). The first mark
+   *is* the baseline, so do **not** also run `risk_admin.py cashflow +100` for this first
+   deposit; that would count it twice and the breakers would see a 50% drawdown. `cashflow` is
+   only for deposits/withdrawals after the ledger exists. Preflight fails if ledger and broker
+   equity disagree.
+3. Account type (cash or margin) confirmed in writing by Alpaca; preflight also prints the
+   broker's own `multiplier`.
+4. `python3 canary.py preflight` reports PASSED.
+
+**Day-trade constraint.** On a margin account under $25k a 4th same-day round trip in 5
+business days can flag the account. `canary.py buy` refuses when the broker's day-trade count
+is 3 or more. Prefer holding canary positions overnight (sell next session).
+
+**Schedule.** Run in order; do not advance until the step passes.
+1. **Baseline round trip (fill quality).** `buy --usd 8 --limit <at/near ask>`, then `sell
+   --limit <at/near bid>` (next session if margin). The output records submit time, ids and the
+   quote at submit. Pass: both legs fill; `status` matches the broker; no phantom positions.
+2. **Open order across a cold start.** `buy` with a limit far below market; run `status` in a
+   new process; restart `ratelark.service` and confirm it does not touch the live account
+   (`US_LIVE=false`); `status` again. Pass: every canary order classified from
+   `client_order_id` alone, nothing in strategy state; `cancel` succeeds.
+3. **Exit across a cold start.** Open a tiny position; in a new process `status` must classify
+   it as canary from broker data alone; then `sell`. Pass: classification correct; position
+   flat; broker and `status` agree.
+4. **Halt under a live position.** Open a tiny position; `touch ~/AETHER_HALT`; `buy` must be
+   refused (`risk:halted`); `sell` must go through (halt blocks entries, never exits — section
+   4); alert fired; `rm ~/AETHER_HALT`. Pass: no entries after halt; exit filled; state
+   reconciled.
+5. **Cancel/replace.** `buy` far from market, `cancel`, `buy` again at a new limit. Pass: acks
+   for each; one final resting order; no duplicates.
+6. **Fractional limit orders, live.** Record whether the live account accepts fractional DAY
+   limit orders and any constraints. "Not supported" is a pass if recorded; the canary then
+   needs whole-share orders and this section is amended before continuing.
+
+**End of every session:** `python3 canary.py assert-flat` must print FLAT (exit 0). A session
+that cannot get flat is an incident: halt, cancel, sell, then investigate.
+
+**Conclusive when:** every step 1–6 passed at least once; steps 1 and 3 repeated to 10
+completed round trips in total; zero reconciliation mismatches, zero duplicate orders, zero
+post-halt entries; final `assert-flat` passes. Partial fills and trading halts stay in the
+paper stress pack.
+
+**What a clean result means.** Execution only. Strategy signals go live only after the
+DSR/PBO gate and the drawdown limit pass (section 8, phase 2).
+
+**Rollback.** `touch ~/AETHER_HALT` (blocks canary buys too) → `python3 canary.py cancel` →
+`python3 canary.py sell --limit <bid>` → `python3 canary.py assert-flat`. If the script or
+server is unavailable, cancel and close VTI in the Alpaca web dashboard. Engine procedures:
+section 6.
 
 ---
 
@@ -352,5 +460,7 @@ rounded up.
 
 **Monitoring.** An external watchdog (separate systemd timer, every 5 min) alerts when
 aether.service is down, the engine heartbeat is >15 min old, or the risk mark is stale, and
-lists any open live positions (their stops are engine-managed, so they are unprotected
-while the engine is down). Optional off-VM dead-man ping via `HEALTHCHECK_URL`.
+lists any open live positions. The US engine has no stop-loss orders or engine-managed stops
+(stops exist only in the crypto strategy, which cannot trade live): live US positions are
+changed only at the monthly rebalance, and new entries are stopped by the breakers. While the
+engine is down nothing manages them at all. Optional off-VM dead-man ping via `HEALTHCHECK_URL`.
