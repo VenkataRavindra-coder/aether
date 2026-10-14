@@ -266,3 +266,63 @@ def test_canary_entry_point_only_called_from_canary_py():
     callers = [p.name for p in ROOT.glob("*.py")
                if "_canary_submit_limit_order" in p.read_text() and p.name not in ("alpaca_executor.py", "canary.py")]
     assert callers == []
+
+
+# ---------- one halt-file path ---------------------------------------------------------------
+def _rows(env):
+    b = FakeBroker()
+    c = live_exec(b)
+    return {name: okk for name, okk, _ in canary.preflight_checks(c, b.get_account(), canary.snapshot(c))}
+
+
+def test_halt_file_resolver_prefers_explicit_path(env, monkeypatch):
+    monkeypatch.setenv("AETHER_HALT_FILE", str(env / "elsewhere" / "AETHER_HALT"))
+    assert safety_guard.halt_file() == env / "elsewhere" / "AETHER_HALT"     # not AETHER_HOME/...
+
+
+def test_preflight_fails_when_halt_paths_diverge(env, monkeypatch):
+    mark_ledger()
+    assert _rows(env)["one halt-file path (risk_controller == safety_guard)"] is True
+    monkeypatch.setattr(rc, "HALT_FILE", env / "other" / "AETHER_HALT")
+    assert _rows(env)["one halt-file path (risk_controller == safety_guard)"] is False
+    b = FakeBroker()
+    assert canary.cmd_preflight(live_exec(b), args()) == 1
+
+
+def test_preflight_fails_on_stale_legacy_halt_file(env, monkeypatch):
+    mark_ledger()
+    monkeypatch.setenv("AETHER_HALT_FILE", str(env / "real_halt"))
+    monkeypatch.setattr(rc, "HALT_FILE", env / "real_halt")
+    (env / "AETHER_HALT").write_text("risk breaker: old path\n")      # AETHER_HOME/AETHER_HALT
+    assert _rows(env)["no stale halt file at the legacy breaker path"] is False
+
+
+def test_breaker_written_halt_is_seen_by_risk_controller(env, monkeypatch):
+    monkeypatch.setenv("AETHER_HALT_FILE", str(env / "real_halt"))
+    monkeypatch.setattr(rc, "HALT_FILE", safety_guard.halt_file())
+    mark_ledger(100.0)
+    safety_guard.mark(80.0)                      # 20% drawdown -> HALT latch writes the halt file
+    assert (env / "real_halt").exists() and rc.halted()
+
+
+# ---------- latched breaker refuses whole live plans ----------------------------------------
+def _latch():
+    mark_ledger(100.0)
+    safety_guard.mark(80.0)
+
+
+def test_latched_breaker_refuses_live_rotation_even_without_halt_file(env):
+    _latch()
+    if rc.HALT_FILE.exists():
+        rc.HALT_FILE.unlink()                   # someone removed the halt file but did not reset
+    rc.set_kill("us", False)
+    ok_, why = rc.preflight("us", [("SELL", 50, True, True), ("BUY", 40, False, True)])
+    assert not ok_ and why == "live_breaker_latched"
+    assert rc.check("us", "SPY", "SELL", 50, True, True)[0]         # exits still pass
+    assert rc.check("us", "SPY", "BUY", 40, False, False)[0]        # paper unaffected
+
+
+def test_unreadable_ledger_fails_closed_for_live_entries(env):
+    (env / "live_risk_ledger.json").write_text("{not json")
+    rc.set_kill("us", False)
+    assert rc.check("us", "SPY", "BUY", 10, False, True)[1] == "live_breaker_latched"

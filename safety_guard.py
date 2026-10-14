@@ -27,7 +27,29 @@ def home() -> Path:
 
 
 def halt_file() -> Path:
-    return home() / "AETHER_HALT"
+    """THE halt-file path. Every component (risk_controller, safety_guard, risk_mark, both
+    dashboards, canary.py) resolves it here, so a halt written by one is seen by all.
+    Order: AETHER_HALT_FILE if set, else AETHER_HOME/AETHER_HALT if AETHER_HOME is set,
+    else ~/AETHER_HALT. Absolute, user-expanded."""
+    explicit = os.environ.get("AETHER_HALT_FILE", "").strip()
+    if explicit:
+        return Path(explicit).expanduser().absolute()
+    return (home() / "AETHER_HALT").expanduser().absolute()
+
+
+def legacy_halt_file() -> Path:
+    """Where safety_guard wrote breaker halts before 2026-10-14 (AETHER_HOME/AETHER_HALT,
+    ignoring AETHER_HALT_FILE). A file left here is invisible to everything now."""
+    return (home() / "AETHER_HALT").expanduser().absolute()
+
+
+def breaker_latched() -> bool:
+    """True if a live breaker is latched in the ledger. Unreadable ledger -> True (fail closed).
+    No ledger yet -> False (the order gate separately blocks live entries until it exists)."""
+    try:
+        return bool(load_ledger().get("latched"))
+    except Exception:
+        return True
 
 
 def ledger_file() -> Path:

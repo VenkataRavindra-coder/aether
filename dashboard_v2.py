@@ -506,7 +506,8 @@ def safety():
     import glob, json, time
     from pathlib import Path
     home = Path.home()
-    halt = Path(os.getenv("AETHER_HALT_FILE", str(home / "AETHER_HALT"))).exists()
+    import safety_guard
+    halt = safety_guard.halt_file().exists()
     spent = 0.0
     try:
         s = json.loads(Path(os.getenv("AETHER_RISK_STATE", str(home / ".aether_risk_state.json"))).read_text())

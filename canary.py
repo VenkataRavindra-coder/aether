@@ -144,6 +144,12 @@ def preflight_checks(c, acct, snap) -> list[tuple[str, bool, str]]:
     cp = snap["canary_position"]
     out.append(("no unknown position on the canary symbol", not cp or cp["class"] == "canary",
                 json.dumps(cp)))
+    hf, rf = safety_guard.halt_file(), Path(risk_controller.HALT_FILE).absolute()
+    out.append(("one halt-file path (risk_controller == safety_guard)", hf == rf,
+                f"risk_controller {rf} | safety_guard {hf}"))
+    legacy = safety_guard.legacy_halt_file()
+    out.append(("no stale halt file at the legacy breaker path", legacy == hf or not legacy.exists(),
+                f"{legacy} {'EXISTS' if legacy.exists() else 'absent'}"))
     L = safety_guard.load_ledger()
     last = L.get("last_mark")
     out.append(("live risk ledger initialised (risk_admin.py mark)", bool(last), json.dumps(last)))

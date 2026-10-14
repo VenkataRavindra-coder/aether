@@ -123,6 +123,17 @@ capped by `RISK_MAX_ORDER_USD_LIVE`; `CANARY_MAX_DAILY_BUY_USD`, default $30, in
 file). A canary buy can therefore never use up the budget a live rebalance needs. Rule 1 (halt)
 and the safety_guard live gate apply unchanged; canary exits pass the halt like every exit.
 
+**One halt file (2026-10-14).** Every component resolves the halt file through
+`safety_guard.halt_file()`: `AETHER_HALT_FILE` if set, else `AETHER_HOME/AETHER_HALT`, else
+`~/AETHER_HALT`. Before this, breaker latches were written to `AETHER_HOME/AETHER_HALT` while
+`risk_controller` and the main dashboard read `AETHER_HALT_FILE`. `canary.py preflight` fails if the
+paths diverge or a stale file sits at the old breaker path.
+
+**A latched live breaker refuses real-money entries in `risk_controller` too (2026-10-14).** Not
+only at submit time in `safety_guard`: because `preflight()` runs the same rule, a latch refuses
+a whole live rotation, even if the halt file was removed without `risk_admin.py reset`. An
+unreadable ledger counts as latched. Exits and paper are unaffected.
+
 Both engines are registered in `_KILL` and start as `None` (not yet evaluated), so entries for an
 engine are blocked from process start until that engine has reported at least once. Fail closed;
 at most one cycle of delay (crypto 60 s, US 300 s).

@@ -23,6 +23,9 @@ and its caps are separate from the US engine's so a canary can never starve a re
 Canary buys are recorded in their own state file (AETHER_CANARY_RISK_STATE) and never consume
 RISK_MAX_DAILY_BUY_USD_LIVE. All caps are notional USD.
 
+Real-money entries are also refused while a safety_guard live breaker is latched in the ledger
+(rule 3b), so preflight() refuses a whole live rotation on a latch even if the halt file was removed.
+
 Exits are never blocked, including by rule 1: a halt must not trap you in a position.
 
 But a halt must not silently LIQUIDATE one either. A plan that rotates positions (sells,
@@ -40,7 +43,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 logger = logging.getLogger("risk_controller")
-HALT_FILE = Path(os.getenv("AETHER_HALT_FILE", str(Path.home() / "AETHER_HALT")))
+import safety_guard
+
+# One resolver for the whole system (safety_guard.halt_file). Kept as a module attribute for
+# existing callers/tests; canary.py preflight asserts it still equals safety_guard.halt_file().
+HALT_FILE = safety_guard.halt_file()
 
 # Engines whose entries need an evaluated daily-loss kill switch.
 # None = not evaluated since start-up -> entries blocked until the engine reports.
@@ -152,6 +159,11 @@ def _decide(engine, side, notional, is_closing, real_money, record=True, spent_e
         return False, "crypto_live_disabled"
     if real_money and engine not in _LIVE_ENGINES:
         return False, "live_engine_not_allowed"
+    if real_money and safety_guard.breaker_latched():
+        # safety_guard would refuse this entry at submit time anyway. Refusing it HERE matters for
+        # plans: preflight() runs this rule over every order, so a latched breaker refuses the whole
+        # rotation instead of letting the sells fill and the buys bounce off the guard.
+        return False, "live_breaker_latched"
     if engine in _KILL:
         state = _KILL[engine]
         if state is None:

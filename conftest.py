@@ -17,6 +17,8 @@ os.environ.pop("APCA_LIVE_API_KEY_ID", None)
 os.environ.pop("APCA_LIVE_API_SECRET_KEY", None)
 os.environ["LIVE_TRADING"] = "false"
 os.environ["US_LIVE"] = "false"
+# Never let a test resolve the REAL halt file (on the server .env sets AETHER_HALT_FILE).
+os.environ.pop("AETHER_HALT_FILE", None)
 
 _ROOT = Path(__file__).resolve().parent
 _EXITS = re.compile(r"sys\.exit\(|raise SystemExit")
