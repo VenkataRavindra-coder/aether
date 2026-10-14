@@ -1,202 +1,344 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Aether · US desk</title>
-<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@380;500;600;560&display=swap" rel="stylesheet" />
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AETHER · US</title>
 <style>
-  :root { --ink:#e7f3ff; --muted:#8eafc6; --bg:#071018; --card:#10202e; --line:#234156; --good:#3ddc97; --bad:#ff6b81; --amber:#f0b429; --accent:#f0b429; }
-  * { box-sizing:border-box; }
-  body { margin:0; background:radial-gradient(800px 320px at 90% -10%, #1c3348, transparent 55%), var(--bg); color:var(--ink); font-family:Outfit, system-ui, sans-serif; }
-  .wrap { max-width:1180px; margin:0 auto; padding:28px 22px 48px; }
-  header { display:flex; justify-content:space-between; gap:16px; align-items:flex-end; margin-bottom:18px; flex-wrap:wrap; }
-  h1 { font-weight:560; font-size:34px; margin:0; letter-spacing:-.03em; }
-  h1 span { color:var(--accent); }
-  .sub { color:var(--muted); }
-  .pill { background:var(--card); border:1px solid var(--line); border-radius:999px; padding:8px 12px; font-size:13px; font-weight:600; }
-  .pill.bad { background:#2a1620; border-color:#4a2230; color:var(--bad); } .pill.amber { background:#2a2012; border-color:#4a3a18; color:var(--amber); }
-  .row2 { display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-bottom:14px; }
-  .card { background:var(--card); border:1px solid var(--line); border-radius:18px; padding:18px; min-width:0; }
-  .k { color:var(--muted); font-size:13px; letter-spacing:.08em; text-transform:uppercase; }
-  .tag { display:inline-block; font-size:11px; letter-spacing:.08em; text-transform:uppercase; border-radius:99px; padding:2px 8px; margin-left:6px; background:#17293a; color:var(--muted); vertical-align:middle; }
-  .tag.live { background:var(--accent); color:#1a1406; }
-  .big { font-size:46px; font-weight:560; line-height:.95; margin:8px 0; }
-  .good { color:var(--good); } .bad { color:var(--bad); } .amber { color:var(--amber); } .muted { color:var(--muted); }
-  .say { font-size:17px; line-height:1.4; margin-bottom:8px; }
-  .btn { border:0; border-radius:999px; padding:10px 14px; font:inherit; font-weight:600; cursor:pointer; background:var(--accent); color:#1a1406; }
-  .btn:disabled { opacity:.5; cursor:default; }
-  .scroll { overflow-x:auto; }
-  table { width:100%; border-collapse:collapse; }
-  td { padding:10px 4px; border-top:1px solid var(--line); vertical-align:top; }
-  .meter { margin:10px 0 4px; }
-  .meter .lab { display:flex; justify-content:space-between; font-size:14px; }
-  .bar { height:6px; background:#0b1824; border-radius:99px; overflow:hidden; margin-top:6px; }
-  .bar i { display:block; height:100%; background:var(--accent); }
-  .bar i.amber { background:var(--amber); } .bar i.bad { background:var(--bad); }
-  .note { background:#0d1c28; border:1px solid var(--line); border-radius:14px; padding:10px; font-size:14px; margin-top:10px; }
-  .err { color:var(--bad); font-size:14px; }
-  footer { margin-top:14px; color:var(--muted); font-size:13px; line-height:1.5; }
-  code { background:#0b1824; border:1px solid var(--line); border-radius:4px; padding:1px 5px; }
-  @media (max-width:760px) { .row2 { grid-template-columns:1fr; } .big { font-size:36px; } h1 { font-size:28px; } }
+:root{--bg:#0c0c0e;--panel:#121214;--inset:#0f0f11;--shadow-d:#08080a;--shadow-l:#1c1c1f;--line:rgba(255,255,255,.05);--ink:#e4e4e7;--mute:#71717a;--dim:#52525b;
+--ok:#34d399;--okln:#10b981;--warn:#f59e0b;--warnln:#d97706;--bad:#f87171;--badln:#ef4444;
+--mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;--sans:system-ui,-apple-system,"Segoe UI",sans-serif}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.5 var(--sans);min-height:100vh}
+.wrap{max-width:1360px;margin:0 auto;padding:24px 20px 48px;display:flex;flex-direction:column;gap:20px}
+.mono{font-family:var(--mono)}
+.mute{color:var(--mute)}.dim{color:var(--dim)}
+.k{font-size:11px;letter-spacing:.08em;color:var(--mute);text-transform:uppercase}
+.neu{background:var(--panel);border-radius:18px;box-shadow:8px 8px 16px var(--shadow-d),-8px -8px 16px var(--shadow-l);border:1px solid rgba(255,255,255,.02)}
+.neu-inset{background:var(--inset);border-radius:14px;box-shadow:inset 4px 4px 8px var(--shadow-d),inset -4px -4px 8px #161618}
+.neu-btn{background:var(--panel);border-radius:12px;box-shadow:4px 4px 8px var(--shadow-d),-4px -4px 8px var(--shadow-l);transition:box-shadow .2s;border:none;color:var(--ink);font:600 12px var(--sans);cursor:pointer;min-height:40px}
+.neu-btn:hover{box-shadow:2px 2px 4px var(--shadow-d),-2px -2px 4px var(--shadow-l)}
+.neu-btn:disabled{opacity:.45;cursor:default}
+header.neu{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;flex-wrap:wrap;gap:12px}
+.brand{display:flex;align-items:center;gap:14px}
+.brand .mark{width:40px;height:40px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-weight:700}
+.brand .name{font-weight:600}
+.hchips{display:flex;align-items:center;gap:14px;font-size:13px}
+.pill{display:flex;align-items:center;gap:8px;padding:7px 14px;border-radius:999px;font-size:12px}
+.dot{width:6px;height:6px;border-radius:999px}
+.tone-ok{color:var(--ok)}.tone-warn{color:var(--warn)}.tone-bad{color:var(--bad)}.tone-idle{color:var(--mute)}
+.dot-ok{background:var(--ok)}.dot-warn{background:var(--warn)}.dot-bad{background:var(--bad)}.dot-idle{background:var(--mute)}
+.banner{display:flex;align-items:center;gap:20px;padding:18px 20px;flex-wrap:wrap}
+.banner .grow{flex:1 1 320px}
+.banner .tag{font-size:11px;letter-spacing:.1em;font-weight:700}
+.banner .head{font-size:17px;font-weight:600;margin-top:2px}
+.banner .text{font-size:13px;margin-top:2px}
+.grid6{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:14px}
+.tile{padding:16px}
+.tile .big{margin-top:6px;font-size:20px;font-weight:600}
+.bar{height:6px;border-radius:999px;overflow:hidden;margin-top:8px}
+.bar>i{display:block;height:100%;border-radius:999px;background:var(--ok)}
+.pipe{display:flex;flex-wrap:wrap;gap:10px}
+.step{flex:1 1 128px;padding:12px;display:flex;flex-direction:column;gap:5px}
+.step .n{font-size:11px;color:var(--dim)}
+.step .nm{font-weight:600;font-size:13px}
+.step .st{font-size:11px;align-self:flex-start;padding:2px 8px;border-radius:999px}
+.row2{display:flex;flex-wrap:wrap;gap:16px}
+.main{flex:999 1 620px;min-width:0;display:flex;flex-direction:column;gap:16px}
+.side{flex:1 1 320px;display:flex;flex-direction:column;gap:16px}
+.card{padding:18px}
+.card h3{margin:0 0 4px;font-size:14px;font-weight:600}
+.card .sub{font-size:12px;color:var(--dim);margin-bottom:12px}
+.scroll{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:13px;min-width:560px}
+th{text-align:left;font-weight:500;font-size:11px;letter-spacing:.06em;color:var(--mute);text-transform:uppercase;padding:0 8px 10px;border-bottom:1px solid var(--line)}
+th.r,td.r{text-align:right}
+td{padding:10px 8px;border-bottom:1px solid var(--line);vertical-align:middle}
+tr:last-child td{border-bottom:none}
+.lane{display:flex;gap:5px}.lane span{flex:1;min-width:58px;text-align:center;padding:4px 3px;border-radius:7px;font-size:11px;background:var(--inset);color:var(--mute)}
+.lane span.on{background:rgba(52,211,153,.12);color:var(--ok)}
+.lane span.warn{background:rgba(245,158,11,.12);color:var(--warn)}
+.lane span.bad{background:rgba(248,113,113,.12);color:var(--bad)}
+.empty{color:var(--dim);font-size:13px;padding:6px 0}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:8px 14px;font-size:13px}.kv dt{color:var(--mute)}.kv dd{margin:0;font-family:var(--mono);text-align:right}
+footer{font-size:11px;color:var(--dim)}
+:focus-visible{outline:2px solid var(--ok);outline-offset:2px}
+.nochart{display:flex;align-items:center;justify-content:center;height:100%;color:var(--dim);font-size:12px;text-align:center;padding:12px}
 </style>
 </head>
 <body>
 <div class="wrap">
-  <header>
-    <div>
-      <h1>US <span>desk</span>.</h1>
-      <div class="sub" id="clk">Loading…</div>
+  <header class="neu">
+    <div class="brand">
+      <div class="mark neu-inset">A</div>
+      <div><div class="name">AETHER</div><div class="dim" style="font-size:11px;margin-top:2px">US ETF trend · long-only · daily bars</div></div>
     </div>
-    <div class="pill" id="state">…</div>
+    <div class="hchips">
+      <span class="mono mute" id="updated">loading…</span>
+      <span class="pill neu-inset" id="acctChip">…</span>
+      <span class="pill neu-inset" id="liveChip">…</span>
+      <span class="pill neu-inset" id="mktChip">…</span>
+    </div>
   </header>
 
-  <section class="row2">
-    <div class="card" id="liveCard"><div class="k">Live <span class="tag live">real money</span></div><div class="muted">Loading…</div></div>
-    <div class="card" id="paperCard"><div class="k">Practice <span class="tag">paper</span></div><div class="muted">Loading…</div></div>
-  </section>
-
-  <section class="row2">
-    <div class="card">
-      <div class="k">Safety · live account</div>
-      <div id="risk" class="muted">Loading…</div>
-      <div id="haltBox"></div>
+  <section class="neu banner" id="banner" aria-live="polite">
+    <div class="grow">
+      <div class="tag" id="bTag">LOADING</div>
+      <div class="head" id="bHead">Reading engine state…</div>
+      <div class="text dim" id="bText"></div>
     </div>
-    <div class="card">
-      <div class="k">Your open trades</div>
-      <div class="scroll"><table id="lots"></table></div>
+    <button class="neu-btn" id="pauseBtn" type="button" style="padding:0 18px">Pause new entries</button>
+  </section>
+
+  <div class="grid6">
+    <div class="neu tile"><div class="k">Sleeve · US</div><div class="big mono" id="sleeve">—</div><div class="dim" id="sleeveSub" style="font-size:11px;margin-top:4px"></div></div>
+    <div class="neu tile"><div class="k">Today</div><div class="big mono" id="today">—</div><div class="dim" id="todaySub" style="font-size:11px;margin-top:4px"></div></div>
+    <div class="neu tile"><div class="k">Daily loss / breaker</div><div class="big mono" id="dd">—</div><div class="bar neu-inset"><i id="ddBar" style="width:0"></i></div></div>
+    <div class="neu tile"><div class="k">Heartbeat</div><div class="big mono" id="hb">—</div><div class="dim" id="hbSub" style="font-size:11px;margin-top:4px"></div></div>
+  </div>
+
+  <section class="neu" style="padding:16px" aria-label="Execution pipeline"><div class="pipe" id="pipe"></div></section>
+
+  <div class="row2">
+    <div class="main">
+      <section class="neu card"><h3>Orders</h3><div class="sub">Sent → Accepted → Filled → Holding · signal-to-fill latency · engine-managed stop</div><div class="scroll" id="orders"></div></section>
+      <section class="neu card"><h3>Positions</h3><div class="sub">Trailing stops are engine-managed, not broker brackets</div><div class="scroll" id="positions"></div></section>
+      <section class="neu card"><h3>What it decided</h3><div class="sub">Most recent entries from the decision log</div><div class="scroll" id="decisions"></div></section>
     </div>
-  </section>
+    <div class="side">
+      <section class="neu card"><h3>Is there an edge?</h3><div class="sub">DSR / PBO statistical validation gate</div><div id="gate"></div></section>
+      <section class="neu card"><h3>Risk breakers</h3><div class="sub">&nbsp;</div><dl class="kv" id="risk"></dl></section>
+      <section class="neu card"><h3>Server</h3><div class="sub">&nbsp;</div><div id="server"></div></section>
+      <section class="neu card"><h3>Backups</h3><div class="sub">&nbsp;</div><dl class="kv" id="backups"></dl></section>
+    </div>
+  </div>
 
-  <section class="card">
-    <div class="k">Today's signals</div>
-    <div class="scroll"><table id="signals"></table></div>
-  </section>
-
-  <footer id="tape">
-    Read-only page. The one button here pauses new entries; exits and stops always run.
-    To resume after a pause: <code>ssh aether</code> then <code>rm ~/AETHER_HALT</code>. A signal is not an order.
-  </footer>
+  <footer>Read-only view. Refreshes every 15 s. "unknown" means a source could not be read; nothing here is guessed. Resume after a pause: <span class="mono">rm ~/AETHER_HALT</span> on the server. No equity-history chart yet — that needs a daily equity log persisted server-side, which isn't wired up; ask to add it rather than trusting a chart drawn from nothing.</footer>
 </div>
+
 <script>
+"use strict";
 const CSRF = "__CSRF__";
-const esc = v => String(v ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-const money = (n, d=2) => n == null ? "—" : n.toLocaleString("en-US",{style:"currency",currency:"USD",minimumFractionDigits:d,maximumFractionDigits:d});
-const signed = n => n == null ? "—" : (n >= 0 ? "+" : "−") + money(Math.abs(n));
-const pct = n => n == null ? "—" : (n*100).toFixed(1) + "%";
-const $ = id => document.getElementById(id);
+const $ = (id) => document.getElementById(id);
+const DUBAI = { timeZone: "Asia/Dubai", hour: "2-digit", minute: "2-digit", hour12: false };
+const money = (x) => x == null || isNaN(x) ? "unknown" : (x < 0 ? "−$" : "$") + Math.abs(x).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const signed = (x) => x == null || isNaN(x) ? "unknown" : (x >= 0 ? "+" : "") + money(x).replace("−", "−");
+const pct = (x, d = 1) => x == null || isNaN(x) ? "unknown" : (x * 100).toFixed(d) + "%";
+const tme = (iso) => { if (!iso) return "—"; const d = new Date(iso); return isNaN(d) ? "—" : d.toLocaleString("en-GB", { ...DUBAI, day: "2-digit", month: "short" }); };
+const age = (s) => s == null ? "unknown" : s < 120 ? Math.round(s) + " s" : s < 7200 ? Math.round(s / 60) + " min" : (s / 3600).toFixed(1) + " h";
 
-function dayWords(n){
-  if (n == null) return "";
-  return n >= 0
-    ? "Gain means the account is higher than at the last close. It can disappear. It is not a reason to add risk."
-    : "Loss means the account is lower than at the last close. Do not try to win it back in one trade.";
+function el(tag, attrs, ...kids) {
+  const n = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs || {})) {
+    if (k === "class") n.className = v; else if (k === "style") n.style.cssText = v; else n.setAttribute(k, v);
+  }
+  for (const k of kids.flat()) if (k != null) n.append(k instanceof Node ? k : String(k));
+  return n;
+}
+const TONE_CLS = { ok: "tone-ok", warn: "tone-warn", bad: "tone-bad", idle: "tone-idle" };
+const DOT_CLS = { ok: "dot-ok", warn: "dot-warn", bad: "dot-bad", idle: "dot-idle" };
+const setTone = (node, tone) => { node.classList.remove("tone-ok", "tone-warn", "tone-bad", "tone-idle"); node.classList.add(TONE_CLS[tone] || "tone-idle"); };
+
+async function getJSON(url) {
+  try {
+    const r = await fetch(url, { credentials: "same-origin", headers: { accept: "application/json" } });
+    if (!(r.headers.get("content-type") || "").includes("json")) return { _err: "session expired: reload the page" };
+    if (!r.ok) return { _err: "HTTP " + r.status };
+    return await r.json();
+  } catch (e) { return { _err: String(e) }; }
 }
 
-function accountCard(el, title, tag, a, extra){
-  if (!a || a.error) { el.innerHTML = `<div class="k">${title} ${tag}</div><div class="err">Not available: ${esc(a && a.error)}</div>`; return; }
-  el.innerHTML = `<div class="k">${title} ${tag}</div>${extra(a)}`;
+function table(head, rows, empty) {
+  if (!rows.length) return el("div", { class: "empty" }, empty);
+  return el("table", {}, el("thead", {}, el("tr", {}, head.map((h) => el("th", { class: h.r ? "r" : "" }, h.t || h)))),
+    el("tbody", {}, rows.map((r) => el("tr", {}, r.map((c, i) => el("td", { class: head[i] && head[i].r ? "r" : "" }, c))))));
 }
 
-function meter(label, val, limit, warnAt){
-  if (val == null) return `<div class="meter"><div class="lab"><span>${label}</span><span class="muted">no data</span></div></div>`;
-  const used = Math.max(0, val) / limit;
-  const cls = used >= 1 ? "bad" : (used >= (warnAt ?? .5) ? "amber" : "");
-  return `<div class="meter"><div class="lab"><span>${label}</span><span class="${cls}">${pct(Math.max(0,val))} of ${pct(limit)}</span></div>
-          <div class="bar"><i class="${cls}" style="width:${Math.min(100, used*100).toFixed(0)}%"></i></div></div>`;
+const FINAL_BAD = new Set(["canceled", "expired", "rejected", "done_for_day", "suspended", "stopped"]);
+function lane(o) {
+  const st = o.status;
+  let stage = 0, bad = FINAL_BAD.has(st);
+  if (["accepted", "new", "pending_new", "accepted_for_bidding", "calculated", "partially_filled", "replaced", "pending_replace"].includes(st)) stage = 1;
+  if (st === "partially_filled") stage = 2;
+  if (st === "filled") stage = o.holding ? 3 : 2;
+  const names = ["Sent", "Accepted", "Filled", "Holding"];
+  return el("div", { class: "lane" }, names.map((nm, i) => {
+    let cls = i <= stage ? "on" : "", label = nm;
+    if (bad && i === 1) { cls = "bad"; label = st.replace(/_/g, " "); }
+    else if (bad && i > 1) cls = "";
+    else if (st === "partially_filled" && i === 2) { cls = "warn"; label = "Partial"; }
+    else if (i === stage && stage < 2 && !bad) cls = "warn";
+    return el("span", { class: cls }, label);
+  }));
 }
 
-function render(d){
-  const states = {running:["Running",""], paused:["Paused · no new entries","amber"], latched:["Breaker tripped · review needed","bad"], engine_down:["Engine not responding","bad"]};
-  const [txt, cls] = states[d.state] || [d.state, ""];
-  $("state").textContent = txt; $("state").className = "pill " + cls;
-  const t = new Date(d.generated_at).toLocaleTimeString();
-  const mkt = d.market_open == null ? "market: unknown" : (d.market_open ? "market open" : "market closed");
-  const hb = d.health.heartbeat_age_sec == null ? "no heartbeat" : `heartbeat ${Math.round(d.health.heartbeat_age_sec)}s ago`;
-  $("clk").textContent = `${mkt} · ${hb} · crypto strategy: ${d.health.crypto_strategy} (not shown here) · updated ${t}`;
+function render(sum, ext) {
+  const now = new Date();
+  $("updated").textContent = "updated " + now.toLocaleTimeString("en-GB", { timeZone: "Asia/Dubai", hour12: false }) + " Dubai";
+  const sErr = sum._err, eErr = ext._err;
+  const health = sum.health || {}, risk = sum.risk || {};
+  const liveFlag = String(health.live_trading_flag).toLowerCase() === "true";
+  const acctName = liveFlag ? "live" : "paper";
+  const acct = sum[acctName] || {};
+  const acctOk = acct && !acct.error && !sErr;
 
-  accountCard($("liveCard"), "Live", '<span class="tag live">real money</span>', d.live, a => {
-    if (!d.risk.initialised) return `<div class="big">${money(a.equity)}</div><div class="say amber">Live ledger not started. New live trades stay blocked until the first risk mark (after funding).</div>`;
-    return `<div class="big ${a.account_day_pl>=0?"good":"bad"}">${signed(a.account_day_pl)}</div>
-      <div class="say">${dayWords(a.account_day_pl)}</div>
-      <div>Account <b>${money(a.equity)}</b> · Cash left <b>${money(a.cash)}</b> · Open trades <b>${a.positions.length}</b></div>`;
-  });
-  accountCard($("paperCard"), "Practice", '<span class="tag">paper</span>', d.paper, a => `
-      <div class="big ${a.us_open_day_pl>=0?"good":"bad"}" style="font-size:38px">${signed(a.us_open_day_pl)}</div>
-      <div class="say muted">Today's move on open US trades. Practice money, same rules.</div>
-      <div>AETHER allocation <b>${money(d.us_allocation,0)}</b> · Open US trades <b>${a.positions.length}</b></div>
-      <div class="muted" style="font-size:13px;margin-top:6px">Whole paper account ${money(a.equity,0)} (includes non-AETHER money)</div>`);
+  $("acctChip").textContent = acctName.toUpperCase();
+  $("liveChip").textContent = liveFlag ? "LIVE TRADING ON" : "Live trading OFF";
+  setTone($("liveChip"), liveFlag ? "bad" : "idle");
+  $("mktChip").textContent = sum.market_open == null ? "market: unknown" : sum.market_open ? "market open" : "market closed";
 
-  const r = d.risk, L = r.limits;
-  if (!r.initialised) {
-    $("risk").innerHTML = `<div class="note">Breakers start after the first live mark. Until then every new live entry is blocked on purpose.</div>`;
+  // banner
+  const b = $("banner");
+  let tone = "ok", tag = "RUNNING", head = "Engine running within limits", text = acctName === "paper" ? "Paper account only. No real money at risk." : "LIVE account. Real money.";
+  if (sErr) { tone = "bad"; tag = "NO DATA"; head = "Could not read engine state"; text = sErr; }
+  else if (sum.state === "paused") { tone = "warn"; tag = "ENGINE HALTED"; head = "No new entries until the halt is removed"; text = risk.halt_reason || "Halt file present. Exits and stops still work."; }
+  else if (sum.state === "latched") { tone = "bad"; tag = "BREAKER LATCHED"; head = "Loss breaker tripped: entries blocked"; text = "Review before resuming."; }
+  else if (sum.state === "engine_down") { tone = "bad"; tag = "ENGINE DOWN"; head = "Heartbeat is stale: positions and stops are not being watched"; text = "Check the server, or exit manually in the Alpaca app."; }
+  setTone(b, tone); $("bTag").textContent = tag; $("bHead").textContent = head; $("bText").textContent = text;
+  $("pauseBtn").disabled = sum.state === "paused" || !!sErr;
+
+  // tiles
+  const posVal = acctOk ? acct.positions.reduce((a, p) => a + p.qty * p.price, 0) : null;
+  $("sleeve").textContent = acctOk ? money(posVal) : "unknown";
+  $("sleeveSub").textContent = "Allocation " + money(sum.us_allocation) + (acctOk ? " · " + acct.positions.length + " positions" : "");
+  $("today").textContent = acctOk ? signed(acct.us_open_day_pl) : "unknown";
+  $("todaySub").textContent = acctOk ? "US positions, unrealised today" : (acct.error || sErr || "");
+
+  const lim = risk.limits || {};
+  const ceilKey = Object.keys(lim).find((k) => /daily/i.test(k) && typeof lim[k] === "number");
+  const ceil = ceilKey ? lim[ceilKey] : null, dl = risk.daily_loss;
+  if (dl == null || ceil == null) {
+    $("dd").textContent = risk.initialised === false ? "not marked" : "unknown";
+    $("ddBar").style.width = "0";
   } else {
-    const asOf = `as of mark ${esc(r.last_mark.date)}` + (r.mark_age_days > L.max_mark_age_days ? ' <b class="bad">(stale: entries blocked)</b>' : "");
-    $("risk").innerHTML =
-      `<div class="muted" style="font-size:13px">Today is live. Week, month and drop are ${asOf}.</div>` +
-      meter("Today", r.daily_loss, L.daily) +
-      meter("This week", r.weekly_loss, L.weekly) +
-      meter("This month", r.monthly_loss, L.monthly) +
-      meter("Drop from best point", r.drawdown, L.dd_halt, 0.5) +
-      `<div class="note">Size is cut in half at ${pct(L.dd_reduce)} drop. New trades stop at ${pct(L.dd_halt)}.
-       One trade can risk at most 1% of the account. Trades under ${money(L.min_notional)} are skipped, never rounded up.</div>` +
-      (r.latched ? `<div class="note bad"><b>Breaker tripped:</b> ${esc(r.latched.reasons.join("; "))}. Review first, then <code>risk_admin.py reset</code>.</div>` : "");
+    const used = Math.max(0, dl) / ceil;
+    $("dd").textContent = pct(Math.max(0, dl)) + " / " + pct(ceil);
+    const c = used >= 1 ? "var(--bad)" : used >= 0.8 ? "var(--warn)" : "var(--ok)";
+    $("ddBar").style.cssText = "width:" + Math.min(100, Math.max(1, used * 100)) + "%;background:" + c;
   }
-  $("haltBox").innerHTML = r.halted
-    ? `<div class="note"><b>New trades are paused.</b> Exits and stops still run.<br><span class="muted">${esc(r.halt_reason)}</span><br>Resume only from the server: <code>rm ~/AETHER_HALT</code></div>`
-    : `<button class="btn" id="haltBtn" style="margin-top:12px">Pause new trades</button>`;
-  const hbtn = $("haltBtn"); if (hbtn) hbtn.onclick = pause;
+  $("hb").textContent = age(health.heartbeat_age_sec);
+  $("hb").style.color = health.engine_ok ? "var(--ok)" : "var(--bad)";
+  $("hbSub").textContent = health.engine_ok ? "Within WATCHDOG_STALE_MIN" : "Stale or missing: watchdog alerts";
 
-  const lots = [];
-  for (const [name, a] of [["live", d.live], ["paper", d.paper]]) {
-    if (a && !a.error) for (const p of a.positions) lots.push({...p, acct:name});
+  // pipeline
+  const orders = (ext.orders && ext.orders.ok) ? ext.orders.orders : null;
+  const open = orders ? orders.filter((o) => !FINAL_BAD.has(o.status) && o.status !== "filled").length : null;
+  const sig = (sum.signals && sum.signals.rows && sum.signals.rows[0]) || null;
+  const stopsMissing = acctOk && acct.positions.some((p) => p.stop_state !== "set");
+  const halted = sum.state === "paused" || sum.state === "latched";
+  const steps = [
+    ["Market data", sum.market_open == null ? ["idle", "unknown"] : sum.market_open ? ["ok", "Market open"] : ["idle", "Market closed"]],
+    ["Pre-trade checks", halted ? ["warn", sum.state === "latched" ? "Breaker latched" : "Halt on: blocked"] : ["ok", "Ready"]],
+    ["Signal", sig ? ["ok", "Last " + tme(sig.ts)] : ["idle", "No decisions yet"]],
+    ["Risk controller", risk.level && risk.level !== "ok" ? ["warn", "Level " + risk.level] : ["ok", "Within caps"]],
+    ["Safety guard", health.engine_ok ? ["ok", "Heartbeat fresh"] : ["bad", "Heartbeat stale"]],
+    ["Approval", liveFlag ? ["warn", "You approve (Telegram)"] : ["ok", "Auto (paper)"]],
+    ["Executor", open == null ? ["idle", "unknown"] : open ? ["warn", open + " working"] : ["ok", "Idle"]],
+    ["Broker", acctOk ? ["ok", "Alpaca " + (acct.status || "reachable")] : ["bad", "Unreachable"]],
+    ["Reconcile", !acctOk ? ["idle", "unknown"] : stopsMissing ? ["warn", "Stop missing"] : ["ok", acct.positions.length + " positions"]],
+  ];
+  $("pipe").replaceChildren(...steps.map(([nm, [t, s]], i) => {
+    const chip = el("span", { class: "st neu-inset " + TONE_CLS[t] }, s);
+    return el("div", { class: "step neu-inset" }, el("span", { class: "n" }, String(i + 1).padStart(2, "0")), el("span", { class: "nm" }, nm), chip);
+  }));
+
+  // orders
+  const stops = {}; if (acctOk) acct.positions.forEach((p) => { stops[p.symbol] = p.stop; });
+  $("orders").replaceChildren(orders == null
+    ? el("div", { class: "empty" }, "unknown: " + ((ext.orders && ext.orders.error) || eErr || "no data"))
+    : table([{ t: "Order" }, { t: "Lifecycle" }, { t: "Sent" }, { t: "Signal→fill", r: 1 }, { t: "Stop", r: 1 }], orders.map((o) => [
+        el("span", {}, el("b", {}, o.side.toUpperCase() + " " + o.symbol), el("br"), el("span", { class: "dim" }, (o.qty ? o.qty + " sh" : o.notional ? "$" + o.notional : "") + " · " + (o.type || ""))),
+        lane(o), el("span", { class: "mono" }, tme(o.submitted_at)),
+        el("span", { class: "mono" }, o.fill_latency_sec == null ? "—" : o.fill_latency_sec + " s"),
+        el("span", { class: "mono" }, o.holding && stops[o.symbol] ? money(stops[o.symbol]) : "—"),
+      ]), "No orders yet."));
+
+  // positions
+  $("positions").replaceChildren(!acctOk
+    ? el("div", { class: "empty" }, "unknown: " + (acct.error || sErr || "no data"))
+    : table([{ t: "Symbol" }, { t: "Qty", r: 1 }, { t: "Avg", r: 1 }, { t: "Price", r: 1 }, { t: "P&L", r: 1 }, { t: "Stop", r: 1 }, { t: "Gap", r: 1 }], acct.positions.map((p) => [
+        el("b", {}, p.symbol), el("span", { class: "mono" }, p.qty.toFixed(4)), el("span", { class: "mono" }, money(p.avg)),
+        el("span", { class: "mono" }, money(p.price)), el("span", { class: "mono", style: "color:" + (p.upl >= 0 ? "var(--ok)" : "var(--bad)") }, signed(p.upl)),
+        el("span", { class: "mono", style: p.stop_state === "set" ? "" : "color:var(--warn)" }, p.stop_state === "set" ? money(p.stop) : p.stop_state.replace("_", " ")),
+        el("span", { class: "mono" }, p.stop_gap == null ? "—" : pct(p.stop_gap)),
+      ]), "No positions. The sleeve is in cash."));
+
+  // decisions
+  const sg = sum.signals || {};
+  $("decisions").replaceChildren(!sg.connected
+    ? el("div", { class: "empty" }, "unknown: " + (sg.note || sg.error || sErr || "decision log not connected"))
+    : table([{ t: "Time (Dubai)" }, { t: "Symbol" }, { t: "Action" }, { t: "Gate" }, { t: "Reason" }], sg.rows.map((r) => [
+        el("span", { class: "mono" }, tme(r.ts)), r.symbol || "—", r.action || "—", r.gate || "—", el("span", { class: "mute" }, (r.reason || "").slice(0, 120)),
+      ]), "No decisions logged yet."));
+
+  // gate
+  const g = ext.research || {};
+  if (!g.ok) $("gate").replaceChildren(el("div", { class: "empty" }, "unknown: " + (g.error || eErr || "")));
+  else {
+    const pass = g.dsr != null && g.dsr >= g.dsr_gate;
+    const v = el("div", { class: "neu-inset" }, pass ? "DSR passes · PBO and holdout still required" : "Not proven · stay on paper");
+    v.style.cssText = "padding:10px 12px;border-radius:10px;font-weight:600;font-size:13px"; setTone(v, pass ? "warn" : "bad");
+    $("gate").replaceChildren(v, el("dl", { class: "kv", style: "margin-top:12px" },
+      el("dt", {}, "Deflated Sharpe"), el("dd", {}, (g.dsr == null ? "unknown" : g.dsr.toFixed(3)) + " / ≥ " + g.dsr_gate),
+      el("dt", {}, "PBO"), el("dd", {}, "per batch · ≤ " + g.pbo_gate),
+      el("dt", {}, "Trials counted"), el("dd", {}, g.trials_total + " (" + g.trials_backfilled + " backfilled)"),
+      el("dt", {}, "Evidence"), el("dd", { style: "font-size:11px" }, g.evidence_file || "none")));
   }
-  $("lots").innerHTML = lots.length ? lots.map(p => {
-    let stopTxt;
-    if (p.stop_state === "not_connected") stopTxt = `<span class="amber">Stop not shown (state file not connected)</span>`;
-    else if (p.stop_state === "missing") stopTxt = `<span class="bad">No stop on file. Check the engine.</span>`;
-    else stopTxt = (p.stop_gap < 0.03 ? "Close to stop. Leave it." : "Stop is set. Do not move it wider.") + `<div class="muted">Stop ${p.stop.toFixed(2)} · now ${p.price.toFixed(2)}</div>`;
-    return `<tr><td><b>${esc(p.symbol)}</b><span class="tag ${p.acct==="live"?"live":""}">${p.acct}</span>
-      <div class="muted">${+p.qty.toFixed(4)} sh · bought ${p.avg.toFixed(2)}</div></td>
-      <td class="${p.upl>=0?"good":"bad"}">${p.upl>=0?"Gain":"Loss"} ${money(Math.abs(p.upl))}</td><td>${stopTxt}</td></tr>`;
-  }).join("") : `<tr><td class="muted">No open US trades.</td></tr>`;
 
-  const s = d.signals;
-  if (!s || s.error) $("signals").innerHTML = `<tr><td class="err">Decision log error: ${esc(s && s.error)}</td></tr>`;
-  else if (!s.connected) $("signals").innerHTML = `<tr><td class="muted">Decision log not connected (${esc(s.note)}).</td></tr>`;
-  else $("signals").innerHTML = `<tr><td class="k">Time</td><td class="k">Name</td><td class="k">Signal</td><td class="k">Safety check</td><td class="k">Why</td></tr>` +
-    (s.rows.length ? s.rows.map(x => `<tr><td class="muted">${esc(x.ts)}</td><td><b>${esc(x.symbol)}</b></td><td>${esc(x.action)}</td>
-      <td class="${/allow|pass|ok/i.test(x.gate||"")?"good":(/block|reject|skip/i.test(x.gate||"")?"bad":"")}">${esc(x.gate)}</td><td>${esc(x.reason)}</td></tr>`).join("")
-      : `<tr><td class="muted" colspan="5">No signals yet today.</td></tr>`);
+  // risk breakers
+  const rk = [];
+  const add = (k, v) => rk.push(el("dt", {}, k), el("dd", {}, v));
+  add("Halt file", risk.halted ? "ON" : "off");
+  add("Weekly loss", pct(risk.weekly_loss)); add("Monthly loss", pct(risk.monthly_loss)); add("Drawdown", pct(risk.drawdown));
+  add("Mark age", risk.mark_age_days == null ? "unknown" : risk.mark_age_days + " d");
+  $("risk").replaceChildren(...rk);
+
+  // server
+  const sv = ext.server || {};
+  if (!sv.ok) $("server").replaceChildren(el("div", { class: "empty" }, "unknown: " + (sv.error || eErr || "")));
+  else {
+    const meter = (name, txt, p) => {
+      const c = p >= 90 ? "var(--bad)" : p >= 75 ? "var(--warn)" : "var(--ok)";
+      return el("div", { style: "margin-bottom:10px" },
+        el("div", { style: "display:flex;justify-content:space-between;font-size:13px;margin-bottom:5px" }, el("span", { class: "mute" }, name), el("span", { class: "mono" }, txt)),
+        el("div", { class: "bar neu-inset" }, el("i", { style: "width:" + Math.max(1, Math.min(100, p)) + "%;background:" + c })));
+    };
+    const loadPct = 100 * sv.load1 / sv.cpus;
+    $("server").replaceChildren(meter("CPU load", sv.load1 + " / " + sv.cpus + " cores", loadPct),
+      meter("Memory", sv.mem_pct + "% of " + sv.mem_total_gb + " GB", sv.mem_pct), meter("Disk", sv.disk_pct + "% of " + sv.disk_total_gb + " GB", sv.disk_pct));
+  }
+
+  // backups
+  const bk = ext.backups || {};
+  const bb = [];
+  const addb = (k, v, warn) => bb.push(el("dt", {}, k), el("dd", warn ? { style: "color:var(--warn)" } : {}, v));
+  if (!bk.ok) addb("Status", "unknown", true);
+  else {
+    addb("Last", bk.last ? tme(bk.last) : "none yet", !bk.last);
+    if (bk.last) addb("Size", bk.size_kb + " KB");
+    addb("Kept", String(bk.count));
+    addb("Offsite", bk.offsite ? "configured" : "not set up", !bk.offsite);
+  }
+  $("backups").replaceChildren(...bb);
 }
 
-async function load(){
+async function tick() {
+  const [sum, ext] = await Promise.all([getJSON("/api/us/summary"), getJSON("/api/us/extras")]);
+  render(sum, ext);
+}
+
+$("pauseBtn").addEventListener("click", async () => {
+  if (!confirm("Pause new entries? Exits and stops keep working. Resuming needs the server.")) return;
+  const btn = $("pauseBtn"); btn.disabled = true; btn.textContent = "Pausing…";
   try {
-    const r = await fetch("/api/us/summary", {credentials:"same-origin", cache:"no-store"});
-    if (!r.ok) throw new Error("HTTP " + r.status);
-    render(await r.json());
-  } catch (e) {
-    $("state").textContent = "Dashboard offline"; $("state").className = "pill bad";
-    $("clk").textContent = "Could not load data: " + e.message;
-  }
-}
+    const r = await fetch("/api/us/pause", { method: "POST", credentials: "same-origin", headers: { "x-aether-csrf": CSRF } });
+    btn.textContent = r.ok ? "Paused" : "Pause failed (" + r.status + ")";
+  } catch (e) { btn.textContent = "Pause failed"; }
+  setTimeout(() => { btn.textContent = "Pause new entries"; tick(); }, 2500);
+});
 
-async function pause(){
-  if (!confirm("Pause all NEW trades? Exits and stops keep running. Resuming needs the server.")) return;
-  const b = $("haltBtn"); if (b) b.disabled = true;
-  try {
-    const r = await fetch("/api/us/pause", {method:"POST", credentials:"same-origin", headers:{"X-Aether-CSRF": CSRF}});
-    if (!r.ok) throw new Error("HTTP " + r.status);
-    $("tape").textContent = "Paused. New entries are blocked. Exits and stops still run.";
-  } catch (e) {
-    alert("Pause failed: " + e.message + ". Use SSH: touch ~/AETHER_HALT");
-    if (b) b.disabled = false;
-  }
-  load();
-}
-
-load();
-setInterval(load, 15000);
+tick();
+setInterval(tick, 15000);
 </script>
 </body>
 </html>

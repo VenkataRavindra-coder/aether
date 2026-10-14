@@ -2105,3 +2105,9 @@ app.include_router(_dashboard_v2.router)
 # middleware (which already covers every path, including this one, by default-deny).
 from us_dashboard import build_router as _build_us_dashboard_router  # noqa: E402
 app.include_router(_build_us_dashboard_router(lambda: None))
+
+# us_extras (2026-10-13): GET /api/us/extras -- orders lifecycle, server health,
+# research/DSR gate, backups. Same no-op auth_dep as us_dashboard above; the real
+# gate is the _dashboard_auth middleware, default-deny.
+from us_extras import build_router as _build_us_extras_router  # noqa: E402
+app.include_router(_build_us_extras_router(lambda: None))
