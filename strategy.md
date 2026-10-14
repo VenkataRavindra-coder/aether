@@ -282,10 +282,13 @@ once at import instead of lazily on the first log() call during live trading.
   it should not be revived as-is given the XSS.
 - **Code:** private repo `VenkataRavindra-coder/aether`, deploy key on the VM.
 - **Backups:** nightly 03:15 UTC (`aether-backup.timer`): state, decision log, research trials;
-  integrity-checked; 14 local copies in `~/backups`; offsite to Azure `aetherbkp/aether-backups`
-  (separate resource group, Create-only SAS). `.env` is never backed up.
-- **Restore:** download the archive from the Azure portal (the VM token cannot read), extract,
-  stop `aether`, copy files back, start `aether`.
+  integrity-checked; 14 local copies in `~/backups`; offsite to a Hetzner Storage Box
+  (`BACKUP_STORAGEBOX`, rsync over SSH port 23, dedicated key, folder `aether-backups/`). The
+  Azure target (`aetherbkp`) was lost with the Azure resources on 2026-10-07/08; `backup.sh`
+  still supports `BACKUP_SAS_URL` but it is no longer set. `.env` is never backed up.
+- **Restore:** fetch the archive from the Storage Box (sftp/rsync with the same key, or the
+  Hetzner console), extract, stop the engine service (`ratelark` on Hetzner), copy files back,
+  start it.
 - **Rebuild VM:** clone repo, `pip install -r requirements.txt` into `venv`, copy
   `deploy/*.service|timer` to systemd, restore `.env` from the password manager, restore backup.
 - **Secrets** (values only in `.env` + password manager): `APCA_API_KEY_ID/SECRET` (paper),
