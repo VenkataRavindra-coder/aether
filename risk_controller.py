@@ -15,6 +15,14 @@ Rules for NEW entries, in order:
   6. real money: today's buys + order > RISK_MAX_DAILY_BUY_USD_LIVE -> block (default $100)
 Paper orders are never capped by 5-6, so the $5,000 paper allocation is unaffected.
 
+The "canary" engine key (canary.py, micro-live phase 1) is the second key allowed to spend real
+money. It has no daily-loss kill switch of its own (it never holds more than one tiny position),
+and its caps are separate from the US engine's so a canary can never starve a rebalance:
+  5c. real money: order > min(CANARY_MAX_ORDER_USD, RISK_MAX_ORDER_USD_LIVE) -> block  (default $15)
+  6c. real money: today's canary buys + order > CANARY_MAX_DAILY_BUY_USD     -> block  (default $30)
+Canary buys are recorded in their own state file (AETHER_CANARY_RISK_STATE) and never consume
+RISK_MAX_DAILY_BUY_USD_LIVE. All caps are notional USD.
+
 Exits are never blocked, including by rule 1: a halt must not trap you in a position.
 
 But a halt must not silently LIQUIDATE one either. A plan that rotates positions (sells,
@@ -41,7 +49,9 @@ HALT_FILE = Path(os.getenv("AETHER_HALT_FILE", str(Path.home() / "AETHER_HALT"))
 _KILL = {"crypto": None, "us": None}
 # Engine keys allowed to call check()/preflight(). Anything else is refused (entries only;
 # closing orders stay allowed, rule 0.7). "stress" is the paper-only stress-test key.
-_VALID_ENGINES = frozenset({"crypto", "us", "stress"})
+_VALID_ENGINES = frozenset({"crypto", "us", "stress", "canary"})
+# Engines allowed to place real-money entries. Crypto live is disabled; stress is paper-only.
+_LIVE_ENGINES = frozenset({"us", "canary"})
 _LOCK = threading.Lock()
 
 
@@ -65,7 +75,10 @@ def _env_usd(name: str, default: str) -> float:
     return v if v > 0 and math.isfinite(v) else 0.0
 
 
-def _state_path() -> Path:
+def _state_path(engine: str = "us") -> Path:
+    if engine == "canary":
+        return Path(os.getenv("AETHER_CANARY_RISK_STATE",
+                              str(Path.home() / ".aether_canary_risk_state.json")))
     return Path(os.getenv("AETHER_RISK_STATE", str(Path.home() / ".aether_risk_state.json")))
 
 
@@ -73,9 +86,9 @@ def _today() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
 
-def _live_buys_today() -> float:
+def _live_buys_today(engine: str = "us") -> float:
     try:
-        s = json.loads(_state_path().read_text())
+        s = json.loads(_state_path(engine).read_text())
     except FileNotFoundError:
         return 0.0
     except Exception:
@@ -83,16 +96,16 @@ def _live_buys_today() -> float:
     return float(s.get("usd", 0.0)) if s.get("day") == _today() else 0.0
 
 
-def _record_live_buy(usd: float) -> None:
-    p = _state_path()
-    total = _live_buys_today() + usd
+def _record_live_buy(usd: float, engine: str = "us") -> None:
+    p = _state_path(engine)
+    total = _live_buys_today(engine) + usd
     tmp = p.with_name(p.name + ".tmp")
     tmp.write_text(json.dumps({"day": _today(), "usd": round(total, 2)}))
     os.chmod(tmp, 0o600)
     tmp.replace(p)
 
 
-def release_live_buy(usd: float) -> None:
+def release_live_buy(usd: float, engine: str = "us") -> None:
     """Returns budget that check() reserved but was never actually spent: the order was
     rejected by the broker after the risk check passed, or it filled for less than the
     requested notional. Without this, a failed or partial live buy keeps counting against
@@ -105,8 +118,8 @@ def release_live_buy(usd: float) -> None:
     if not math.isfinite(usd) or usd <= 0:
         return
     with _LOCK:
-        total = max(0.0, _live_buys_today() - usd)
-        p = _state_path()
+        total = max(0.0, _live_buys_today(engine) - usd)
+        p = _state_path(engine)
         tmp = p.with_name(p.name + ".tmp")
         tmp.write_text(json.dumps({"day": _today(), "usd": round(total, 2)}))
         os.chmod(tmp, 0o600)
@@ -137,7 +150,7 @@ def _decide(engine, side, notional, is_closing, real_money, record=True, spent_e
         return False, "unknown_engine"
     if real_money and engine == "crypto":
         return False, "crypto_live_disabled"
-    if real_money and engine != "us":
+    if real_money and engine not in _LIVE_ENGINES:
         return False, "live_engine_not_allowed"
     if engine in _KILL:
         state = _KILL[engine]
@@ -153,16 +166,22 @@ def _decide(engine, side, notional, is_closing, real_money, record=True, spent_e
         return False, "unknown_notional"
     if real_money:
         cap = _env_usd("RISK_MAX_ORDER_USD_LIVE", "100")
+        if engine == "canary":
+            cap = min(cap, _env_usd("CANARY_MAX_ORDER_USD", "15"))
+            budget = _env_usd("CANARY_MAX_DAILY_BUY_USD", "30")
+            cap_name, budget_name = "over_canary_max_order_usd", "over_canary_daily_budget"
+        else:
+            budget = _env_usd("RISK_MAX_DAILY_BUY_USD_LIVE", "100")
+            cap_name, budget_name = "over_max_order_usd_live", "over_daily_live_budget"
         if usd > cap:
-            return False, f"over_max_order_usd_live({cap:g})"
-        budget = _env_usd("RISK_MAX_DAILY_BUY_USD_LIVE", "100")
+            return False, f"{cap_name}({cap:g})"
         # spent_extra counts the earlier buys in a plan being pre-flighted, so a plan whose
         # buys only breach the daily budget in aggregate is still refused as a whole.
-        spent = _live_buys_today() + float(spent_extra or 0.0)
+        spent = _live_buys_today(engine) + float(spent_extra or 0.0)
         if spent + usd > budget + 1e-9:
-            return False, f"over_daily_live_budget(spent {spent:g} of {budget:g})"
+            return False, f"{budget_name}(spent {spent:g} of {budget:g})"
         if record:
-            _record_live_buy(usd)
+            _record_live_buy(usd, engine)
     return True, "ok"
 
 
