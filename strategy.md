@@ -421,6 +421,14 @@ once at import instead of lazily on the first log() call during live trading.
       return inside the simulation's 90% band. Reported, never used to override S4.
     - *Endpoint:* S4 is evaluated once and is final. It is not a trigger for further tests,
       re-runs or a longer window.
+  - **Canary vs the soak clock (test plan check A4 decides, unchanged):** *running* the canary
+    changes no code and never restarts the clock (it trades a different account, and canary
+    fills never count as soak fills). *Changing* code does: A4 counts every `.py` except tests,
+    the stress script, research code, patches and the daily runner, so an edit to `canary.py`,
+    `alpaca_executor.py`, `risk_controller.py` or `safety_guard.py` restarts the soak. That is
+    intended for the shared order-path files; for `canary.py` it is conservative, and is
+    accepted rather than narrowed now (narrowing A4 would be a test-plan change under its
+    section 12). In practice the canary is expected to run before SOAK_START.
   - **What can extend the soak:** only the section 6 conditions not yet being met (days,
     completed rebalances, fewer than 10 qualifying fills, a non-green day, or an engine code
     change restarting the clock). Never the results.
