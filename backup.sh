@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # AETHER nightly backup: engine state + decision log + research trials.
 # Local: ~/backups/aether-<UTC>.tar.gz, last 14 kept.
-# Offsite: Azure Blob via BACKUP_SAS_URL in .env (container SAS, Create permission only).
+# Offsite: Hetzner Storage Box (BACKUP_STORAGEBOX) or Azure Blob (BACKUP_SAS_URL), see step 4.
 # Never includes .env or keys: secrets live in the password manager.
 set -euo pipefail
 trap '/home/ratelark/ratelark/.venv/bin/python3 /home/ratelark/ratelark/backup_alert.py "backup failed at line $LINENO"' ERR
@@ -36,14 +36,24 @@ tar -czf "$ARCHIVE" -C "$OUT" "$TS"
 rm -rf "$WORK"
 chmod 600 "$ARCHIVE"
 
-# 4. Offsite (skipped with a warning until BACKUP_SAS_URL is set).
+# 4. Offsite. Hetzner Storage Box over rsync/SSH (port 23) when BACKUP_STORAGEBOX is set
+#    (uNNNNNN@uNNNNNN.your-storagebox.de, key in BACKUP_STORAGEBOX_KEY, default
+#    ~/.ssh/storagebox_key, host key pinned in known_hosts); else Azure via BACKUP_SAS_URL;
+#    else a warning (RD3 stays red).
+SB=$(grep -E '^BACKUP_STORAGEBOX=' .env | cut -d= -f2- | tr -d '"' || true)
+SB_KEY=$(grep -E '^BACKUP_STORAGEBOX_KEY=' .env | cut -d= -f2- | tr -d '"' || true)
+SB_KEY=${SB_KEY:-/home/ratelark/.ssh/storagebox_key}
 SAS=$(grep -E '^BACKUP_SAS_URL=' .env | cut -d= -f2- | tr -d '"' || true)
-if [ -n "$SAS" ]; then
+if [ -n "$SB" ]; then
+  rsync -t -e "ssh -p 23 -i $SB_KEY -o BatchMode=yes -o StrictHostKeyChecking=yes" \
+    "$ARCHIVE" "$SB:aether-backups/"
+  echo "uploaded $(basename "$ARCHIVE") offsite"
+elif [ -n "$SAS" ]; then
   URL="${SAS%%\?*}/$(basename "$ARCHIVE")?${SAS#*\?}"
   curl -fsS --retry 3 -X PUT -H "x-ms-blob-type: BlockBlob" --data-binary @"$ARCHIVE" "$URL" -o /dev/null
   echo "uploaded $(basename "$ARCHIVE") offsite"
 else
-  echo "WARNING: BACKUP_SAS_URL not set, local backup only"
+  echo "WARNING: no offsite target (BACKUP_STORAGEBOX or BACKUP_SAS_URL), local backup only"
 fi
 
 # 5. Keep the newest 14 local archives.
