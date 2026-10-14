@@ -178,6 +178,28 @@ def rd4_run(show=GOOD_SHOW, active="active"):
     return fake_run([("systemctl show", show), ("is-active", (0, active + "\n"))])
 
 
+def test_rd4_checks_the_configured_service(tmp_path, monkeypatch):
+    monkeypatch.setenv("AETHER_SERVICE", "ratelark.service")
+    seen = []
+    def run(cmd, timeout=None, cwd=None):
+        seen.append(cmd)
+        return GOOD_SHOW if "show" in cmd else (0, "active\n")
+    (tmp_path / ".env").write_text("HEALTHCHECK_URL=https://hc.example/abc\n")
+    assert ad.check_rd4(tmp_path, run)["ok"] is True
+    assert ["systemctl", "show", "ratelark.service", "-p", "Restart", "-p", "WatchdogUSec"] in seen
+
+
+def test_a1_prefers_dot_venv(tmp_path):
+    (tmp_path / ".venv" / "bin").mkdir(parents=True)
+    (tmp_path / ".venv" / "bin" / "python3").write_text("")
+    seen = []
+    def run(cmd, timeout=None, cwd=None):
+        seen.append(str(cmd[0]))
+        return (0, "ok")
+    ad.check_a1(tmp_path, run)
+    assert seen and all(c.endswith(".venv/bin/python3") for c in seen)
+
+
 def test_rd4_all_good(tmp_path):
     (tmp_path / ".env").write_text("X=1\nHEALTHCHECK_URL=https://hc.example/abc\n")
     assert ad.check_rd4(tmp_path, rd4_run())["ok"] is True
@@ -203,9 +225,24 @@ def test_rd5_all_files_present(tmp_path):
 
 
 def test_rd5_missing_file_fails(tmp_path):
+    make_archive(tmp_path, drop=("aether_state.json",))
+    r = ad.check_rd5(tmp_path)
+    assert r["ok"] is False and "aether_state.json" in r["detail"]
+
+
+def test_rd5_risk_state_required_once_it_exists(tmp_path):
     make_archive(tmp_path, drop=(".aether_risk_state.json",))
+    assert ad.check_rd5(tmp_path)["ok"] is True          # no live buy yet: nothing to back up
+    (tmp_path / ".aether_risk_state.json").write_text("{}")
     r = ad.check_rd5(tmp_path)
     assert r["ok"] is False and ".aether_risk_state.json" in r["detail"]
+
+
+def test_rd5_canary_state_required_once_it_exists(tmp_path):
+    make_archive(tmp_path)
+    (tmp_path / ".aether_canary_risk_state.json").write_text("{}")
+    r = ad.check_rd5(tmp_path)
+    assert r["ok"] is False and ".aether_canary_risk_state.json" in r["detail"]
 
 
 def test_rd5_live_ledger_required_once_it_exists(tmp_path):

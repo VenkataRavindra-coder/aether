@@ -82,11 +82,18 @@ def _env_usd(name: str, default: str) -> float:
     return v if v > 0 and math.isfinite(v) else 0.0
 
 
+def _state_dir() -> Path:
+    """Same folder as the live ledger (safety_guard.home()) and the one backup.sh copies from.
+    Before 2026-10-14 the default was ~ while backup.sh copied from AETHER_HOME, so with
+    AETHER_HOME set the daily live-buy budget would never have been backed up."""
+    return safety_guard.home()
+
+
 def _state_path(engine: str = "us") -> Path:
     if engine == "canary":
         return Path(os.getenv("AETHER_CANARY_RISK_STATE",
-                              str(Path.home() / ".aether_canary_risk_state.json")))
-    return Path(os.getenv("AETHER_RISK_STATE", str(Path.home() / ".aether_risk_state.json")))
+                              str(_state_dir() / ".aether_canary_risk_state.json")))
+    return Path(os.getenv("AETHER_RISK_STATE", str(_state_dir() / ".aether_risk_state.json")))
 
 
 def _today() -> str:
