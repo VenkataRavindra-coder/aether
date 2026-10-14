@@ -1,0 +1,79 @@
+{
+  "what": "S2 benchmark: momentum timing vs passive equal-weight of the same 11 ETFs (not a trial; N unchanged)",
+  "run_utc": "2026-10-14T06:55:20+00:00",
+  "data_sha256": "e9524a2a60e1c609af72c991d1be8cc8d42f36d95bcafcf1b1b81dd1971ed9b6",
+  "code_sha256": "c879622ee75bc0aa97b9422649cda1fdc8f3a31b21a3ece9285e5ad78af69a7d",
+  "cache": "yf",
+  "seed": 20261007,
+  "slip_bps": 2.0,
+  "strategy": {
+    "start": "2007-03-01",
+    "end": "2026-10-06",
+    "cagr": 0.1081,
+    "vol": 0.1458,
+    "sharpe": 0.779,
+    "max_dd": -0.2073,
+    "calmar": 0.521,
+    "worst_month": -0.0928,
+    "pct_up_months": 0.634,
+    "daily_skew": -0.415,
+    "daily_kurtosis": 5.792,
+    "days": 4931,
+    "mc_dd_p95": 0.3069,
+    "boot_sharpe_p5": 0.463,
+    "avg_monthly_turnover": 0.5041,
+    "annual_turnover": 6.049,
+    "rebalances": 236,
+    "cost_stress": {
+      "x2": {
+        "cagr": 0.1068,
+        "sharpe": 0.77
+      },
+      "x3": {
+        "cagr": 0.1054,
+        "sharpe": 0.762
+      }
+    }
+  },
+  "passive_equal_weight": {
+    "start": "2007-03-01",
+    "end": "2026-10-06",
+    "cagr": 0.0728,
+    "vol": 0.1242,
+    "sharpe": 0.629,
+    "max_dd": -0.3693,
+    "calmar": 0.197,
+    "worst_month": -0.1583,
+    "pct_up_months": 0.638,
+    "daily_skew": -0.246,
+    "daily_kurtosis": 12.511,
+    "days": 4931,
+    "mc_dd_p95": 0.3385,
+    "boot_sharpe_p5": 0.283,
+    "avg_monthly_turnover": 0.0331,
+    "annual_turnover": 0.398,
+    "rebalances": 236,
+    "cost_stress": {
+      "x2": {
+        "cagr": 0.0727,
+        "sharpe": 0.628
+      },
+      "x3": {
+        "cagr": 0.0726,
+        "sharpe": 0.628
+      }
+    }
+  },
+  "timing_value": {
+    "cagr_diff": 0.0353,
+    "sharpe_diff": 0.15,
+    "max_dd_diff": 0.162,
+    "mc_dd_p95_diff": -0.0316,
+    "calmar_diff": 0.324,
+    "active_return_annual": 0.0354,
+    "tracking_error": 0.126,
+    "information_ratio": 0.281,
+    "ir_t_stat": 1.24,
+    "years": 19.6
+  }
+}

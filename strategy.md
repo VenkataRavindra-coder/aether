@@ -333,6 +333,31 @@ once at import instead of lazily on the first log() call during live trading.
     same window (0.779 vs 0.779; SPY 0.639). The only advantage is Calmar (0.52 vs 0.27 for
     60/40): the same return per unit of risk with smaller drawdowns. That is a risk-management
     property, not evidence of a momentum edge.
+  - **Passive benchmark (added 2026-10-14; a benchmark, not a trial: N stays 28).** Does the
+    momentum *timing* beat simply holding the same 11 ETFs? Passive rule: equal weight (1/11,
+    SHY included), same monthly schedule, run through the same simulator (same open execution,
+    2 bp/side, same data `e9524a2a…`, identical window). Source:
+    `results/benchmark_equal_weight_yf_20261014_105520.json`, `benchmark_equal_weight.py`. The
+    strategy side reproduces the S2 numbers exactly.
+
+    | | Timing (S2) | Passive equal-weight |
+    |---|---|---|
+    | CAGR | 10.8% | 7.3% |
+    | Sharpe | 0.78 | 0.63 |
+    | Max drawdown | -20.7% | -36.9% |
+    | Calmar | 0.52 | 0.20 |
+    | MC drawdown, 95th pct | 30.7% | 33.9% |
+    | Bootstrap Sharpe, 5th pct | 0.46 | 0.28 |
+    | Turnover per year | 6.0x | 0.4x |
+
+    Timing value: +3.5 pp a year, information ratio 0.28 over 19.6 years, **t = 1.24: not
+    statistically significant.** It is concentrated: 2008 alone contributed about 24 pp; excluding
+    2008 the information ratio is 0.22 (t = 0.97). Timing beat passive in 13 of 20 years.
+  - **Reading.** On point estimates the timing does add value over its own universe, mostly by
+    avoiding the 2008 drawdown, which is why its Calmar is better. The margin cannot be told apart
+    from luck. This strengthens the interpretation of S2 (the rule is not just its ETFs) but does
+    not change the verdict: NO-GO stands, and nothing here supports a variant of this rule as
+    trial 29.
   - Going live with this rule anyway would be a written RISK ACCEPTANCE in this file (amount,
     reason, sunset date, stop rule), never a pass. Any changed rule (e.g. a regime filter) is a
     new rule with its own pre-registration, and every variant adds to N.
