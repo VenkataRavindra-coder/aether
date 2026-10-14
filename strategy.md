@@ -310,6 +310,32 @@ once at import instead of lazily on the first log() call during live trading.
     passes, **and** the strategy has passed its validation gate (DSR >= 0.95, PBO <= 0.05)
     and the Monte Carlo drawdown is within the 27% limit. Only then `US_LIVE=true`, first
     rebalance approved by hand. Phase 1's result has no bearing on this gate.
+- **Strategy verdict record: `us_etf_momentum_v1` (S2, recorded 2026-10-14).**
+  Source: `aether-research/us_momentum/results/strategy_truth_yf_20261007_074638.json`
+  (committed), produced by `strategy_truth.py run` as pre-registered in
+  `docs/PREREG_us_momentum.md`.
+  - Run: 2026-10-07 07:46 UTC, 47 minutes after tag `prereg-us-momentum` (06:59 UTC).
+  - Code fingerprint: `c879622ee75bc0aa97b9422649cda1fdc8f3a31b21a3ece9285e5ad78af69a7d`
+  - Data fingerprint: `e9524a2a60e1c609af72c991d1be8cc8d42f36d95bcafcf1b1b81dd1971ed9b6`
+    (long Yahoo history; S14 PASS: agrees with the Alpaca sample, worst median difference
+    1.5 bp, signals agree 97.4%).
+  - Window: 2007-03-01 to 2026-10-06 (full pre-registered sample, not a holdout).
+  - Sharpe 0.779; CAGR 10.8%; observed max drawdown -20.7%; Calmar 0.521.
+  - Deflated Sharpe: **0.802 -> FAIL** (gate 0.95; N = 28; Sharpe 0.96 would be needed).
+  - PBO (S3): **not run** (stage 2). Deferred, not passed: the gate is DSR >= 0.95 **and**
+    PBO <= 0.05, and S2 already fails it.
+  - Monte Carlo max drawdown, 95th percentile (S11): **30.7% -> FAIL** (limit 27%).
+  - N: 28 (4 logged + 24 backfilled).
+  - **Verdict: NO-GO.** Fails the deflated-Sharpe gate and the drawdown limit. Phase 2 (strategy
+    signals on the live account) does not start for this rule. Paper continues unchanged
+    (prereg section 9).
+  - Benchmark, part of the result (S17): the Sharpe equals a plain 60/40 portfolio's over the
+    same window (0.779 vs 0.779; SPY 0.639). The only advantage is Calmar (0.52 vs 0.27 for
+    60/40): the same return per unit of risk with smaller drawdowns. That is a risk-management
+    property, not evidence of a momentum edge.
+  - Going live with this rule anyway would be a written RISK ACCEPTANCE in this file (amount,
+    reason, sunset date, stop rule), never a pass. Any changed rule (e.g. a regime filter) is a
+    new rule with its own pre-registration, and every variant adds to N.
 - **Before scaling above micro-live:** walk-forward validation, Key Vault for secrets,
   a full restore drill, and at least several months of live results matching paper.
 - **Strategy retirement rule (2026-10-03):** retire (stop new entries + alert) when EITHER
