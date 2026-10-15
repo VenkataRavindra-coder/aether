@@ -443,6 +443,11 @@ once at import instead of lazily on the first log() call during live trading.
     - 2026-10-14, about 06:37-06:46 UTC: a server test run created the real `~/AETHER_HALT`
       (content `x`); paper entries were blocked for about 10 minutes. No rebalance was due and
       no orders were affected. Removed by hand; test isolation fixed (PR #2).
+    - 2026-10-14 ~08:00 UTC to 2026-10-15 (until the fix is deployed): the new `aether-health`
+      check (PR #9) treated the login middleware's 401 as "dead" and restarted
+      `ratelark.service` about every 90 s; the watchdog alerted on the gaps. No rebalance was
+      due, so no orders were affected. Fixed in PR #11 (any HTTP reply counts as alive,
+      regression test added). Before SOAK_START, so no soak clock was running.
 - **Before scaling above micro-live:** walk-forward validation, Key Vault for secrets,
   a full restore drill, and at least several months of live results matching paper.
 - **Strategy retirement rule (2026-10-03):** retire (stop new entries + alert) when EITHER
