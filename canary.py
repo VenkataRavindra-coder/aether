@@ -16,6 +16,7 @@ invocation is a cold start.
   python3 canary.py sell --limit 312.10       # sells the whole canary position
   python3 canary.py cancel [ORDER_ID]         # cancels canary open orders (all, or one)
   python3 canary.py assert-flat               # exit 0 only if no canary position and no open order
+  python3 canary.py report [--since DATE]     # pre-registered execution measurement: PASS/FAIL
 
 Run from the repo directory as the service user. Every session ends with `assert-flat`.
 """
@@ -222,6 +223,10 @@ def cmd_buy(c, args) -> int:
     if not margin_day_trade_room(acct):
         print("refused: margin account with no day-trade room; wait for the 5-session window to roll.")
         return 1
+    window = _session_window_problem(c)
+    if window:
+        print(f"refused: {window}")
+        return 1
     q = _quote(CANARY_SYMBOL)
     if not q or not q["ask"] > 0:
         # Fail closed: without a quote the price band cannot be checked, so a typo'd limit
@@ -235,7 +240,8 @@ def cmd_buy(c, args) -> int:
     coid = new_coid("buy")
     r = c._canary_submit_limit_order(CANARY_SYMBOL, "BUY", qty, args.limit, coid)
     _log("order", symbol=CANARY_SYMBOL, decision=r.get("status"), price=args.limit,
-         reason=f"BUY {qty} limit {args.limit} coid {coid}: {r.get('message', 'ok')}", quote=q)
+         reason=f"BUY {qty} limit {args.limit} coid {coid}: {r.get('message', 'ok')}", quote=q,
+         client_order_id=coid, side="buy", cash_before=_cash(acct))
     print(json.dumps({"result": r, "client_order_id": coid, "quote_at_submit": q}, indent=2))
     return 0 if r.get("status") == "submitted" else 1
 
@@ -252,11 +258,12 @@ def cmd_sell(c, args) -> int:
     if snap["canary_open"]:
         print("refused: a canary order is still open; cancel it first.")
         return 1
-    q = _quote(CANARY_SYMBOL)
+    q = _quote(CANARY_SYMBOL)   # recorded for the measurement; a missing quote never blocks an exit
     coid = new_coid("sell")
     r = c._canary_submit_limit_order(CANARY_SYMBOL, "SELL", cp["qty"], args.limit, coid)
     _log("order", symbol=CANARY_SYMBOL, decision=r.get("status"), price=args.limit,
-         reason=f"SELL {cp['qty']} limit {args.limit} coid {coid}: {r.get('message', 'ok')}", quote=q)
+         reason=f"SELL {cp['qty']} limit {args.limit} coid {coid}: {r.get('message', 'ok')}", quote=q,
+         client_order_id=coid, side="sell", cash_before=_cash_or_none(c))
     print(json.dumps({"result": r, "client_order_id": coid, "quote_at_submit": q}, indent=2))
     return 0 if r.get("status") == "submitted" else 1
 
@@ -284,9 +291,263 @@ def flat_problems(snap) -> list[str]:
 
 def cmd_assert_flat(c, args) -> int:
     probs = flat_problems(snapshot(c))
-    _log("assert_flat", decision="flat" if not probs else "not_flat", reason="; ".join(probs) or "flat")
+    _log("assert_flat", decision="flat" if not probs else "not_flat", reason="; ".join(probs) or "flat",
+         cash=_cash_or_none(c))
     print("FLAT" if not probs else "NOT FLAT: " + "; ".join(probs))
     return 0 if not probs else 1
+
+
+# ---------- pre-registered execution measurement (strategy.md 10, "Execution measurement") ---------
+# These numbers are the pass/fail line, fixed BEFORE the first live canary order. They are module
+# constants on purpose -- not .env settings -- so they can only change by a commit (the git history
+# is the pre-registration record), and tests/test_canary_report.py fails if they drift from the
+# copy in strategy.md. Change both together, in a commit made BEFORE the session it applies to.
+PREREG = {
+    "registered": "2026-10-17",
+    "max_fill_seconds": 900,          # submit -> filled, per leg
+    "max_abs_shortfall_bp": 10.0,     # |fill vs mid-at-submit|, signed so + = cost, per leg
+    "max_spread_bp": 50.0,            # (ask - bid) / mid at submit, per leg (= LIVE_MAX_SPREAD 0.5%)
+    "max_cash_residual_usd": 0.05,    # per session: broker cash change vs fills (+ allowed fees)
+    "window_et": ["10:00", "15:45"],  # canary buys only inside this window, Mon-Fri, market open
+    "target_round_trips": 10,         # section 10 "Conclusive when"
+}
+EVIDENCE_DIR = _HERE / "tests" / "evidence" / "canary"
+
+
+def _now_et():
+    from datetime import datetime
+    return datetime.now(safety_guard.ET)
+
+
+def _session_window_problem(c, now=None):
+    """None if a canary BUY may go out now, else the reason. Exits are never subject to this.
+    Fails closed when the market clock cannot be read."""
+    now = now or _now_et()
+    lo, hi = (tuple(int(x) for x in t.split(":")) for t in PREREG["window_et"])
+    if now.weekday() >= 5 or not (lo <= (now.hour, now.minute) <= hi):
+        return (f"outside the pre-registered window {PREREG['window_et'][0]}-{PREREG['window_et'][1]} ET "
+                f"Mon-Fri (now {now:%a %H:%M} ET)")
+    clock = c.get_clock()
+    if clock is None:
+        return "market clock unavailable; not sending a buy blind"
+    if not getattr(clock, "is_open", False):
+        return "market is closed today (holiday or early close)"
+    return None
+
+
+def _cash(acct):
+    try:
+        return float(acct.cash)
+    except (AttributeError, TypeError, ValueError):
+        return None
+
+
+def _cash_or_none(c):
+    try:
+        return _cash(c.client.get_account())
+    except Exception:
+        return None
+
+
+def _ts(x):
+    """Broker timestamp (datetime or ISO string) -> aware datetime, or None."""
+    from datetime import datetime, timezone
+    if x is None or x == "":
+        return None
+    if isinstance(x, datetime):
+        return x if x.tzinfo else x.replace(tzinfo=timezone.utc)
+    return datetime.fromisoformat(str(x).replace("Z", "+00:00"))
+
+
+def canary_log_rows(db_path=None):
+    """Canary rows from the decision log, oldest first: [{'ts','event','data'}]. Read-only."""
+    import sqlite3
+    import decision_log
+    db = db_path or decision_log.DB_PATH
+    if not Path(db).exists():
+        return []
+    con = sqlite3.connect(f"file:{db}?mode=ro", uri=True, timeout=2)
+    try:
+        rows = con.execute("SELECT ts, event, data_json FROM decisions WHERE engine='canary' "
+                           "ORDER BY id").fetchall()
+    finally:
+        con.close()
+    return [{"ts": ts, "event": ev, "data": json.loads(dj) if dj else {}} for ts, ev, dj in rows]
+
+
+def broker_fill_activities(c, since_iso):
+    """Raw FILL activities from Alpaca (/v2/account/activities/FILL), oldest first, all pages."""
+    out, token = [], None
+    for _ in range(50):
+        params = {"direction": "asc", "page_size": 100, "after": since_iso}
+        if token:
+            params["page_token"] = token
+        page = c.client.get("/account/activities/FILL", params) or []
+        out.extend(page)
+        if len(page) < 100:
+            break
+        token = page[-1]["id"]
+    return out
+
+
+def leg_metrics(order, fills, quote, prereg=PREREG):
+    """One filled canary order, measured from the broker's own records.
+    order: Alpaca Order (or same-shaped object); fills: its FILL activities; quote: {'bid','ask'} at submit."""
+    side = status_value(order.side)
+    sign = 1 if side == "buy" else -1
+    problems = []
+    fq = sum(float(f["qty"]) for f in fills)
+    vwap = (sum(float(f["qty"]) * float(f["price"]) for f in fills) / fq) if fq > 0 else None
+    oq = float(order.filled_qty or 0)
+    op = float(order.filled_avg_price) if order.filled_avg_price else None
+    if not fills:
+        problems.append("no FILL activity for a filled order")
+    elif abs(fq - oq) > 1e-9:
+        problems.append(f"fill qty {fq} != order filled_qty {oq}")
+    elif op is None or abs(vwap - op) > max(1e-4, 1e-6 * op):
+        problems.append(f"fill VWAP {vwap} != order filled_avg_price {op}")
+    sub, filled = _ts(order.submitted_at), _ts(order.filled_at)
+    fill_s = (filled - sub).total_seconds() if sub and filled else None
+    if fill_s is None:
+        problems.append("missing submitted_at/filled_at")
+    elif fill_s > prereg["max_fill_seconds"]:
+        problems.append(f"time to fill {fill_s:.0f}s > {prereg['max_fill_seconds']}s")
+    shortfall_bp = spread_bp = mid = None
+    if not quote or not (quote.get("bid", 0) > 0 and quote.get("ask", 0) >= quote.get("bid", 0)):
+        problems.append("no usable quote recorded at submit")
+    else:
+        mid = (quote["bid"] + quote["ask"]) / 2
+        spread_bp = (quote["ask"] - quote["bid"]) / mid * 1e4
+        if spread_bp > prereg["max_spread_bp"]:
+            problems.append(f"spread at submit {spread_bp:.1f}bp > {prereg['max_spread_bp']}bp")
+        px = vwap if vwap is not None else op
+        if px is not None:
+            shortfall_bp = sign * (px - mid) / mid * 1e4
+            if abs(shortfall_bp) > prereg["max_abs_shortfall_bp"]:
+                problems.append(f"|shortfall| {abs(shortfall_bp):.1f}bp > {prereg['max_abs_shortfall_bp']}bp")
+    return {"client_order_id": order.client_order_id, "order_id": str(order.id), "side": side,
+            "qty": oq, "fill_price": vwap if vwap is not None else op, "mid_at_submit": mid,
+            "spread_bp": spread_bp, "shortfall_bp": shortfall_bp, "time_to_fill_s": fill_s,
+            "submitted_at": sub and sub.isoformat(), "filled_at": filled and filled.isoformat(),
+            "cash_flow": (-1 if side == "buy" else 1) * fq * (vwap or 0.0),
+            "pass": not problems, "problems": problems}
+
+
+def round_trips(legs):
+    """Pair filled legs buy -> next sell, in fill order. Anything else is a protocol violation
+    (one in, one out): two buys in a row, or a sell with no open buy."""
+    trips, open_buy, violations = [], None, []
+    for leg in sorted((x for x in legs if x["filled_at"]), key=lambda x: _ts(x["filled_at"])):
+        if leg["side"] == "buy":
+            if open_buy is not None:
+                violations.append(f"second buy {leg['client_order_id']} before selling {open_buy['client_order_id']}")
+            open_buy = leg
+        else:
+            if open_buy is None:
+                violations.append(f"sell {leg['client_order_id']} with no open canary buy")
+                continue
+            trips.append({"buy": open_buy["client_order_id"], "sell": leg["client_order_id"],
+                          "pnl_usd": round(open_buy["cash_flow"] + leg["cash_flow"], 4),
+                          "pass": open_buy["pass"] and leg["pass"]})
+            open_buy = None
+    return trips, violations, open_buy
+
+
+def session_cash(log_rows, legs, prereg=PREREG):
+    """Per ET session: (cash at assert-flat) - (cash before the session's first canary order) must
+    equal the session's canary fill cash flows, within max_cash_residual_usd (regulatory fees).
+    Any other cash movement that day (deposit, fee, stray trade) shows up as a residual -> FAIL."""
+    from collections import defaultdict
+    by_day = defaultdict(lambda: {"start": None, "end": None, "flow": 0.0, "legs": 0})
+    for r in log_rows:
+        d = r["data"]
+        day = _ts(r["ts"]).astimezone(safety_guard.ET).date().isoformat()
+        if r["event"] == "order" and d.get("cash_before") is not None and by_day[day]["start"] is None:
+            by_day[day]["start"] = float(d["cash_before"])
+        if r["event"] == "assert_flat" and d.get("cash") is not None:
+            by_day[day]["end"] = float(d["cash"])   # last one of the day wins
+    for leg in legs:
+        if not leg["filled_at"]:
+            continue
+        day = _ts(leg["filled_at"]).astimezone(safety_guard.ET).date().isoformat()
+        by_day[day]["flow"] += leg["cash_flow"]
+        by_day[day]["legs"] += 1
+    out = {}
+    for day, s in sorted(by_day.items()):
+        if not s["legs"]:
+            continue
+        if s["start"] is None or s["end"] is None:
+            out[day] = {"pass": False, "problem": "cash not recorded at session start and/or assert-flat",
+                        **{k: s[k] for k in ("start", "end")}, "fills_flow": round(s["flow"], 4)}
+            continue
+        residual = (s["end"] - s["start"]) - s["flow"]
+        out[day] = {"start": s["start"], "end": s["end"], "fills_flow": round(s["flow"], 4),
+                    "residual_usd": round(residual, 4),
+                    "pass": abs(residual) <= prereg["max_cash_residual_usd"] + 1e-9}
+    return out
+
+
+def build_report(orders_all, fills, log_rows, flat_problems_now, since=None, prereg=PREREG):
+    """Pure: everything comes in as broker/log data, the verdict comes out."""
+    quotes = {r["data"].get("client_order_id"): r["data"].get("quote")
+              for r in log_rows if r["event"] == "order" and r["data"].get("client_order_id")}
+    def _day(o):
+        t = _ts(o.submitted_at)
+        return t.astimezone(safety_guard.ET).date().isoformat() if t else ""
+    canary_orders = [o for o in orders_all if is_canary(o.client_order_id) and (since is None or _day(o) >= since)]
+    by_order = {}
+    for f in fills:
+        by_order.setdefault(str(f.get("order_id")), []).append(f)
+    legs, not_filled = [], []
+    for o in canary_orders:
+        if float(o.filled_qty or 0) > 0:
+            legs.append(leg_metrics(o, by_order.get(str(o.id), []), quotes.get(o.client_order_id), prereg))
+        else:
+            not_filled.append({"client_order_id": o.client_order_id, "state": status_value(o.status)})
+    trips, violations, open_buy = round_trips(legs)
+    sessions = session_cash(log_rows, legs, prereg)
+    failures = [f"{l['side']} {l['client_order_id']}: {p}" for l in legs for p in l["problems"]]
+    failures += [f"protocol: {v}" for v in violations]
+    failures += [f"cash {d}: {s.get('problem') or ('residual $%.4f' % s['residual_usd'])}"
+                 for d, s in sessions.items() if not s["pass"]]
+    failures += [f"not flat: {p}" for p in flat_problems_now]
+    return {"prereg": prereg, "since": since, "legs": legs, "round_trips": trips,
+            "completed_round_trips": len(trips), "target_round_trips": prereg["target_round_trips"],
+            "open_buy": open_buy and open_buy["client_order_id"], "not_filled": not_filled,
+            "sessions": sessions, "failures": failures,
+            "verdict": "PASS" if legs and not failures else ("NO DATA" if not legs else "FAIL")}
+
+
+def cmd_report(c, args) -> int:
+    from datetime import datetime, timezone
+    from datetime import date, time as dtime
+    since = args.since
+    start = date.fromisoformat(since) if since else date(2026, 10, 1)   # canaries began Oct 2026
+    since_iso = datetime.combine(start, dtime(0), tzinfo=safety_guard.ET).isoformat()
+    orders_all = orders(c, "all", [CANARY_SYMBOL])
+    fills = [f for f in broker_fill_activities(c, since_iso) if f.get("symbol") == CANARY_SYMBOL]
+    rep = build_report(orders_all, fills, canary_log_rows(), flat_problems(snapshot(c)), since=since)
+    rep["generated_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    EVIDENCE_DIR.mkdir(parents=True, exist_ok=True)
+    path = EVIDENCE_DIR / f"report-{datetime.now(safety_guard.ET):%Y%m%d-%H%M%S}.json"
+    path.write_text(json.dumps(rep, indent=2, default=str))
+    for l in rep["legs"]:
+        f = lambda v, fmt: "n/a" if v is None else format(v, fmt)
+        print(f"{l['side'].upper():4} {l['client_order_id'][:22]:22}  fill {f(l['fill_price'], '.4f')}  "
+              f"shortfall {f(l['shortfall_bp'], '+.1f')}bp  spread {f(l['spread_bp'], '.1f')}bp  "
+              f"fill {f(l['time_to_fill_s'], '.0f')}s  {'ok' if l['pass'] else 'FAIL'}")
+    for d, s in rep["sessions"].items():
+        print(f"cash {d}: " + (f"residual ${s['residual_usd']:+.4f}" if "residual_usd" in s else s["problem"])
+              + ("  ok" if s["pass"] else "  FAIL"))
+    print(f"round trips: {rep['completed_round_trips']} of {rep['target_round_trips']}")
+    for x in rep["failures"]:
+        print("  - " + x)
+    print("\nAlso compare by hand with Alpaca's trade confirmation / statement for each session "
+          "(qty, price, fees): the one check that is not our own code.")
+    print(f"\nCANARY MEASUREMENT: {rep['verdict']}   (evidence: {path})")
+    _log("report", decision=rep["verdict"], reason="; ".join(rep["failures"])[:500] or "all checks passed",
+         round_trips=rep["completed_round_trips"])
+    return 0 if rep["verdict"] == "PASS" else 1
 
 
 def main(argv=None) -> int:
@@ -302,13 +563,15 @@ def main(argv=None) -> int:
     x = sub.add_parser("cancel")
     x.add_argument("order_id", nargs="?")
     sub.add_parser("assert-flat")
+    rp = sub.add_parser("report")
+    rp.add_argument("--since", help="ET date YYYY-MM-DD (default: all canary history)")
     args = ap.parse_args(argv)
     c = live_client()
     if c.client is None:
         print("live client unavailable (APCA_LIVE_API_KEY_ID / APCA_LIVE_API_SECRET_KEY).")
         return 1
     fn = {"preflight": cmd_preflight, "status": cmd_status, "buy": cmd_buy, "sell": cmd_sell,
-          "cancel": cmd_cancel, "assert-flat": cmd_assert_flat}[args.cmd]
+          "cancel": cmd_cancel, "assert-flat": cmd_assert_flat, "report": cmd_report}[args.cmd]
     return fn(c, args)
 
 

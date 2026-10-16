@@ -562,6 +562,44 @@ completed round trips in total; zero reconciliation mismatches, zero duplicate o
 post-halt entries; final `assert-flat` passes. Partial fills and trading halts stay in the
 paper stress pack.
 
+**Execution measurement (pre-registered 2026-10-17, before any live canary order).** Every
+filled canary leg is measured from Alpaca's own records, not from our logs or the dashboard:
+the order object (`submitted_at`, `filled_at`, `filled_avg_price`) and the raw FILL activities
+(`/v2/account/activities/FILL`), against the bid/ask that `canary.py` recorded at submit.
+`python3 canary.py report [--since YYYY-MM-DD]` computes, per leg: implementation shortfall in
+bp vs the mid at submit (signed so + is cost), spread at submit, and time to fill; it checks the
+FILL activities against the order (qty and VWAP); pairs buys and sells into round trips (one in,
+one out); and reconciles each session's cash: the account cash at `assert-flat` minus the cash
+before the session's first canary order must equal that session's canary fill cash flows. It
+writes `tests/evidence/canary/report-*.json` (backed up nightly) and prints PASS or FAIL against
+the thresholds below **only**. The thresholds are constants in `canary.py` (`PREREG`), not
+`.env` values; a test fails if the two copies differ. Changing them takes a commit made before
+the session it applies to, and the reason goes in this section.
+
+```prereg
+max_fill_seconds: 900
+max_abs_shortfall_bp: 10.0
+max_spread_bp: 50.0
+max_cash_residual_usd: 0.05
+window_et: 10:00-15:45
+target_round_trips: 10
+```
+
+- A leg FAILS on any of: time to fill over 900 s; |shortfall| over 10 bp; spread at submit over
+  50 bp (= `LIVE_MAX_SPREAD` 0.5%); no usable quote recorded at submit (a sell is never blocked
+  for lacking one, but it then cannot pass); FILL activities that disagree with the order.
+- A session FAILS if its cash residual exceeds $0.05 (room for regulatory sell fees only; a
+  deposit, fee or stray trade that day surfaces here) or if start/end cash was not recorded.
+  `buy` records cash before; `sell` records cash before; `assert-flat` records cash at the end.
+- Protocol FAILS: two canary buys without a sell between them, a sell without an open buy, or
+  not flat at report time.
+- `buy` refuses outside 10:00–15:45 ET, on weekends, when Alpaca's clock says the market is
+  closed, or when the clock cannot be read. `sell` is an exit and is never time-gated.
+- The one check that is not our code: compare each session with Alpaca's trade confirmation /
+  account statement (qty, price, fees) by hand and note it in the session log.
+- Unfilled orders (steps 2 and 5) are listed but not measured. A partial fill that is then
+  cancelled has no `filled_at` and fails the leg: partial fills belong in the paper stress pack.
+
 **What a clean result means.** Execution only. Strategy signals go live only after the
 DSR/PBO gate and the drawdown limit pass (section 8, phase 2).
 
