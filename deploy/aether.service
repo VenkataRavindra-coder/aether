@@ -11,6 +11,9 @@ Type=notify
 User=ratelark
 WorkingDirectory=/home/ratelark/ratelark
 EnvironmentFile=/home/ratelark/ratelark/.env
+# Live Alpaca keys only (mode 600). Optional ("-"): if absent, keys in .env still work. Only this
+# unit loads it, so backup/daily/health/stress/watchdog never carry real-money credentials.
+EnvironmentFile=-/home/ratelark/ratelark/.env.live
 Environment=PYTHONUNBUFFERED=1
 ExecStart=/home/ratelark/ratelark/.venv/bin/python3 -m uvicorn aether_engine:app --host 127.0.0.1 --port 8000 --no-access-log
 Restart=always

@@ -57,6 +57,13 @@ def _live_positions() -> str:
         return f"live positions: unknown ({e})"
 
 
+def _healthcheck_url():
+    """Off-VM dead-man URL. HEALTHCHECK_URL is the documented name (test plan RD4); the engine and
+    setup_telegram.sh historically wrote HEALTHCHECK_PING_URL. Accept either so a server set up
+    with only one of them still has an off-VM alarm when the whole box goes down."""
+    return os.environ.get("HEALTHCHECK_URL") or os.environ.get("HEALTHCHECK_PING_URL")
+
+
 def main() -> int:
     aether_ops.load_env()
     hb_path = heartbeat_file()
@@ -71,12 +78,12 @@ def main() -> int:
         if key != st.get("key") or now - st.get("alerted", 0) > REALERT_SEC:
             aether_ops.telegram("AETHER WATCHDOG ALERT\n- " + "\n- ".join(problems) + "\n" + _live_positions())
             st = {"key": key, "alerted": now}
-        aether_ops.ping(os.environ.get("HEALTHCHECK_URL"), fail=True)
+        aether_ops.ping(_healthcheck_url(), fail=True)
     else:
         if st.get("key"):
             aether_ops.telegram("AETHER watchdog: recovered, all checks OK")
         st = {"key": "", "alerted": 0}
-        aether_ops.ping(os.environ.get("HEALTHCHECK_URL"))
+        aether_ops.ping(_healthcheck_url())
     g.atomic_write(st_path, json.dumps(st))
     return 1 if problems else 0
 

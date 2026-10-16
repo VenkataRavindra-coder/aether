@@ -203,6 +203,24 @@ consecutive broker-call failures in a rebalance, it freezes (`us.frozen`) the sa
 unreconciled order already does, instead of silently retrying every cycle against a broker that
 is genuinely down.
 
+**Live orders are marketable limit orders (2026-10-17 audit).** Real-money US orders no longer go
+out as market orders. `submit_market_order` on the LIVE client reads the latest quote and sends a
+DAY limit: BUY at `ask × (1 + LIVE_LIMIT_BAND)`, SELL at `bid × (1 − LIVE_LIMIT_BAND)` (default
+0.2%). It refuses the order (`guard:no_quote` / `bad_quote` / `wide_spread`) when there is no
+quote, the quote is zero or crossed, or the bid/ask spread exceeds `LIVE_MAX_SPREAD` (default
+0.5% of mid). BUY quantity is `notional / limit` rounded down, so a fill can never exceed the
+reserved notional. Paper keeps market orders so the running soak's execution model is unchanged.
+All share quantities are rounded DOWN to 9 decimals (`us_strategy.qty9`): Alpaca rejects more,
+and a computed trim (e.g. `0.041152263040999996`) used to be sent unrounded.
+
+**"Maybe placed" keeps the budget reserved.** A submit that fails with a timeout, dropped
+connection or 5xx, where the client_order_id lookup also fails, returns `outcome_unknown`. Its
+real-money daily budget is NOT released (the money may be spent); only a definite refusal (4xx)
+returns it. A live SELL whose position cannot be read is refused as `guard:position_unknown`
+rather than mislabelled as a naked short. Order-failure alerts and the decision log now carry the
+broker's reason (`detail`), and the alert de-dup key names which orders failed, so a different
+failure inside the hour is not silenced.
+
 ---
 
 ## 6. Emergency procedures
@@ -291,8 +309,11 @@ once at import instead of lazily on the first log() call during live trading.
   start it.
 - **Rebuild VM:** clone repo, `pip install -r requirements.txt` into `venv`, copy
   `deploy/*.service|timer` to systemd, restore `.env` from the password manager, restore backup.
-- **Secrets** (values only in `.env` + password manager): `APCA_API_KEY_ID/SECRET` (paper),
-  `APCA_LIVE_API_KEY_ID/SECRET`, `WEBHOOK_SECRET` (rotated 2026-10-03),
+- **Secrets** (values only in `.env` / `.env.live` + password manager): `APCA_API_KEY_ID/SECRET`
+  (paper), `APCA_LIVE_API_KEY_ID/SECRET` (in `.env.live`, mode 600: loaded only by
+  `aether.service`, `canary.py`, `live_check.py`, `risk_mark.py` and `risk_admin.py`, so the
+  backup/daily/health/stress/watchdog timers never hold real-money keys; keys still in `.env` keep
+  working), `WEBHOOK_SECRET` (rotated 2026-10-03),
   `DASHBOARD_PASSWORD`, `TELEGRAM_BOT_TOKEN`, `BACKUP_SAS_URL` (expires 2027-10-01,
   renew by 2027-09-01).
 
@@ -601,4 +622,9 @@ aether.service is down, the engine heartbeat is >15 min old, or the risk mark is
 lists any open live positions. The US engine has no stop-loss orders or engine-managed stops
 (stops exist only in the crypto strategy, which cannot trade live): live US positions are
 changed only at the monthly rebalance, and new entries are stopped by the breakers. While the
-engine is down nothing manages them at all. Optional off-VM dead-man ping via `HEALTHCHECK_URL`.
+engine is down nothing manages them at all. Optional off-VM dead-man ping via `HEALTHCHECK_URL`
+(the engine and the watchdog both use it; `HEALTHCHECK_PING_URL` is accepted as a legacy alias,
+since the engine and `setup_telegram.sh` used that name while the watchdog read only
+`HEALTHCHECK_URL` — with only one set, the off-VM alarm was silently off for the other). Alpaca
+keys are never entered through the dashboard: the `/api/settings/alpaca` route was removed
+2026-10-17; credentials reach the server over SSH only.

@@ -931,7 +931,7 @@ async def _dashboard_auth(request: _Request, call_next):
 
 
 @app.get("/api/strategy")
-async def get_strategy_status(secret: str = Query(default="")):
+async def get_strategy_status():
     """Live strategy engine status: per-symbol indicators, open strategy positions, guards."""
     pass  # auth: _dashboard_auth session middleware
     with STATE_LOCK:
@@ -954,8 +954,7 @@ async def get_strategy_status(secret: str = Query(default="")):
 
 
 @app.get("/api/backtest")
-def run_backtest(symbol: str = Query(default="BTC/USD"), days: int = Query(default=365),
-                 secret: str = Query(default="")):
+def run_backtest(symbol: str = Query(default="BTC/USD"), days: int = Query(default=365)):
     """Backtests the exact live strategy rules on Alpaca's historical hourly bars.
     Sync endpoint on purpose: FastAPI runs it in a worker thread so it can't block the server."""
     pass  # auth: _dashboard_auth session middleware
@@ -979,7 +978,8 @@ def run_backtest(symbol: str = Query(default="BTC/USD"), days: int = Query(defau
 
 
 DIGEST_HOUR_UTC = _env_int("DIGEST_HOUR_UTC", "6")
-HEALTHCHECK_PING_URL = os.getenv("HEALTHCHECK_PING_URL", "")
+# Either name works (watchdog.py reads the same pair); HEALTHCHECK_URL is the one test plan RD4 checks.
+HEALTHCHECK_PING_URL = os.getenv("HEALTHCHECK_PING_URL", "") or os.getenv("HEALTHCHECK_URL", "")
 MONITOR_INTERVAL = 60
 _monitor = {"alpaca_fail_streak": 0, "alpaca_alerted": False, "digest_date": None}
 
@@ -1442,7 +1442,10 @@ def _us_execute_paper(orders, prices, cash, holdings_before=None, mkey="", attem
             results.append({**o, "state": "error", "detail": r.get("message")})
             if o["side"] == "SELL":
                 sell_failed = True
-            if o["side"] == "BUY" and not us_broker.paper and not str(r.get("message", "")).startswith("risk:"):
+            # Return the reserved real-money budget only for a definite refusal. "risk:" never
+            # reserved any; an outcome_unknown submit may already have spent it.
+            if (o["side"] == "BUY" and not us_broker.paper and not r.get("outcome_unknown")
+                    and not str(r.get("message", "")).startswith("risk:")):
                 risk_controller.release_live_buy(o["notional"])
             continue
         f = us_broker.wait_for_fill(r["order_id"])
@@ -1729,7 +1732,8 @@ def _us_rebalance(us: dict, today: str, mkey: str, now_et: datetime, fetch_daily
     decision_log.log("us", "rebalance", mode=_us_mode(), decision="complete" if not failed else "incomplete",
                      reason=f"{len(results)} order(s), {len(failed)} failed", month=mkey,
                      equity_before=round(equity_before, 2), equity_after=round(equity_after, 2),
-                     orders=[{k: r.get(k) for k in ("symbol", "side", "state", "qty", "notional", "filled_qty", "avg_price")}
+                     orders=[{k: r.get(k) for k in ("symbol", "side", "state", "qty", "notional", "filled_qty",
+                                                    "avg_price", "detail", "order_id")}
                              for r in results])
     US_STATUS["note"] = "rebalanced" if not failed else "rebalance incomplete; will retry"
     US_STATUS["last_error"] = None if not failed else f"{len(failed)} order(s) failed"
@@ -1739,14 +1743,20 @@ def _us_rebalance(us: dict, today: str, mkey: str, now_et: datetime, fetch_daily
     lines = [f"[US] Monthly rebalance ({_us_mode()}){' INCOMPLETE, will retry' if failed else ''} {uae_str()}", f"Signals as of {sig['signal_date']}: holding {held}"]
     for r in results:
         amt = f"${r['notional']:,.2f}" if r["side"] == "BUY" else f"{r['qty']:.4f} sh"
-        lines.append(f"  {r['side']} {r['symbol']} {amt} -> {r['state']}")
+        lines.append(f"  {r['side']} {r['symbol']} {amt} -> {r['state']}"
+                     + (f" ({str(r['detail'])[:120]})" if r.get("detail") else ""))
     if not results:
         lines.append("  No trades needed.")
     lines.append(f"Equity ${equity_after:,.2f} (cash ${cash:,.2f})")
     notify.send("\n".join(lines))
     if failed:
-        notify.send(f"[ALERT] {len(failed)} US ETF order(s) did not fill: " +
-                    ", ".join(f"{r['symbol']} {r['state']}" for r in failed) + ". Will retry.", key="us-fail", cooldown=3600)
+        # The broker's own reason goes into the alert, and the de-dup key includes which orders
+        # failed and how, so a DIFFERENT failure inside the hour is not silenced by the first.
+        what = ", ".join(f"{r['symbol']} {r['side']} {r['state']}" + (f": {str(r['detail'])[:120]}" if r.get("detail") else "")
+                         for r in failed)
+        sig_key = "|".join(sorted(f"{r['symbol']}:{r['side']}:{r['state']}" for r in failed))
+        notify.send(f"[ALERT] {len(failed)} US ETF order(s) did not fill: {what}. Will retry.",
+                    key=f"us-fail:{sig_key}", cooldown=3600)
 
 
 def _us_gate_active() -> bool:
@@ -2065,7 +2075,7 @@ def us_loop():
 
 
 @app.get("/api/us")
-async def get_us_status(secret: str = Query(default="")):
+async def get_us_status():
     """US ETF momentum engine: signals, targets, holdings, equity curve and rebalance history."""
     pass  # auth: _dashboard_auth session middleware
     with STATE_LOCK:

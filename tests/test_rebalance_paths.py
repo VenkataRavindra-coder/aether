@@ -287,7 +287,9 @@ def test_failed_sell_skips_the_buys_and_keeps_the_month_open(env):
     rebalance(env)
     assert env.broker.submitted == [("SPY", "SELL")]
     assert u(env)["last_rebalance_month"] is None and u(env)["history"][-1]["complete"] is False
-    assert "us-fail" in keys(env) and eng.US_STATUS["retry_after"] > time.time()
+    fail_keys = [k for k in keys(env) if k and k.startswith("us-fail:")]
+    assert fail_keys and "SPY:SELL:canceled" in fail_keys[0]   # key names WHICH orders failed
+    assert eng.US_STATUS["retry_after"] > time.time()
 
 
 def test_unreconciled_order_freezes_the_engine(env):

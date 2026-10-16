@@ -35,6 +35,30 @@ def status_value(status) -> str:
     return str(getattr(status, "value", status)).lower()
 
 
+def _env_frac(name: str, default: str) -> float:
+    try:
+        v = float(os.getenv(name, default))
+    except ValueError:
+        v = float(default)
+    return v if 0 < v < 1 else float(default)
+
+
+# Live US orders are marketable LIMIT orders, never market orders (strategy.md: limit orders only,
+# with a price band and a spread check). BUY limit = ask * (1 + band), SELL limit = bid * (1 - band).
+# A missing/crossed quote or a spread wider than LIVE_MAX_SPREAD refuses the order (fails closed).
+LIVE_LIMIT_BAND_DEFAULT = "0.002"
+LIVE_MAX_SPREAD_DEFAULT = "0.005"
+
+# Broker-call failures after which we cannot know whether a submitted order reached Alpaca.
+# A 4xx (incl. 429) means the order was refused; these mean "maybe placed".
+OUTCOME_UNKNOWN_CLASSES = frozenset({"timeout", "connection", "server_error", "unknown"})
+
+
+def _qty9(q: float) -> float:
+    from us_strategy import qty9
+    return qty9(q)
+
+
 # Consecutive-failure threshold before a client declares itself unhealthy (see consecutive_errors
 # below). Deliberately small: a broker that is genuinely down should stop new entries quickly,
 # not after dozens of silently-swallowed retries.
@@ -109,7 +133,8 @@ class AlpacaExecutionClient:
             return None
 
     def execute_order(self, symbol: str, qty: float, side: str, limit_price: float,
-                       is_closing: bool = False, available_long: float = 0.0, strategy: str = "crypto"):
+                       is_closing: bool = False, available_long: float = 0.0, strategy: str = "crypto",
+                       client_order_id: str = None):
         """Dispatches orders to Alpaca with position guards to prevent naked shorts on
         crypto assets where Alpaca does not support short selling. Returns the ACTUAL
         quantity sent to the broker as `qty` in the response — callers must book state
@@ -145,6 +170,11 @@ class AlpacaExecutionClient:
             logger.error("Live trading is enabled, but the Alpaca client is not initialized.")
             return {"status": "error", "message": "Alpaca client uninitialized.", "qty": 0.0}
 
+        # Every submission carries a client_order_id, so a submit that times out client-side but
+        # actually reached Alpaca is found by lookup instead of being placed a second time.
+        if not client_order_id:
+            import uuid
+            client_order_id = f"aether-{side_upper.lower()}-{uuid.uuid4().hex}"
         try:
             order_side = OrderSide.BUY if side_upper == "BUY" else OrderSide.SELL
 
@@ -154,6 +184,7 @@ class AlpacaExecutionClient:
                 side=order_side,
                 time_in_force=TimeInForce.GTC,
                 limit_price=limit_price,
+                client_order_id=client_order_id,
             )
 
             order = self.client.submit_order(order_data=request_params)
@@ -168,6 +199,17 @@ class AlpacaExecutionClient:
             }
 
         except Exception as e:
+            try:
+                existing = self.client.get_order_by_client_id(client_order_id)
+                logger.warning(f"Submit for {symbol} errored ({e}); order already exists under "
+                               f"client_order_id={client_order_id} (id {existing.id}) -- not resubmitting.")
+                self.consecutive_errors = 0
+                return {"status": "success", "order_id": str(existing.id),
+                        "state": status_value(existing.status),
+                        "filled": status_value(existing.status) == "filled",
+                        "qty": effective_qty, "recovered": True}
+            except Exception:
+                pass
             error_class = classify_broker_error(e)
             self.consecutive_errors += 1
             logger.error(f"Failed to submit live order to Alpaca: {str(e)} (class={error_class}, "
@@ -264,7 +306,12 @@ class AlpacaExecutionClient:
             # function's own logic allows them unconditionally); this can only ever make an
             # ENTRY stricter than risk_controller.check() already did, never looser.
             from safety_guard import check_live_order
-            position_qty = self.get_position_qty(symbol) or 0.0
+            pq = self.get_position_qty(symbol)
+            if pq is None and side_upper == "SELL":
+                # Unknown is not "flat": say so, instead of letting the guard call it a naked short.
+                logger.warning(f"Live SELL {symbol} refused: broker position could not be read")
+                return {"status": "error", "message": "guard:position_unknown"}
+            position_qty = pq or 0.0
             bal = self.get_account_balance()
             live_equity = float(bal["portfolio_value"]) if bal.get("source") == "live" else None
             d = check_live_order(side_upper, symbol, notional, position_qty, live_equity, sell_qty=qty)
@@ -275,21 +322,39 @@ class AlpacaExecutionClient:
                 notional = d.notional  # may be halved at the drawdown-reduce level
         if not self.client:
             return {"status": "error", "message": "Alpaca client uninitialized."}
+        limit_info = None
+        if not self.paper:
+            limit_info = self._live_limit(symbol, side_upper, qty, notional)
+            if "error" in limit_info:
+                logger.warning(f"Live {side_upper} {symbol} refused: {limit_info['error']}")
+                return {"status": "error", "message": f"guard:{limit_info['error']}"}
         try:
-            from alpaca.trading.requests import MarketOrderRequest
-            kwargs = {"symbol": symbol,
-                      "side": OrderSide.BUY if side.upper() == "BUY" else OrderSide.SELL,
-                      "time_in_force": TimeInForce.DAY}
-            if qty is not None:
-                kwargs["qty"] = qty
+            side_enum = OrderSide.BUY if side_upper == "BUY" else OrderSide.SELL
+            if limit_info is not None:
+                # LIVE: marketable limit, DAY. Never a market order with real money.
+                req = LimitOrderRequest(symbol=symbol, qty=limit_info["qty"],
+                                        limit_price=limit_info["limit_price"], side=side_enum,
+                                        time_in_force=TimeInForce.DAY,
+                                        client_order_id=client_order_id)
             else:
-                kwargs["notional"] = round(float(notional), 2)
-            if client_order_id:
-                kwargs["client_order_id"] = client_order_id
-            order = self.client.submit_order(order_data=MarketOrderRequest(**kwargs))
-            logger.info(f"ETF ORDER PLACED: {order.id} | {side.upper()} {symbol} | {status_value(order.status)}")
+                # PAPER: unchanged market order, so the running paper soak keeps its execution model.
+                from alpaca.trading.requests import MarketOrderRequest
+                kwargs = {"symbol": symbol, "side": side_enum, "time_in_force": TimeInForce.DAY}
+                if qty is not None:
+                    kwargs["qty"] = qty
+                else:
+                    kwargs["notional"] = round(float(notional), 2)
+                if client_order_id:
+                    kwargs["client_order_id"] = client_order_id
+                req = MarketOrderRequest(**kwargs)
+            order = self.client.submit_order(order_data=req)
+            logger.info(f"ETF ORDER PLACED: {order.id} | {side_upper} {symbol} | {status_value(order.status)}"
+                        + (f" | limit {limit_info['limit_price']} qty {limit_info['qty']}" if limit_info else ""))
             self.consecutive_errors = 0
-            return {"status": "submitted", "order_id": str(order.id)}
+            out = {"status": "submitted", "order_id": str(order.id)}
+            if limit_info:
+                out.update(limit_price=limit_info["limit_price"], qty=limit_info["qty"], quote=limit_info["quote"])
+            return out
         except Exception as e:
             if client_order_id:
                 try:
@@ -303,13 +368,61 @@ class AlpacaExecutionClient:
                     pass
             error_class = classify_broker_error(e)
             self.consecutive_errors += 1
-            logger.error(f"Failed to submit market order for {symbol}: {str(e)} (class={error_class}, "
+            logger.error(f"Failed to submit order for {symbol}: {str(e)} (class={error_class}, "
                         f"consecutive_errors={self.consecutive_errors})")
             if error_class == "rate_limited":
                 import time as _time
                 _time.sleep(2)
+            # outcome_unknown: the order may have reached Alpaca (timeout / dropped connection / 5xx)
+            # and the lookup could not confirm either way. Callers must NOT release the daily
+            # real-money budget for it -- the money may already be spent.
             return {"status": "error", "message": str(e), "error_class": error_class,
-                    "consecutive_errors": self.consecutive_errors}
+                    "consecutive_errors": self.consecutive_errors,
+                    "outcome_unknown": error_class in OUTCOME_UNKNOWN_CLASSES}
+
+    def latest_quote(self, symbol: str):
+        """Latest NBBO {'bid','ask','t'} from this client's own keys, or None if unavailable."""
+        if not (self.api_key and self.api_secret):
+            return None
+        try:
+            from alpaca.data.historical import StockHistoricalDataClient
+            from alpaca.data.requests import StockLatestQuoteRequest
+            dc = StockHistoricalDataClient(self.api_key, self.api_secret)
+            q = dc.get_stock_latest_quote(StockLatestQuoteRequest(symbol_or_symbols=symbol))[symbol]
+            return {"bid": float(q.bid_price), "ask": float(q.ask_price), "t": str(q.timestamp)}
+        except Exception as e:
+            logger.warning(f"Quote for {symbol} unavailable: {str(e)[:150]}")
+            return None
+
+    def _live_limit(self, symbol: str, side_upper: str, qty, notional) -> dict:
+        """Marketable limit for a LIVE order. Returns {'limit_price','qty','quote'} or {'error'}.
+        Fails closed: no quote, a crossed/zero quote, or a spread wider than LIVE_MAX_SPREAD refuses."""
+        band = _env_frac("LIVE_LIMIT_BAND", LIVE_LIMIT_BAND_DEFAULT)
+        max_spread = _env_frac("LIVE_MAX_SPREAD", LIVE_MAX_SPREAD_DEFAULT)
+        q = self.latest_quote(symbol)
+        if not q:
+            return {"error": "no_quote"}
+        bid, ask = q["bid"], q["ask"]
+        if not (bid > 0 and ask > 0 and ask >= bid):
+            return {"error": f"bad_quote(bid {bid}, ask {ask})"}
+        spread = (ask - bid) / ((ask + bid) / 2)
+        if spread > max_spread:
+            return {"error": f"wide_spread({spread:.4%} > {max_spread:.4%})"}
+        if side_upper == "BUY":
+            limit = round(ask * (1 + band), 2)
+            try:
+                n = float(notional)
+            except (TypeError, ValueError):
+                return {"error": "unknown_notional"}
+            order_qty = _qty9(qty) if qty is not None else _qty9(n / limit)
+        else:
+            limit = round(bid * (1 - band), 2)
+            if qty is None:
+                return {"error": "sell_needs_qty"}
+            order_qty = _qty9(qty)
+        if order_qty <= 0 or limit <= 0:
+            return {"error": "zero_quantity"}
+        return {"limit_price": limit, "qty": order_qty, "quote": q}
 
     def _canary_submit_limit_order(self, symbol: str, side: str, qty: float, limit_price: float,
                                    client_order_id: str):
@@ -337,7 +450,10 @@ class AlpacaExecutionClient:
         if not allowed:
             return {"status": "error", "message": f"risk:{risk_reason}"}
         from safety_guard import check_live_order
-        position_qty = self.get_position_qty(symbol) or 0.0
+        pq = self.get_position_qty(symbol)
+        if pq is None and is_closing:
+            return {"status": "error", "message": "guard:position_unknown"}
+        position_qty = pq or 0.0
         bal = self.get_account_balance()
         live_equity = float(bal["portfolio_value"]) if bal.get("source") == "live" else None
         d = check_live_order(side_upper, symbol, notional, position_qty, live_equity,
@@ -372,9 +488,13 @@ class AlpacaExecutionClient:
             except Exception:
                 pass
             self.consecutive_errors += 1
-            if not is_closing:
+            error_class = classify_broker_error(e)
+            unknown = error_class in OUTCOME_UNKNOWN_CLASSES
+            if not is_closing and not unknown:
+                # Only a definite refusal returns the budget; "maybe placed" keeps it reserved.
                 risk_controller.release_live_buy(notional, engine="canary")
-            return {"status": "error", "message": str(e), "error_class": classify_broker_error(e)}
+            return {"status": "error", "message": str(e), "error_class": error_class,
+                    "outcome_unknown": unknown}
 
     def cancel_order(self, order_id: str) -> bool:
         """Cancels an open order. False if it could not be cancelled (e.g. it already filled)."""

@@ -24,6 +24,7 @@ _worker_started = False
 _worker_lock = threading.Lock()
 _last_sent = {}
 _dedupe_lock = threading.Lock()
+_dropped = 0
 STOP = threading.Event()
 
 
@@ -80,7 +81,23 @@ def _worker():
             except Exception as e:
                 logger.warning(f"Telegram send failed: {_scrub(str(e))}")
                 STOP.wait(5 * (attempt + 1))
+        else:
+            _note_dropped("3 send attempts failed")
         STOP.wait(SEND_GAP_SECONDS)
+
+
+def _note_dropped(why: str) -> None:
+    """An alert that never reached Telegram. Counted (shown on the dashboard health card) and
+    logged at ERROR, so a Telegram outage is visible somewhere other than Telegram itself."""
+    global _dropped
+    with _dedupe_lock:
+        _dropped += 1
+        n = _dropped
+    logger.error(f"Telegram alert DROPPED ({why}); {n} dropped since start")
+
+
+def dropped_count() -> int:
+    return _dropped
 
 
 def send(text: str, key: str = None, cooldown: float = 0) -> bool:
@@ -103,7 +120,7 @@ def send(text: str, key: str = None, cooldown: float = 0) -> bool:
         _queue.put_nowait(text)
         return True
     except queue.Full:
-        logger.warning("Telegram queue full; dropping message")
+        _note_dropped("queue full")
         return False
 
 

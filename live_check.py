@@ -6,12 +6,15 @@ import os
 import sys
 
 sys.path.insert(0, "/home/ratelark/ratelark")
-with open("/home/ratelark/ratelark/.env") as f:
-    for line in f:
-        line = line.strip()
-        if line and not line.startswith("#") and "=" in line:
-            k, v = line.split("=", 1)
-            os.environ.setdefault(k.strip(), v.strip().strip('"').strip("'"))
+for _env_path in ("/home/ratelark/ratelark/.env", "/home/ratelark/ratelark/.env.live"):
+    if not os.path.exists(_env_path):   # .env.live is optional: live keys may still be in .env
+        continue
+    with open(_env_path) as f:
+        for line in f:
+            line = line.strip()
+            if line and not line.startswith("#") and "=" in line:
+                k, v = line.split("=", 1)
+                os.environ.setdefault(k.strip(), v.strip().strip('"').strip("'"))
 
 from alpaca.trading.client import TradingClient  # noqa: E402
 from alpaca.trading.requests import GetOrdersRequest  # noqa: E402

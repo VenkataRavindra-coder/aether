@@ -8,6 +8,7 @@ completed month-end; execution happens on the next trading day.
 
 import datetime as _dt
 import math
+from decimal import Decimal, ROUND_DOWN
 
 RISK_ETFS = ["SPY", "QQQ", "IWM", "EFA", "EEM", "IEF", "TLT", "GLD", "DBC", "VNQ"]
 CASH_ETF = "SHY"
@@ -106,6 +107,16 @@ def bars_before_month(bars, today_str):
     return [b for b in bars if b["d"] < cutoff]
 
 
+QTY_DECIMALS = 9   # Alpaca accepts at most 9 decimal places on a fractional share quantity
+
+
+def qty9(q: float) -> float:
+    """Share quantity rounded DOWN to QTY_DECIMALS places. alpaca-py sends a float qty unrounded,
+    so a computed trim like 0.041152263040999996 would go out with 18 decimals and be rejected.
+    Rounding down (never up) means a sell can never exceed the shares actually held."""
+    return float(Decimal(repr(float(q))).quantize(Decimal(1).scaleb(-QTY_DECIMALS), rounding=ROUND_DOWN))
+
+
 def plan_orders(holdings, prices, weights, equity, min_trade=1.0):
     """Turn target weights into orders. Sells first. Buys are notional dollars, scaled down if cash
     (equity minus current holdings value plus sale proceeds) cannot cover them. Never sells more than held."""
@@ -121,7 +132,9 @@ def plan_orders(holdings, prices, weights, equity, min_trade=1.0):
         target_value = weights.get(s, 0.0) * equity
         diff = target_value - cur * price
         if diff < -min_trade:
-            qty = cur if s not in weights else min(cur, -diff / price)
+            qty = qty9(cur if s not in weights else min(cur, -diff / price))
+            if qty <= 0:
+                continue
             orders.append({"symbol": s, "side": "SELL", "qty": qty, "est_value": qty * price})
             proceeds += qty * price
     buys = []
