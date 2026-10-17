@@ -48,9 +48,27 @@ def test_prereg_constants_match_strategy_md():
     assert int(doc["target_round_trips"]) == p["target_round_trips"]
 
 
-def test_spread_threshold_equals_live_engine_guard():
-    import alpaca_executor
-    assert canary.PREREG["max_spread_bp"] == float(alpaca_executor.LIVE_MAX_SPREAD_DEFAULT) * 1e4
+def test_spread_line_cannot_make_a_crossing_order_a_guaranteed_fail():
+    # Crossing costs half the spread; the spread line must leave room under the shortfall line.
+    p = canary.PREREG
+    assert p["max_spread_bp"] / 2 < p["max_abs_shortfall_bp"]
+
+
+def test_buy_refuses_a_spread_above_the_line_before_sending(monkeypatch):
+    from test_audit_oct17 import FakeLiveBroker, make_client
+    monkeypatch.setattr(canary, "preflight_checks", lambda c, a, s: [])
+    monkeypatch.setattr(canary, "snapshot", lambda c: {"canary_position": None, "canary_open": []})
+    monkeypatch.setattr(canary, "_session_window_problem", lambda c: None)
+    monkeypatch.setattr(canary, "_log", lambda *a, **k: None)
+    sent = []
+    b = FakeLiveBroker()
+    b.acct.multiplier = "1"
+    c = make_client(b)
+    monkeypatch.setattr(c, "_canary_submit_limit_order", lambda *a: sent.append(a) or {"status": "submitted"})
+    monkeypatch.setattr(canary, "_quote", lambda s: {"bid": 299.71, "ask": 300.00, "t": "x"})   # 9.7 bp
+    assert canary.cmd_buy(c, SimpleNamespace(usd=8, limit=300.0)) == 0 and len(sent) == 1
+    monkeypatch.setattr(canary, "_quote", lambda s: {"bid": 299.40, "ask": 300.00, "t": "x"})   # 20 bp
+    assert canary.cmd_buy(c, SimpleNamespace(usd=8, limit=300.0)) == 1 and len(sent) == 1
 
 
 # ---------- per-leg measurement -----------------------------------------------------------------
@@ -69,7 +87,7 @@ def test_sell_at_bid_is_also_a_positive_cost():
 @pytest.mark.parametrize("kw,quote,frag", [
     ({"fill_s": 901}, Q, "time to fill"),
     ({"px": 300.40}, Q, "|shortfall|"),                         # +13.3 bp
-    ({}, {"bid": 298.0, "ask": 302.0}, "spread at submit"),     # 133 bp
+    ({}, {"bid": 299.70, "ask": 300.34}, "spread at submit"),   # 21 bp; fill at ask is ~10.7bp too
     ({}, None, "no usable quote"),
     ({"fill_s": None}, Q, "missing submitted_at/filled_at"),
 ])

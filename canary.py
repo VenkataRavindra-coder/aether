@@ -236,6 +236,15 @@ def cmd_buy(c, args) -> int:
     if args.limit > q["ask"] * 1.01:
         print(f"refused: limit {args.limit} is >1% above ask {q['ask']} (price band).")
         return 1
+    if not q["bid"] > 0 or q["ask"] < q["bid"]:
+        print(f"refused: unusable quote (bid {q['bid']}, ask {q['ask']}).")
+        return 1
+    spread_bp = (q["ask"] - q["bid"]) / ((q["ask"] + q["bid"]) / 2) * 1e4
+    if spread_bp > PREREG["max_spread_bp"]:
+        # Same line the report applies: an order sent now would be a guaranteed FAIL.
+        print(f"refused: spread {spread_bp:.1f} bp > pre-registered {PREREG['max_spread_bp']:g} bp; "
+              f"wait for a tighter quote.")
+        return 1
     qty = round(args.usd / args.limit, 6)
     coid = new_coid("buy")
     r = c._canary_submit_limit_order(CANARY_SYMBOL, "BUY", qty, args.limit, coid)
@@ -306,7 +315,10 @@ PREREG = {
     "registered": "2026-10-17",
     "max_fill_seconds": 900,          # submit -> filled, per leg
     "max_abs_shortfall_bp": 10.0,     # |fill vs mid-at-submit|, signed so + = cost, per leg
-    "max_spread_bp": 50.0,            # (ask - bid) / mid at submit, per leg (= LIVE_MAX_SPREAD 0.5%)
+    "max_spread_bp": 10.0,            # (ask - bid) / mid at submit, per leg. Must be <= 2x the
+                                      # shortfall line: crossing the spread costs half of it, so at
+                                      # 10 bp a buy at the ask starts at 5 bp, leaving 5 bp for drift.
+                                      # buy refuses above it BEFORE sending (no doomed orders).
     "max_cash_residual_usd": 0.05,    # per session: broker cash change vs fills (+ allowed fees)
     "window_et": ["10:00", "15:45"],  # canary buys only inside this window, Mon-Fri, market open
     "target_round_trips": 10,         # section 10 "Conclusive when"

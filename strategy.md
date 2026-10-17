@@ -579,14 +579,14 @@ the session it applies to, and the reason goes in this section.
 ```prereg
 max_fill_seconds: 900
 max_abs_shortfall_bp: 10.0
-max_spread_bp: 50.0
+max_spread_bp: 10.0
 max_cash_residual_usd: 0.05
 window_et: 10:00-15:45
 target_round_trips: 10
 ```
 
 - A leg FAILS on any of: time to fill over 900 s; |shortfall| over 10 bp; spread at submit over
-  50 bp (= `LIVE_MAX_SPREAD` 0.5%); no usable quote recorded at submit (a sell is never blocked
+  10 bp; no usable quote recorded at submit (a sell is never blocked
   for lacking one, but it then cannot pass); FILL activities that disagree with the order.
 - A session FAILS if its cash residual exceeds $0.05 (room for regulatory sell fees only; a
   deposit, fee or stray trade that day surfaces here) or if start/end cash was not recorded.
@@ -595,6 +595,13 @@ target_round_trips: 10
   not flat at report time.
 - `buy` refuses outside 10:00–15:45 ET, on weekends, when Alpaca's clock says the market is
   closed, or when the clock cannot be read. `sell` is an exit and is never time-gated.
+- Why the spread line is 10 bp, not the engine's 50 bp (`LIVE_MAX_SPREAD`): an order that
+  crosses the spread pays half of it against the mid before any drift. With a 50 bp gate, any
+  spread from 20 to 50 bp would pass the gate and be a guaranteed shortfall FAIL. The spread line
+  is therefore at most 2× the shortfall line, and `buy` refuses above it before sending. VTI
+  normally quotes 1–2 bp, so this only bites on a bad quote. A `sell` is never refused for a wide
+  spread (exits always pass): if you must sell into one, the leg fails and the report says why.
+  The engine's 0.5% guard is a separate, looser execution-safety line, not this measurement.
 - The one check that is not our code: compare each session with Alpaca's trade confirmation /
   account statement (qty, price, fees) by hand and note it in the session log.
 - Unfilled orders (steps 2 and 5) are listed but not measured. A partial fill that is then
