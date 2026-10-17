@@ -1,0 +1,8 @@
+# Test and research-only dependencies. NOT for the engine and not needed on the server:
+# the engine runs on requirements.txt alone, and the tests that need these skip cleanly without them.
+#   pip install -r requirements.txt -r requirements-dev.txt
+-r requirements.txt
+pytest==9.1.1
+hypothesis==6.170.1                 # tests/test_risk_properties.py (order-gate invariants)
+pandas_market_calendars==5.5.0      # aether-research/calendar_check.py (second-source calendar)
+skfolio==1.9.3                      # aether-research/pbo_crosscheck.py (independent PBO check)
