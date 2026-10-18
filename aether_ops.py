@@ -65,6 +65,6 @@ def ping(url: str | None, fail: bool = False) -> None:
     if not url:
         return
     try:
-        urllib.request.urlopen(url.rstrip("/") + ("/fail" if fail else ""), timeout=10)
+        urllib.request.urlopen(urllib.request.Request(url.rstrip("/") + ("/fail" if fail else ""), headers={"User-Agent": "AETHER-ops/1.0 (+https://ops.ratelark.app)"}), timeout=10)
     except Exception:
         pass
