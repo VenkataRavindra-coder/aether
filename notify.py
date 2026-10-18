@@ -26,6 +26,14 @@ _last_sent = {}
 _dedupe_lock = threading.Lock()
 _dropped = 0
 STOP = threading.Event()
+# Real link evidence for the dashboard's Connectivity page (connectivity.py). Plain timestamps, no secrets.
+LINK = {"send_ok": None, "send_err": None, "send_err_text": "", "poll_started": False, "poll_ok": None, "poll_err": None}
+
+
+def _mark(key: str, err: str = "") -> None:
+    LINK[key] = time.time()
+    if err:
+        LINK["send_err_text"] = _scrub(err)[:100]
 
 
 def _api_base() -> str:
@@ -68,6 +76,7 @@ def _worker():
             try:
                 _call("sendMessage", {"chat_id": chat, "text": text[:MAX_LEN],
                                       "disable_web_page_preview": True})
+                _mark("send_ok")
                 break
             except urllib.error.HTTPError as e:
                 wait = 5 * (attempt + 1)
@@ -76,9 +85,11 @@ def _worker():
                         wait = json.loads(e.read()).get("parameters", {}).get("retry_after", wait)
                     except Exception:
                         pass
+                _mark("send_err", f"HTTP {e.code}")
                 logger.warning(f"Telegram send failed (HTTP {e.code}); retrying in {wait}s")
                 STOP.wait(wait)
             except Exception as e:
+                _mark("send_err", type(e).__name__)
                 logger.warning(f"Telegram send failed: {_scrub(str(e))}")
                 STOP.wait(5 * (attempt + 1))
         else:
@@ -138,8 +149,10 @@ def send_sync(text: str, timeout: float = 20) -> bool:
     try:
         _call("sendMessage", {"chat_id": chat, "text": text[:MAX_LEN], "disable_web_page_preview": True},
               timeout=timeout)
+        _mark("send_ok")
         return True
     except Exception as e:
+        _mark("send_err", type(e).__name__)
         logger.warning(f"Telegram send_sync failed: {_scrub(str(e))}")
         return False
 
@@ -152,6 +165,7 @@ def start_command_poller(handler):
 
     def loop():
         offset = 0
+        LINK["poll_started"] = True
         try:
             latest = _call("getUpdates", {"offset": -1, "timeout": 0}, timeout=15).get("result", [])
             if latest:
@@ -163,6 +177,7 @@ def start_command_poller(handler):
                 _, chat = _config()
                 updates = _call("getUpdates", {"offset": offset, "timeout": 25,
                                                "allowed_updates": ["message"]}, timeout=40).get("result", [])
+                LINK["poll_ok"] = time.time()
                 for u in updates:
                     offset = u["update_id"] + 1
                     msg = u.get("message") or {}
@@ -180,6 +195,7 @@ def start_command_poller(handler):
                     if reply:
                         send(reply)
             except Exception as e:
+                LINK["poll_err"] = time.time()
                 logger.warning(f"Telegram poll error: {_scrub(str(e))}")
                 STOP.wait(10)
 
