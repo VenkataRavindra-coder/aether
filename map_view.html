@@ -593,7 +593,7 @@ circle.p { pointer-events: none; }
       lastOk = Date.now(); apply(s); setConn("live", "LIVE · updated " + hhmm(s.generated_at) + " UTC");
     } catch (e) {
       if (mode === "live" && Date.now() - lastOk < 60000) { setConn("err", "connection lost, retrying"); return; }
-      if (mode !== "sample") { mode = "sample"; setConn("sample", "SAMPLE DATA · not connected"); banner("Sample data. This page shows live state only when opened from the server: ops.starlark.app/map. Every number below is an example."); apply(sample()); sampleLoop(); }
+      if (mode !== "sample") { mode = "sample"; setConn("sample", "SAMPLE DATA · not connected"); banner("Sample data. This page shows live state only when opened from the server: ops.ratelark.app/map. Every number below is an example."); apply(sample()); sampleLoop(); }
     }
   }
   function banner(t) { const b = $("banner"); if (!t) { b.hidden = true; return; } b.textContent = t; b.hidden = false; }
