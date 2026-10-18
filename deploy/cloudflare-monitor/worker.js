@@ -82,24 +82,26 @@ export class Monitor {
 
   async telegram(text) {
     const { TELEGRAM_BOT_TOKEN: t, TELEGRAM_CHAT_ID: c } = this.env;
-    if (!t || !c) return false;
+    if (!t || !c) { await this.ctx.storage.put("tg", { ok: false, http: 0, detail: "TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID secret not set", at: this.now() }); return false; }
     const r = await this.http(`https://api.telegram.org/bot${t}/sendMessage`, {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ chat_id: c, text: text.slice(0, 3900) }),
     });
     const j = await r.json().catch(() => ({}));
+    await this.ctx.storage.put("tg", { ok: !!j.ok, http: r.status, detail: j.ok ? "delivered" : String(j.description || "no reply").slice(0, 120), at: this.now() });
     return !!j.ok;
   }
 
-  status(s) {
+  status(s, tg) {
     const now = this.now(), c = this.cfg();
     return { name: "aether", status: s.status, up: s.status === "up", last_ping_age_s: s.last_ping ? Math.round(now - s.last_ping) : null,
-      down_for_s: s.status === "down" && s.down_since ? Math.round(now - s.down_since) : null, grace_s: c.grace, queued_alerts: s.outbox.length };
+      down_for_s: s.status === "down" && s.down_since ? Math.round(now - s.down_since) : null, grace_s: c.grace, queued_alerts: s.outbox.length,
+      telegram: tg ? { ok: tg.ok, detail: tg.detail, age_s: Math.round(now - tg.at) } : null };
   }
 
   async fetch(request) {                    // called by the Worker only after the secret was verified
     const parts = new URL(request.url).pathname.split("/").filter(Boolean);
     if (parts[0] === "ping") { await this.ping(parts[2] === "fail" ? "fail" : ""); return new Response("OK"); }
-    if (parts[0] === "status") return new Response(JSON.stringify(this.status(await this.load())), { headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
+    if (parts[0] === "status") return new Response(JSON.stringify(this.status(await this.load(), await this.ctx.storage.get("tg"))), { headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
     if (parts[0] === "tick") { await this.tick(); return new Response("OK"); }
     return new Response("not found", { status: 404 });
   }
