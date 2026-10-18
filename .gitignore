@@ -11,6 +11,7 @@
 !deploy/aether-backup.timer
 !deploy/aether-riskmark.service
 !deploy/aether-riskmark.timer
+!deploy/aether-deadman.service
 !backup.sh
 !backup_alert.py
 !strategy.md

@@ -4,6 +4,8 @@ Design rules: sending never blocks or breaks trading (queued, background thread,
 swallowed and logged); the bot token is never logged; only the configured chat may issue
 commands; and repeated alerts are de-duplicated with a per-key cooldown.
 """
+import collections
+import io
 import json
 import logging
 import os
@@ -13,6 +15,7 @@ import threading
 import time
 import urllib.error
 import urllib.request
+from pathlib import Path
 
 logger = logging.getLogger("AETHER_NOTIFY")
 
@@ -28,6 +31,39 @@ _dropped = 0
 STOP = threading.Event()
 # Real link evidence for the dashboard's Connectivity page (connectivity.py). Plain timestamps, no secrets.
 LINK = {"send_ok": None, "send_err": None, "send_err_text": "", "poll_started": False, "poll_ok": None, "poll_err": None}
+
+
+# What Telegram sent back, one line per call: when, which call, did it work, how fast, HTTP status, the
+# message id Telegram assigned (proof it accepted the alert) or its error text. No token, no chat id, no
+# message text. Kept in memory and appended to telegram_link.jsonl so it survives restarts (last 300 lines).
+RESP_LOG = collections.deque(maxlen=100)
+LOG_FILE = Path(os.getenv("AETHER_HOME") or Path(__file__).resolve().parent) / "telegram_link.jsonl"
+_log_lock = threading.Lock()
+
+
+def _log_resp(entry: dict) -> None:
+    entry["ts"] = round(time.time(), 1)
+    with _log_lock:
+        RESP_LOG.append(entry)
+        try:
+            with open(LOG_FILE, "a") as f:
+                f.write(json.dumps(entry) + "\n")
+            if LOG_FILE.stat().st_size > 200_000:
+                lines = LOG_FILE.read_text().splitlines()[-300:]
+                LOG_FILE.write_text("\n".join(lines) + "\n")
+        except Exception:
+            pass
+
+
+def recent_responses(n: int = 30) -> list:
+    with _log_lock:
+        if not RESP_LOG:
+            try:
+                for line in LOG_FILE.read_text().splitlines()[-100:]:
+                    RESP_LOG.append(json.loads(line))
+            except Exception:
+                pass
+        return list(RESP_LOG)[-n:][::-1]
 
 
 def _mark(key: str, err: str = "") -> None:
@@ -61,8 +97,37 @@ def _call(method: str, payload: dict, timeout: float = 15):
         data=json.dumps(payload).encode(),
         headers={"Content-Type": "application/json"},
     )
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        return json.loads(resp.read())
+    t0 = time.time()
+    ms = lambda: round((time.time() - t0) * 1000)
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            body = json.loads(resp.read())
+            http = getattr(resp, "status", 200)
+    except urllib.error.HTTPError as e:
+        raw = b""
+        try:
+            raw = e.read()
+        except Exception:
+            pass
+        e.read = io.BytesIO(raw).read   # keep the body readable for callers (429 retry_after)
+        try:
+            desc = json.loads(raw).get("description", "")
+        except Exception:
+            desc = ""
+        _log_resp({"m": method, "ok": False, "ms": ms(), "http": e.code, "err": _scrub(desc or str(e.reason or ""))[:100]})
+        raise
+    except Exception as e:
+        _log_resp({"m": method, "ok": False, "ms": ms(), "http": None, "err": type(e).__name__})
+        raise
+    result = body.get("result")
+    if not (method == "getUpdates" and not result):        # empty long-polls are not events
+        entry = {"m": method, "ok": bool(body.get("ok", True)), "ms": ms(), "http": http}
+        if method == "sendMessage" and isinstance(result, dict):
+            entry["mid"] = result.get("message_id")
+        if method == "getUpdates" and isinstance(result, list):
+            entry["n"] = len(result)
+        _log_resp(entry)
+    return body
 
 
 def _worker():
@@ -187,6 +252,7 @@ def start_command_poller(handler):
                     if not text.startswith("/"):
                         continue
                     cmd = text.split()[0].split("@")[0].lower()
+                    _log_resp({"m": "received", "ok": True, "cmd": cmd[:20]})
                     try:
                         reply = handler(cmd)
                     except Exception as e:

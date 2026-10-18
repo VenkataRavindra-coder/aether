@@ -303,6 +303,10 @@ tbody tr:hover { background: var(--panel2); }
       <div id="connWrap"><svg id="connSvg" aria-hidden="true"></svg><div id="connGrid"></div></div>
       <div class="card" id="connDetail" aria-live="polite"><div class="empty">Tap a box to see its live check.</div></div>
       <div class="card"><h2>All links</h2><div class="tablewrap" id="connTable"></div><p class="note" id="connNote"></p></div>
+      <div class="grid g2">
+        <div class="card"><h2>What Telegram sent back</h2><p class="note" id="tgSum"></p><div class="tablewrap" id="tgTable"></div></div>
+        <div class="card"><h2>Outage history</h2><p class="note">Every time a link was down for two checks in a row, and when it came back. Kept on the server, so it survives restarts.</p><div class="tablewrap" id="evTable"></div></div>
+      </div>
     </section>
 
     <section class="view" id="v-health" hidden>
@@ -826,12 +830,13 @@ tbody tr:hover { background: var(--panel2); }
     engine: { name: "Engine & dashboard", sub: "ratelark on the server", fix: "On the server run: sudo systemctl restart ratelark; then sudo journalctl -u ratelark -n 40." },
     internet: { name: "Internet", sub: "server outbound", fix: "The server cannot reach the internet. Check the Hetzner console for the server and its network." },
     telegram: { name: "Telegram", sub: "alerts and approvals", fix: "Check TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in .env, and that you pressed Start in the bot chat. If the server cannot reach the internet, see the Internet box." },
+    monitor: { name: "Outside monitor", sub: "dead-man watcher on another machine", fix: "Check that deadman.py is running on the other machine and that HEALTHCHECK_URL in .env on the server points to it (https://<host>/ping/<secret>)." },
     github: { name: "GitHub", sub: "code and deploys", fix: "The deploy key may be removed or the network is blocked. On the server run: cd ~/ratelark; git ls-remote origin main; and read the error." },
     alpaca_paper: { name: "Alpaca paper", sub: "practice account API", fix: "Check APCA_API_KEY_ID and APCA_API_SECRET_KEY in .env, and status.alpaca.markets." },
     alpaca_live: { name: "Alpaca live", sub: "real-money account API", fix: "Check APCA_LIVE_API_KEY_ID and APCA_LIVE_API_SECRET_KEY in .env.live, and status.alpaca.markets." }
   };
-  const CZ = [["you", "You", ["you"]], ["edge", "Cloudflare", ["cloudflare", "tunnel"]], ["srv", "Your server", ["engine", "internet"]], ["svc", "Services", ["telegram", "github", "alpaca_paper", "alpaca_live"]]];
-  const CEDGES = [["you", "cloudflare"], ["cloudflare", "tunnel"], ["tunnel", "engine"], ["engine", "internet"], ["engine", "telegram"], ["engine", "github"], ["engine", "alpaca_paper"], ["engine", "alpaca_live"]];
+  const CZ = [["you", "You", ["you"]], ["edge", "Cloudflare", ["cloudflare", "tunnel"]], ["srv", "Your server", ["engine", "internet"]], ["svc", "Services", ["telegram", "monitor", "github", "alpaca_paper", "alpaca_live"]]];
+  const CEDGES = [["you", "cloudflare"], ["cloudflare", "tunnel"], ["tunnel", "engine"], ["engine", "internet"], ["engine", "telegram"], ["engine", "monitor"], ["engine", "github"], ["engine", "alpaca_paper"], ["engine", "alpaca_live"]];
   const CCLS = { up: "good", degraded: "warn", down: "bad", off: "idle", unknown: "idle" };
   let connSel = null;
   function connProbe(id) {
@@ -890,6 +895,22 @@ tbody tr:hover { background: var(--panel2); }
       { h: "What the check saw", f: i => { const p = connProbe(i); return p ? `<span class="muted">${esc(p.detail)}</span>` : ""; } }
     ], rows, "No checks yet.");
     $("connNote").textContent = D.conn.history_note + ". A check is read-only: nothing is sent to Telegram, GitHub or Alpaca beyond a harmless read.";
+    const tg = D.conn.telegram_log || { rows: [] };
+    $("tgSum").textContent = tg.rows.length ? `Last 100 calls: ${tg.sent_ok} alerts accepted, ${tg.sent_failed} failed, ${tg.received} commands received from you` + (tg.avg_ms != null ? `, average reply ${tg.avg_ms} ms.` : ".") + " Proof of delivery is the message id Telegram assigns." : "Nothing recorded yet. Telegram calls appear here as they happen.";
+    const WHAT = { sendMessage: "alert sent", getMe: "bot check", getChat: "chat check", getUpdates: "commands polled", received: "command from you" };
+    $("tgTable").innerHTML = table([
+      { h: "When (UTC)", f: r => dt(r.ts) }, { h: "What", f: r => esc(WHAT[r.m] || r.m) + (r.cmd ? ` <span class="muted">${esc(r.cmd)}</span>` : "") },
+      { h: "Result", f: r => r.ok ? pill("ok" + (r.http ? " " + r.http : ""), "good") : pill("failed" + (r.http ? " " + r.http : ""), "bad") },
+      { h: "Speed", f: r => r.ms != null ? r.ms + " ms" : "—" },
+      { h: "Telegram said", f: r => r.mid ? `<span class="muted">message id ${esc(r.mid)}</span>` : r.err ? `<span class="muted">${esc(r.err)}</span>` : r.n ? `<span class="muted">${esc(r.n)} update(s)</span>` : "" }
+    ], tg.rows.slice(0, 12), "Nothing recorded yet.");
+    $("evTable").innerHTML = table([
+      { h: "Link", f: e => esc((CONN[e.id] || {}).name || e.id) },
+      { h: "Event", f: e => e.ev === "down" ? pill("went down", "bad") : pill("recovered", "good") },
+      { h: "When (UTC)", f: e => dt(e.ts) },
+      { h: "Down since", f: e => dt(e.since) },
+      { h: "Reason", f: e => `<span class="muted">${esc(e.detail)}</span>` }
+    ], D.conn.events || [], "No outages recorded.");
     const f = connSel && CONN[connSel], p = connSel && connProbe(connSel), d = $("connDetail");
     d.innerHTML = !f ? `<div class="empty">Tap a box to see its live check.</div>` : `<h2>${esc(f.name)} <span class="muted" style="font-weight:400">· ${esc(f.sub)}</span></h2>` + (p ? `<dl class="kv"><dt>Status</dt><dd>${esc(connLabel(p))}</dd><dt>What the check saw</dt><dd>${esc(p.detail)}</dd><dt>Last checked</dt><dd>${esc(ago(p.age_s))} ago</dd><dt>Recent checks (oldest to newest)</dt><dd>${hist(p.history)}</dd></dl>` + (p.state === "down" || p.state === "degraded" ? `<div class="fix"><b>What to do:</b> ${esc(f.fix)}</div>` : "") : `<div class="empty">Not checked yet.</div>`);
     requestAnimationFrame(drawConn);

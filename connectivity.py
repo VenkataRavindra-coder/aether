@@ -14,6 +14,7 @@ page says so. Auth: the _dashboard_auth middleware in aether_engine.py covers th
 """
 from __future__ import annotations
 
+import json
 import os
 import socket
 import subprocess
@@ -35,6 +36,19 @@ HISTORY = 30
 TIMEOUT = 8
 _ENV = {k: v for k, v in os.environ.items() if k != "NOTIFY_SOCKET"}
 
+EVENTS_FILE = Path(os.getenv("AETHER_HOME") or REPO) / "connectivity_events.jsonl"
+NAMES = {"internet": "Internet", "cloudflare": "Cloudflare", "tunnel": "Cloudflare tunnel", "engine": "Engine",
+         "telegram": "Telegram", "monitor": "Outside monitor", "github": "GitHub", "alpaca_paper": "Alpaca paper", "alpaca_live": "Alpaca live"}
+FIX = {"tunnel": "On the server: sudo systemctl restart cloudflared",
+       "engine": "On the server: sudo systemctl restart ratelark",
+       "internet": "Check the Hetzner console for the server's network",
+       "telegram": "Check TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in .env",
+       "monitor": "Check that deadman.py is running on the other machine and that HEALTHCHECK_URL in .env points to it",
+       "github": "On the server: cd ~/ratelark; git ls-remote origin main",
+       "alpaca_paper": "Check the paper keys in .env and status.alpaca.markets",
+       "alpaca_live": "Check the live keys in .env.live and status.alpaca.markets",
+       "cloudflare": "Check cloudflarestatus.com"}
+DOWN_AFTER = 2             # consecutive failed checks before a link counts as down for alerts (no flapping)
 _lock = threading.Lock()
 _state: dict = {}          # id -> record
 _started = False
@@ -100,16 +114,11 @@ def p_engine():
 
 
 def _tg_get(method: str, payload: dict | None = None):
-    """Read-only Telegram call. getMe proves the token and Telegram's API; getChat proves the bot can
-    reach YOUR chat. Neither sends a message. (getUpdates is never called here: it would fight the
-    engine's own command poller.)"""
-    import json
+    """Read-only Telegram call through notify._call, so Telegram's reply lands in the response log.
+    getMe proves the token and Telegram's API; getChat proves the bot can reach YOUR chat. Neither sends a
+    message. (getUpdates is never called here: it would fight the engine's own command poller.)"""
     import notify
-    token, chat = notify._config()
-    req = urllib.request.Request(f"{notify._api_base()}/bot{token}/{method}", data=json.dumps(payload or {}).encode(),
-                                 headers={"Content-Type": "application/json"})
-    with urllib.request.urlopen(req, timeout=TIMEOUT) as r:
-        return json.loads(r.read())
+    return notify._call(method, payload or {}, timeout=TIMEOUT)
 
 
 def p_telegram():
@@ -175,9 +184,33 @@ def p_alpaca_live():
     return _alpaca("live")
 
 
+def p_monitor():
+    """The outside dead-man monitor (deadman.py on another machine). Its /status answers prove that it is alive,
+    that the server can reach it, and that our pings are arriving. A third-party URL (healthchecks.io) has no
+    status API, so it is reported as 'unknown' instead of guessed."""
+    url = (os.getenv("HEALTHCHECK_URL") or os.getenv("HEALTHCHECK_PING_URL") or "").strip()
+    if not url:
+        return "off", "HEALTHCHECK_URL not set: nothing outside the server will notice if it dies"
+    if "/ping/" not in url or "hc-ping.com" in url:
+        return "unknown", "third-party monitor: its answer cannot be read from here"
+    base, _, rest = url.partition("/ping/")
+    secret = rest.split("/")[0].split("?")[0]
+    import json as _j
+    with urllib.request.urlopen(f"{base}/status/{secret}", timeout=TIMEOUT) as r:
+        st = _j.loads(r.read())
+    age = st.get("last_ping_age_s")
+    if age is None:
+        return "degraded", "monitor reachable but has not received a ping yet"
+    if not st.get("up"):
+        return "down", f"monitor says the server is down ({st.get('status')})"
+    if age > st.get("grace_s", 240) * 0.75:
+        return "degraded", f"monitor reachable, but our last ping arrived {age} s ago"
+    return "up", f"monitor reachable, last ping seen {age} s ago"
+
+
 PROBES: dict[str, Callable[[], tuple[str, str]]] = {
     "internet": p_internet, "cloudflare": p_cloudflare, "tunnel": p_tunnel, "engine": p_engine,
-    "telegram": p_telegram, "github": p_github, "alpaca_paper": p_alpaca_paper, "alpaca_live": p_alpaca_live,
+    "telegram": p_telegram, "monitor": p_monitor, "github": p_github, "alpaca_paper": p_alpaca_paper, "alpaca_live": p_alpaca_live,
 }
 
 
@@ -192,16 +225,82 @@ def _run_one(pid: str, fn: Callable) -> dict:
     return {"id": pid, "state": state, "detail": detail, "ms": round((time.time() - t0) * 1000), "at": time.time()}
 
 
+def _event(pid: str, ev: str, detail: str, since: float, at: float) -> None:
+    """Down/up history that survives restarts (connectivity_events.jsonl, last 300 lines kept)."""
+    try:
+        with open(EVENTS_FILE, "a") as f:
+            f.write(json.dumps({"ts": round(at, 1), "id": pid, "ev": ev, "detail": detail[:140], "since": round(since, 1)}) + "\n")
+        if EVENTS_FILE.stat().st_size > 100_000:
+            EVENTS_FILE.write_text("\n".join(EVENTS_FILE.read_text().splitlines()[-300:]) + "\n")
+    except Exception:
+        pass
+
+
+def recent_events(n: int = 20) -> list:
+    try:
+        return [json.loads(x) for x in EVENTS_FILE.read_text().splitlines()[-n:]][::-1]
+    except Exception:
+        return []
+
+
+def _alert(pid: str, text: str, key: str) -> None:
+    if os.getenv("CONNECTIVITY_ALERTS", "1") == "0":
+        return
+    try:
+        import notify
+        notify.send(text, key=key, cooldown=300)
+    except Exception:
+        pass
+
+
+def _restore(pid: str):
+    """If the last recorded event for this link was 'down', the down period began then, even across a restart."""
+    for e in recent_events(300):
+        if e.get("id") == pid:
+            return e if e.get("ev") == "down" else None
+    return None
+
+
+def _duration(s: float) -> str:
+    s = int(s)
+    return f"{s}s" if s < 90 else f"{round(s / 60)} min" if s < 5400 else f"{round(s / 3600, 1)} h"
+
+
 def _record(res: dict) -> None:
+    pid, now, notify_after = res["id"], res["at"], None
     with _lock:
-        r = _state.setdefault(res["id"], {"history": deque(maxlen=HISTORY), "state_since": res["at"], "last_up": None,
-                                          "state": None})
-        if r["state"] != res["state"]:
-            r["state_since"] = res["at"]
-        r.update(state=res["state"], detail=res["detail"], ms=res["ms"], at=res["at"])
+        new = pid not in _state
+        r = _state.setdefault(pid, {"history": deque(maxlen=HISTORY), "state_since": now, "last_up": None, "state": None,
+                                    "streak": 0, "alerted": False, "alert_since": None})
+        if new and res["state"] == "down":
+            prev = _restore(pid)
+            if prev:
+                r["state_since"], r["alerted"], r["alert_since"] = prev["since"], True, prev["since"]
+        if r["state"] != res["state"] and not (new and r["alerted"]):
+            r["state_since"] = now
+        r.update(state=res["state"], detail=res["detail"], ms=res["ms"], at=now)
         if res["state"] in ("up", "degraded"):
-            r["last_up"] = res["at"]
+            r["last_up"] = now
         r["history"].append(res["state"])
+        if res["state"] == "down":
+            r["streak"] += 1
+            if r["streak"] >= DOWN_AFTER and not r["alerted"]:
+                r["alerted"], r["alert_since"] = True, r["state_since"]
+                notify_after = ("down", res["detail"], r["state_since"])
+        elif res["state"] in ("up", "degraded", "off"):
+            r["streak"] = 0
+            if r["alerted"]:
+                notify_after = ("up", res["detail"], r["alert_since"])
+                r["alerted"], r["alert_since"] = False, None
+    if notify_after:                      # outside the lock: file and network work
+        ev, detail, since = notify_after
+        _event(pid, ev, detail, since, now)
+        name = NAMES.get(pid, pid)
+        if ev == "down" and pid != "telegram":        # Telegram cannot announce its own outage; it reports on recovery
+            _alert(pid, f"\U0001F534 AETHER: {name} is disconnected. {detail}\nFix: {FIX.get(pid, 'see the Connectivity page')}", f"conn-down-{pid}")
+        elif ev == "up":
+            _alert(pid, f"\U0001F7E2 AETHER: {name} is back after {_duration(now - since)}." +
+                   (" (This alert was held until Telegram came back.)" if pid == "telegram" else ""), f"conn-up-{pid}")
 
 
 def run_once(probes: dict | None = None) -> None:
@@ -249,6 +348,16 @@ def snapshot(now: float | None = None) -> dict:
             "probes": probes, "down": down}
 
 
+def _tg_log() -> dict:
+    """What Telegram last sent back to this server (newest first) plus counts over the last 100 calls."""
+    import notify
+    allr = notify.recent_responses(100)
+    sent = [r for r in allr if r.get("m") == "sendMessage"]
+    timed = [r["ms"] for r in allr if r.get("ms") is not None and r.get("m") != "getUpdates"]
+    return {"rows": allr[:30], "sent_ok": sum(1 for r in sent if r.get("ok")), "sent_failed": sum(1 for r in sent if not r.get("ok")),
+            "received": sum(1 for r in allr if r.get("m") == "received"), "avg_ms": round(sum(timed) / len(timed)) if timed else None}
+
+
 def build_router(auth_dep: Callable) -> APIRouter:
     r = APIRouter(dependencies=[Depends(auth_dep)])
 
@@ -260,6 +369,8 @@ def build_router(auth_dep: Callable) -> APIRouter:
             run_once()
         out = snapshot()
         h = request.headers
+        out["events"] = recent_events(20)
+        out["telegram_log"] = _tg_log()
         out["you"] = {"via_cloudflare": bool(h.get("cf-access-jwt-assertion") or h.get("cf-ray")),
                       "access_jwt_validation": cf_access.configured()}
         return out
