@@ -20,3 +20,7 @@
 !aether-research/**/*.md
 !*.html
 !tests/
+!deploy/cloudflare-monitor/
+!deploy/cloudflare-monitor/worker.js
+!deploy/cloudflare-monitor/wrangler.toml
+!deploy/cloudflare-monitor/test_worker.mjs

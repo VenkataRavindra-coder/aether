@@ -1,0 +1,14 @@
+name = "aether-monitor"
+main = "worker.js"
+compatibility_date = "2025-01-01"
+
+[triggers]
+crons = ["* * * * *"]
+
+[[durable_objects.bindings]]
+name = "MONITOR"
+class_name = "Monitor"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Monitor"]
