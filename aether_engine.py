@@ -2111,3 +2111,15 @@ app.include_router(_build_us_dashboard_router(lambda: None))
 # gate is the _dashboard_auth middleware, default-deny.
 from us_extras import build_router as _build_us_extras_router  # noqa: E402
 app.include_router(_build_us_extras_router(lambda: None))
+
+# map_status (2026-10-18): GET /map (animated live system map) and GET /api/map/status.
+# Read-only; same default-deny _dashboard_auth middleware as every other page.
+from map_status import build_router as _build_map_router  # noqa: E402
+
+
+def _map_engine_info() -> dict:
+    return {"us": {k: US_STATUS.get(k) for k in ("last_check", "last_error", "note", "kill_switch", "kill_reason")},
+            "crypto": {k: STRATEGY_STATUS.get(k) for k in ("last_cycle", "last_error", "kill_switch")}}
+
+
+app.include_router(_build_map_router(lambda: None, _map_engine_info))
