@@ -415,9 +415,9 @@ iframe.map { width: 100%; height: calc(100vh - 150px); min-height: 640px; border
     $("ovErrors").hidden = !errs.length; $("ovErrors").textContent = errs.join(" · ");
     const live = acc.live || {}, paper = acc.paper || {};
     $("ovKpis").innerHTML =
-      kpi("Live account (real money)", live.configured ? money(live.equity) : "—", live.configured ? `${signed(live.today_pl)} today · cash ${money(live.cash)}` : "live keys not configured", "") +
-      kpi("Paper account", paper.configured ? money(paper.equity) : "—", paper.configured ? `${signed(paper.today_pl)} today (${pct(paper.today_pl_pct)})` : "—") +
-      kpi("US engine sleeve", us && num(us.equity) ? money(us.equity) : "—", us ? `of ${money(us.allocation_usd, 0)} allocation · ${esc(us.mode || "")}` : "—") +
+      kpi("Live account (real money)", live.configured ? money(live.equity) : "—", live.configured ? `${signed(live.today_pl)} since last close · cash ${money(live.cash)}` : "live keys not configured", "") +
+      kpi("Paper account", paper.configured ? money(paper.equity) : "—", paper.configured ? `${signed(paper.today_pl)} since last close (${pct(paper.today_pl_pct)})` : "—") +
+      kpi("US engine sleeve", us && num(us.equity) ? money(us.equity) : "—", us ? `engine book · ${money(us.allocation_usd, 0)} allocation · ${esc(us.mode || "")}` : "—") +
       kpi("Change since start", signed(s.total_pl), s.start_date ? `${pct(s.total_pl_pct)} from ${money(s.start_equity, 0)} on ${dt(s.start_date).slice(0, 10)} · includes deposits` : "headline account", cls(s.total_pl));
     const h = o && o.history ? o.history[histRange] || [] : [];
     $("histChart").innerHTML = line(h.map(p => [p[0], p[1]]), { label: "Account value", fmt: v => "$" + Math.round(v).toLocaleString(), xlab: t => new Date(t * 1000).toISOString().slice(5, histRange === "week" ? 16 : 10).replace("T", " ") });
@@ -445,7 +445,7 @@ iframe.map { width: 100%; height: calc(100vh - 150px); min-height: 640px; border
       ["Canary spent today", `${money(g.live_canary.spent)} of ${money(g.live_canary.cap_day, 0)}`],
       ["Engine live spend today", `${money(g.live_us.spent)} of ${money(g.live_us.cap_day, 0)}`],
       ["Last backup", st.backups && st.backups.ok && st.backups.age_h != null ? `${st.backups.age_h} h ago` : D.safety && D.safety.last_backup_utc ? `${Math.round(since(D.safety.last_backup_utc) / 3600)} h ago` : "none found"],
-      ["Telegram", o && o.health ? (o.health.telegram ? pill("on", "good") : pill("off", "warn")) : "—"]]) : '<div class="empty">Waiting for the engine…</div>';
+      ["Telegram alerts", o && o.health ? (o.health.telegram ? pill("configured", "good") : pill("not configured", "bad")) : "—"]]) : '<div class="empty">Waiting for the engine…</div>';
     $("ovFeed").innerHTML = feed(5);
     const sf = D.safety;
     if (o && sf) { const t = buildToday(o, sf, D.strategy ? D.strategy.kill_switch : undefined, Date.now()); const box = $("ovToday"); box.className = "card today " + t.level;
@@ -458,7 +458,7 @@ iframe.map { width: 100%; height: calc(100vh - 150px); min-height: 640px; border
   function feed(n) {
     const rows = D.status && D.status.activity && D.status.activity.ok ? D.status.activity.rows.slice(0, n) : [];
     if (!rows.length) return '<div class="empty">No decisions logged yet.</div>';
-    return rows.map(r => `<div style="display:grid;grid-template-columns:44px 12px minmax(0,1fr);gap:8px;padding:6px 0;border-top:1px solid var(--line);font-size:12.5px"><span class="mono muted">${hm(r.ts)}</span><span class="badge" style="margin-top:5px;background:var(--${{ bad: "bad", good: "good", idle: "idle" }[decCls(r.decision)]})"></span><span><b class="mono" style="font-weight:500">${esc(r.engine)} · ${esc(r.event)}${r.symbol ? " · " + esc(r.symbol) : ""}</b><br><span class="muted">${esc([r.decision, r.reason].filter(Boolean).join(": "))}</span></span></div>`).join("");
+    return rows.map(r => `<div style="display:grid;grid-template-columns:44px 12px minmax(0,1fr);gap:8px;padding:6px 0;border-top:1px solid var(--line);font-size:12.5px"><span class="mono muted">${hm(r.ts)}</span><span class="badge" style="margin-top:5px;background:var(--${{ bad: "bad", good: "good", idle: "idle" }[decCls(r.decision)]})"></span><span><b class="mono" style="font-weight:500">${esc(r.engine)} · ${esc(r.event)}${r.symbol ? " · " + esc(r.symbol) : ""}</b><br><span class="muted">${esc([r.decision, tidy(r.reason)].filter(Boolean).join(": "))}</span></span></div>`).join("");
   }
   function renderHoldings() {
     const o = D.overview; if (!o) { $("hPositions").innerHTML = '<div class="empty">Loading…</div>'; return; }
@@ -469,7 +469,7 @@ iframe.map { width: 100%; height: calc(100vh - 150px); min-height: 640px; border
     $("hPositions").innerHTML = table([
       { h: "Asset", f: p => `<b>${esc(p.symbol)}</b> <span class="muted">${esc(p.engine)}</span>` }, { h: "Qty", r: 1, f: p => (+p.qty).toLocaleString(undefined, { maximumFractionDigits: 6 }) },
       { h: "Avg cost", r: 1, f: p => money(p.avg_entry) }, { h: "Price", r: 1, f: p => money(p.price) }, { h: "Invested", r: 1, f: p => money(p.cost) },
-      { h: "Worth", r: 1, f: p => money(p.value) }, { h: "Gain / loss", r: 1, f: p => `<span class="${cls(p.upl)}">${signed(p.upl)} (${pct(p.upl_pct)})</span>` }, { h: "Today", r: 1, f: p => `<span class="${cls(p.today_pl)}">${signed(p.today_pl)}</span>` }
+      { h: "Worth", r: 1, f: p => money(p.value) }, { h: "Gain / loss", r: 1, f: p => `<span class="${cls(p.upl)}">${signed(p.upl)} (${pct(p.upl_pct)})</span>` }, { h: "Since last close", r: 1, f: p => `<span class="${cls(p.today_pl)}">${signed(p.today_pl)}</span>` }
     ], (o.positions || []).filter(p => engFilter === "all" || (engFilter === "crypto" ? p.engine !== "US ETFs" : p.engine === engFilter)), engFilter === "all" ? "No open positions." : "No open positions in this market.");
     document.querySelectorAll("#engSeg button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.e === engFilter)));
     $("hClosed").innerHTML = table([
@@ -526,7 +526,7 @@ iframe.map { width: 100%; height: calc(100vh - 150px); min-height: 640px; border
   function renderMarket() {
     const m = D.market; if (!m) { $("mkQuotes").innerHTML = `<div class="card"><div class="empty">${esc(D.market_err || "Loading…")}</div></div>`; return; }
     $("mkQuotes").innerHTML = (m.quotes || []).map(q => { const closes = ((m.bars || {})[q.symbol] || []).map(b => b[4]);
-      return `<div class="card kpi"><span class="eyebrow">${esc(q.symbol)} · ${esc(q.label)}</span><span class="v">${money(q.price)}</span><span class="s ${cls(q.change_pct)}">${pct(q.change_pct)} today</span>${spark(closes, (q.change_pct || 0) >= 0)}</div>`; }).join("") || '<div class="card"><div class="empty">No quotes.</div></div>';
+      return `<div class="card kpi"><span class="eyebrow">${esc(q.symbol)} · ${esc(q.label)}</span><span class="v">${money(q.price)}</span><span class="s ${cls(q.change_pct)}">${pct(q.change_pct)} vs previous close</span>${spark(closes, (q.change_pct || 0) >= 0)}</div>`; }).join("") || '<div class="card"><div class="empty">No quotes.</div></div>';
     const bars = m.bars || {};
     $("mkTape").innerHTML = table([
       { h: "Symbol", f: k => `<b>${esc(k)}</b>` }, { h: "Last 60 hours", f: k => spark(bars[k].map(b => b[4]), bars[k][bars[k].length - 1][4] >= bars[k][0][4]) },
@@ -540,7 +540,8 @@ iframe.map { width: 100%; height: calc(100vh - 150px); min-height: 640px; border
     const day = c.day || {};
     $("crKpis").innerHTML = kpi("Loop", c.enabled ? "enabled" : "disabled", `every ${c.interval_seconds || "?"} s`) + kpi("Kill switch", c.kill_switch ? "ON" : "clear", `daily loss limit ${c.max_daily_loss_pct}%`, c.kill_switch ? "neg" : "")
       + kpi("Last cycle", c.last_cycle ? dt(c.last_cycle) : "—", c.last_error ? "Error: " + esc(c.last_error) : "no errors") + kpi("Shadow positions", Object.keys(c.positions || {}).length, Object.keys(day).length ? esc(JSON.stringify(day).slice(0, 80)) : "");
-    $("crSymbols").innerHTML = (c.symbols || []).map(s => { const pairs = Object.entries(s).filter(([k, v]) => k !== "symbol" && (v == null || typeof v !== "object"));
+    const KEEP = ["state", "trend", "signal", "price", "last_close", "close", "stop", "stop_price", "target_price", "reason", "note", "updated"];
+    $("crSymbols").innerHTML = (c.symbols || []).map(s => { const pairs = KEEP.filter(k => s[k] != null && typeof s[k] !== "object" && s[k] !== "").map(k => [k, s[k]]);
       return `<div class="card"><h2>${esc(s.symbol)}</h2><dl class="kv">${pairs.slice(0, 10).map(([k, v]) => `<dt>${esc(k.replace(/_/g, " "))}</dt><dd>${esc(typeof v === "number" ? +v.toFixed(4) : v)}</dd>`).join("")}</dl></div>`; }).join("") || '<div class="card"><div class="empty">No symbols evaluated yet.</div></div>';
   }
   function renderSafety() {
@@ -555,7 +556,7 @@ iframe.map { width: 100%; height: calc(100vh - 150px); min-height: 640px; border
     const bud = (label, b) => { const f = num(b.spent) && b.cap_day > 0 ? Math.min(1, b.spent / b.cap_day) : 0; const col = f >= 1 ? "--bad" : f >= .7 ? "--warn" : "--good";
       return `<div style="display:grid;gap:6px;margin-bottom:12px"><div style="display:flex;justify-content:space-between"><b>${esc(label)}</b><span class="mono">${money(b.spent)} of ${money(b.cap_day, 0)} · max ${money(b.cap_order, 0)}/order</span></div><div class="bar"><span style="width:${(100 * f).toFixed(1)}%;background:var(${col})"></span></div></div>`; };
     const ceil = D.overview && D.overview.dashboard_safety ? D.overview.dashboard_safety.us_live_max_usd : null;
-    $("sfBudgets").innerHTML = bud("Canary (live)", g.live_canary) + bud("US engine (live, not enabled)", g.live_us)
+    $("sfBudgets").innerHTML = bud("Canary (live)", g.live_canary) + bud((D.status && D.status.engine && D.status.engine.flags && D.status.engine.flags.US_LIVE) ? "US engine (LIVE)" : "US engine (live trading off)", g.live_us)
       + `<dl class="kv" style="margin-bottom:8px"><dt>US investment ceiling (US_LIVE_MAX_USD)</dt><dd>${ceil == null ? "not set" : money(ceil, 0)}</dd></dl>` + '<div class="note">Paper orders are never capped by these. The ceiling only applies when the US engine is live.</div>';
     const p2 = v => num(v) ? (v * 100).toFixed(2) + "%" : "—";
     const lim = (r && r.limits) || {};
@@ -583,9 +584,9 @@ iframe.map { width: 100%; height: calc(100vh - 150px); min-height: 640px; border
     $("heKpis").innerHTML = kpi("Engine uptime", ago(eng.uptime_s), Object.entries(eng.threads || {}).map(([k, v]) => `${k} ${v ? "✓ running" : "✗ stopped"}`).join(" · "))
       + kpi("Server", sv ? `load ${sv.load1}` : "—", sv ? `${sv.cpus} CPU · memory ${sv.mem_pct}% of ${sv.mem_total_gb} GB · disk ${sv.disk_pct}%` : "")
       + kpi("Last backup", bkAge != null ? bkAge + " h ago" : "none found", bk && bk.count ? `${bk.count} kept · ${bk.size_kb || 0} KB · offsite ${esc(bk.offsite_target || "not set")}` : "offsite " + esc((bk && bk.offsite_target) || "not set"), bkAge != null && bkAge <= 26 ? "" : "neg")
-      + kpi("Telegram", oh ? (oh.telegram ? "on" : "off") : "—", oh && num(oh.telegram_dropped) ? `${oh.telegram_dropped} alerts dropped` : "");
+      + kpi("Telegram alerts", oh ? (oh.telegram ? "configured" : "not configured") : "—", oh && num(oh.telegram_dropped) ? `${oh.telegram_dropped} dropped since restart` : "", oh && !oh.telegram ? "neg" : "");
     const jobs = s.units && s.units.ok ? s.units.jobs : {}; const stress = s.stress && s.stress.ok ? s.stress : null;
-    const NAMES = { health: "Health check (1 min)", watchdog: "Watchdog (5 min)", backup: "Backup (03:15 UTC)", daily: "Daily checks (04:30 UTC)", stress: "Stress test (Mon–Fri 16:00 UTC)" };
+    const NAMES = { health: "Health check (1 min)", watchdog: "Watchdog (5 min)", backup: "Backup (03:15 UTC)", daily: "Daily checks (04:30 UTC)", stress: "Stress test (Mon–Fri 16:00 UTC)", riskmark: "Live risk mark (Mon–Fri 15:50 New York)" };
     $("heJobs").innerHTML = table([
       { h: "Job", f: k => esc(NAMES[k] || k) }, { h: "Status", f: k => { const j = jobs[k]; if (!j || !j.timer_loaded) return pill("not installed", "idle"); const bad = !j.timer_active || (j.result && j.result !== "success") || (k === "stress" && stress && stress.rc !== 0); return j.running ? pill("running", "warn") : pill(bad ? "failing" : "ok", bad ? "bad" : "good"); } },
       { h: "Last run", f: k => jobs[k] && jobs[k].last_run ? `${hm(jobs[k].last_run)} UTC <span class="muted">(${ago(since(jobs[k].last_run))} ago)</span>` : "—" },
@@ -599,9 +600,10 @@ iframe.map { width: 100%; height: calc(100vh - 150px); min-height: 640px; border
     const rows = s.activity && s.activity.ok ? s.activity.rows : [];
     $("heFeed").innerHTML = table([
       { h: "Time (UTC)", f: r => dt(r.ts) }, { h: "Engine", f: r => esc(r.engine) }, { h: "Event", f: r => esc(r.event) }, { h: "Symbol", f: r => esc(r.symbol || "") },
-      { h: "Mode", f: r => esc(r.mode || "") }, { h: "Decision", f: r => r.decision ? pill(r.decision, decCls(r.decision)) : "" }, { h: "Reason", f: r => `<span class="muted">${esc(r.reason || "")}</span>` }
+      { h: "Mode", f: r => esc(r.mode || "") }, { h: "Decision", f: r => r.decision ? pill(r.decision, decCls(r.decision)) : "" }, { h: "Reason", f: r => `<span class="muted">${esc(tidy(r.reason))}</span>` }
     ], rows, "No decisions logged yet.");
   }
+  const tidy = r => String(r || "").replace(/\s*coid\s+\S+/g, "").replace(/canary-(buy|sell)-[0-9a-f]{12,}/g, "canary-$1");
   function decCls(d) { d = String(d || "").toLowerCase(); return /block|fail|error|reject|not_flat|incomplete|kill/.test(d) ? "bad" : /allow|^ok$|pass|flat|filled|submitted|complete/.test(d) ? "good" : "idle"; }
   function renderAll() {
     renderStatus();

@@ -566,7 +566,7 @@ body.embed .wrap { padding-block: 10px; }
   }
   function renderJobs(jobs, stress) {
     const el = $("jobs"); el.textContent = "";
-    [["health", "Health check"], ["watchdog", "Watchdog"], ["backup", "Backup"], ["daily", "Daily checks"], ["stress", "Stress test"]].forEach(([k, name]) => {
+    [["health", "Health check"], ["watchdog", "Watchdog"], ["backup", "Backup"], ["daily", "Daily checks"], ["stress", "Stress test"], ["riskmark", "Live risk mark"]].forEach(([k, name]) => {
       const j = jobs && jobs[k]; const row = document.createElement("div"); row.className = "job";
       const st = !j || !j.timer_loaded ? "idle" : !j.timer_active || (j.result && j.result !== "success") || (k === "stress" && stress && stress.rc !== 0) ? "bad" : "good";
       const d = document.createElement("span"); d.className = "dot"; d.style.background = `var(--${st})`;
@@ -619,7 +619,7 @@ body.embed .wrap { padding-block: 10px; }
     for (let h = 0; h <= 24; h++) { mk("line", { x1: hx(h), x2: hx(h), y1: 86, y2: h % 3 ? 90 : 96, style: "stroke:var(--line)" }, clk);
       if (h % 3 === 0 && h < 24) { mk("text", { x: hx(h), y: 112, "text-anchor": "middle", style: "fill:var(--ink);font-size:11px" }, clk).textContent = fmt(h); mk("text", { x: hx(h), y: 128, "text-anchor": "middle", style: "fill:var(--muted);font-size:10px" }, clk).textContent = fmt(h + 4); } }
     mk("text", { x: 0, y: 112, style: "fill:var(--muted);font-size:10px" }, clk).textContent = "UTC"; mk("text", { x: 0, y: 128, style: "fill:var(--muted);font-size:10px" }, clk).textContent = "DXB";
-    [{ h: 3.25, t: "Backup", c: "--f-backups", row: 0 }, { h: 4.5, t: "Daily checks", c: "--f-safety", row: 1 }, { h: 16, t: "Stress (Mon–Fri)", c: "--paper", row: 1 }, { h: orders, t: "US orders (if approved)", c: "--f-orders", row: 0 }].forEach(e => {
+    [{ h: 3.25, t: "Backup", c: "--f-backups", row: 0 }, { h: 4.5, t: "Daily checks", c: "--f-safety", row: 1 }, { h: 16, t: "Stress (Mon–Fri)", c: "--paper", row: 1 }, { h: orders, t: "US orders (if approved)", c: "--f-orders", row: 0 }, { h: orders + 1 / 3, t: "Risk mark (Mon–Fri)", c: "--f-safety", row: 1 }].forEach(e => {
       const x = hx(e.h), y = e.row ? 78 : 58; mk("line", { x1: x, x2: x, y1: y + 4, y2: 90, style: `stroke:var(${e.c});stroke-width:2` }, clk); mk("circle", { cx: x, cy: 90, r: 3.5, style: `fill:var(${e.c})` }, clk);
       const end = x > 700; mk("text", { x: end ? x - 6 : x + 6, y: y + 2, "text-anchor": end ? "end" : "start", style: `fill:var(${e.c});font-size:11px;font-weight:500` }, clk).textContent = `${e.t} ${fmt(e.h)}`; });
     const now = new Date(), nh = now.getUTCHours() + now.getUTCMinutes() / 60;
