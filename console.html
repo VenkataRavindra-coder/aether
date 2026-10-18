@@ -168,6 +168,20 @@ svg.chart text { font: 400 10px var(--font-mono); fill: var(--muted); }
 #archStory b { color: var(--tc); }
 #archStory .legend { margin-top: 6px; color: var(--muted); font-size: 12px; }
 
+#connWrap { position: relative; }
+#connSvg { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 0; overflow: visible; }
+#connGrid { position: relative; z-index: 1; display: grid; gap: 14px; grid-template-columns: minmax(0, 1fr); }
+@media (min-width: 1280px) { #connGrid { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 44px; } #connGrid .zone .zn { grid-template-columns: minmax(0, 1fr); } }
+#connSvg .ed { fill: none; stroke-linecap: round; }
+#connSvg .ed.up { stroke: var(--good); stroke-width: 2.4; stroke-dasharray: 7 7; animation: flowdash 1s linear infinite; }
+#connSvg .ed.degraded { stroke: var(--warn); stroke-width: 2.4; stroke-dasharray: 7 7; animation: flowdash 1.6s linear infinite; }
+#connSvg .ed.down { stroke: var(--bad); stroke-width: 2.4; stroke-dasharray: 3 6; }
+#connSvg .ed.off { stroke: var(--muted); stroke-width: 1.4; opacity: .5; stroke-dasharray: 2 5; }
+#connSvg .xm { fill: var(--bad); font: 700 13px var(--font-mono); }
+.hist { display: inline-flex; gap: 2px; vertical-align: middle; }
+.hist i { width: 6px; height: 14px; border-radius: 2px; background: var(--idle); }
+.hist i.up { background: var(--good); } .hist i.degraded { background: var(--warn); } .hist i.down { background: var(--bad); }
+.fix { border-left: 4px solid var(--bad); padding: 8px 12px; background: color-mix(in srgb, var(--bad) 8%, var(--panel)); border-radius: 8px; font-size: 13px; }
 /* ===== Graphite skin: neutral charcoal, soft depth, one restrained accent. ===== */
 body { background: var(--bg); }
 nav.side { border-right: 1px solid var(--line); }
@@ -283,6 +297,18 @@ tbody tr:hover { background: var(--panel2); }
       <div class="card" id="archDetail" aria-live="polite"><div class="empty">Tap a box to see its live details.</div></div>
     </section>
 
+    <section class="view" id="v-conn" hidden>
+      <div class="vhead"><div><h1>Connectivity</h1><p>Is every link in the chain up right now: you, Cloudflare, the tunnel, the server, Telegram, GitHub and Alpaca. Checked for real every minute from the server; a line moves only while its last check succeeded.</p></div></div>
+      <div id="connSum" class="status"></div>
+      <div id="connWrap"><svg id="connSvg" aria-hidden="true"></svg><div id="connGrid"></div></div>
+      <div class="card" id="connDetail" aria-live="polite"><div class="empty">Tap a box to see its live check.</div></div>
+      <div class="card"><h2>All links</h2><div class="tablewrap" id="connTable"></div><p class="note" id="connNote"></p></div>
+      <div class="grid g2">
+        <div class="card"><h2>What Telegram sent back</h2><p class="note" id="tgSum"></p><div class="tablewrap" id="tgTable"></div></div>
+        <div class="card"><h2>Outage history</h2><p class="note">Every time a link was down for two checks in a row, and when it came back. Kept on the server, so it survives restarts.</p><div class="tablewrap" id="evTable"></div></div>
+      </div>
+    </section>
+
     <section class="view" id="v-health" hidden>
       <div class="vhead"><div><h1>Health &amp; jobs</h1><p>Server, scheduled jobs, daily checks and backups.</p></div></div>
       <div class="grid g4" id="heKpis"></div>
@@ -309,10 +335,11 @@ tbody tr:hover { background: var(--panel2); }
     crypto: '<circle cx="12" cy="12" r="9"/><path d="M9 8h4.5a2 2 0 010 4H9h5a2 2 0 010 4H9zM11 6v2M11 16v2"/>',
     safety: '<path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/>',
     map: '<circle cx="5" cy="6" r="2"/><circle cx="19" cy="6" r="2"/><circle cx="12" cy="18" r="2"/><path d="M7 6h10M6 8l5 8M18 8l-5 8"/>',
+    conn: '<path d="M9 3v5M15 3v5M7 8h10v4a5 5 0 01-10 0zM12 17v4"/>',
     health: '<path d="M3 12h4l3-7 4 14 3-7h4"/>'
   };
   const VIEWS = [["overview", "Overview"], ["holdings", "Holdings & trades"], ["us", "US strategy"], ["orders", "Orders"],
-    ["market", "Market"], ["crypto", "Crypto (shadow)"], ["safety", "Safety"], ["map", "System map"], ["health", "Health & jobs"]];
+    ["market", "Market"], ["crypto", "Crypto (shadow)"], ["safety", "Safety"], ["map", "System map"], ["conn", "Connectivity"], ["health", "Health & jobs"]];
   const menu = $("menu");
   VIEWS.forEach(([id, name]) => {
     const a = document.createElement("a"); a.href = "#" + id; a.dataset.v = id;
@@ -363,9 +390,9 @@ tbody tr:hover { background: var(--panel2); }
 
   // ---------- data
   const D = {}; const age = {};
-  const SRC = { status: "/api/map/status", overview: "/api/overview", us: "/api/us", summary: "/api/us/summary", extras: "/api/us/extras", strategy: "/api/strategy", safety: "/api/safety" };
+  const SRC = { status: "/api/map/status", overview: "/api/overview", us: "/api/us", summary: "/api/us/summary", extras: "/api/us/extras", strategy: "/api/strategy", safety: "/api/safety", conn: "/api/connectivity" };
   const NEEDS = { overview: ["overview", "us", "status", "safety", "strategy"], holdings: ["overview"], us: ["us", "safety", "extras", "overview", "status"], orders: ["extras"], market: ["market", "overview"],
-    crypto: ["strategy"], safety: ["status", "summary", "overview"], map: ["status", "overview"], health: ["status", "extras", "overview", "safety"] };
+    crypto: ["strategy"], safety: ["status", "summary", "overview"], map: ["status", "overview"], conn: ["conn"], health: ["status", "extras", "overview", "safety"] };
   let loggedOut = false;
   async function load(key) {
     let url = SRC[key];
@@ -409,6 +436,7 @@ tbody tr:hover { background: var(--panel2); }
     const jobs = u ? u.jobs : {}; const failed = Object.entries(jobs).filter(([k, j]) => j.timer_loaded && (!j.timer_active || (j.result && j.result !== "success"))).map(([k]) => k);
     const st = s.stress && s.stress.ok ? s.stress : null; if (st && st.rc !== 0 && !failed.includes("stress")) failed.push("stress");
     chips.push([failed.length ? "bad" : "good", failed.length ? "Failing: " + failed.join(", ") : "All jobs OK"]);
+    const cs = connSummary(); if (cs) { chips.push([cs.down.length ? "bad" : cs.deg.length ? "warn" : "good", cs.down.length ? "Disconnected: " + cs.down.map(i => CONN[i].name).join(", ") : cs.deg.length ? "Links need a look: " + cs.deg.map(i => CONN[i].name).join(", ") : "All links up"]); badge("conn", cs.down.length ? "bad" : cs.deg.length ? "warn" : ""); }
     bar.innerHTML = chips.map(([k, t]) => `<span class="chip ${k}"><span class="d"></span>${esc(t)}</span>`).join("") + `<span class="spacer"></span><span class="updated">updated ${hm(s.generated_at)} UTC</span>`;
     $("mUpdated").textContent = hm(s.generated_at) + " UTC";
     const liveAcct = D.overview && D.overview.accounts && D.overview.accounts.live;
@@ -794,9 +822,103 @@ tbody tr:hover { background: var(--panel2); }
     requestAnimationFrame(drawArchEdges);
   }
   if (window.ResizeObserver) new ResizeObserver(() => { if (view === "map") drawArchEdges(); }).observe($("arch"));
+  // ---------- connectivity (real checks from /api/connectivity; the line state is the last real check of the link)
+  const CONN = {
+    you: { name: "You", sub: "this browser", fix: "" },
+    cloudflare: { name: "Cloudflare", sub: "Access sign-in at the edge", fix: "Cloudflare itself may be down (check cloudflarestatus.com), or the server has no internet: see the Internet box." },
+    tunnel: { name: "Cloudflare tunnel", sub: "cloudflared on the server", fix: "On the server run: sudo systemctl restart cloudflared; then sudo journalctl -u cloudflared -n 30 to see why it stopped." },
+    engine: { name: "Engine & dashboard", sub: "ratelark on the server", fix: "On the server run: sudo systemctl restart ratelark; then sudo journalctl -u ratelark -n 40." },
+    internet: { name: "Internet", sub: "server outbound", fix: "The server cannot reach the internet. Check the Hetzner console for the server and its network." },
+    telegram: { name: "Telegram", sub: "alerts and approvals", fix: "Check TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in .env, and that you pressed Start in the bot chat. If the server cannot reach the internet, see the Internet box." },
+    monitor: { name: "Outside monitor", sub: "dead-man watcher on another machine", fix: "Check that deadman.py is running on the other machine and that HEALTHCHECK_URL in .env on the server points to it (https://<host>/ping/<secret>)." },
+    github: { name: "GitHub", sub: "code and deploys", fix: "The deploy key may be removed or the network is blocked. On the server run: cd ~/ratelark; git ls-remote origin main; and read the error." },
+    alpaca_paper: { name: "Alpaca paper", sub: "practice account API", fix: "Check APCA_API_KEY_ID and APCA_API_SECRET_KEY in .env, and status.alpaca.markets." },
+    alpaca_live: { name: "Alpaca live", sub: "real-money account API", fix: "Check APCA_LIVE_API_KEY_ID and APCA_LIVE_API_SECRET_KEY in .env.live, and status.alpaca.markets." }
+  };
+  const CZ = [["you", "You", ["you"]], ["edge", "Cloudflare", ["cloudflare", "tunnel"]], ["srv", "Your server", ["engine", "internet"]], ["svc", "Services", ["telegram", "monitor", "github", "alpaca_paper", "alpaca_live"]]];
+  const CEDGES = [["you", "cloudflare"], ["cloudflare", "tunnel"], ["tunnel", "engine"], ["engine", "internet"], ["engine", "telegram"], ["engine", "monitor"], ["engine", "github"], ["engine", "alpaca_paper"], ["engine", "alpaca_live"]];
+  const CCLS = { up: "good", degraded: "warn", down: "bad", off: "idle", unknown: "idle" };
+  let connSel = null;
+  function connProbe(id) {
+    const c = D.conn; if (!c) return null;
+    if (id === "you") { const y = c.you || {}; return { state: y.via_cloudflare ? "up" : "degraded", detail: y.via_cloudflare ? "this page reached the server through Cloudflare" + (y.access_jwt_validation ? " and the sign-in token is checked by the server" : " (server-side token check not enabled)") : "this page did not arrive through Cloudflare (direct access)", ms: null, age_s: 0, history: [] }; }
+    return (c.probes || {})[id] || null;
+  }
+  function connLabel(p) {
+    if (!p) return "not checked yet";
+    if (p.state === "down") return "DISCONNECTED" + (p.down_for_s != null ? " " + ago(p.down_for_s) : "");
+    if (p.state === "off") return "not configured";
+    if (p.state === "unknown") return "cannot check here";
+    return (p.state === "degraded" ? "needs a look" : "connected") + (p.ms != null && id_ok(p) ? " · " + p.ms + " ms" : "");
+  }
+  const id_ok = p => p.ms != null && p.ms < 60000;
+  function connSummary() {
+    const c = D.conn; if (!c) return null; const ids = Object.keys(CONN).filter(i => i !== "you");
+    const st = i => (c.probes[i] || {}).state; const down = ids.filter(i => st(i) === "down"), deg = ids.filter(i => st(i) === "degraded");
+    return { down, deg, total: ids.filter(i => st(i) && st(i) !== "off" && st(i) !== "unknown").length };
+  }
+  function drawConn() {
+    const root = $("connWrap"), svg = $("connSvg"); if (!root || !svg || view !== "conn" || !D.conn) return;
+    const box = root.getBoundingClientRect(); let out = ""; const R = id => { const n = root.querySelector(`.node[data-n="${id}"]`); return n ? n.getBoundingClientRect() : null; };
+    const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+    CEDGES.forEach(([f, t], i) => {
+      const a = R(f), b = R(t); if (!a || !b) return; const p = connProbe(t === "engine" || f === "you" ? (f === "you" ? "you" : t) : t);
+      let st = p ? p.state : "off";
+      if (f === "you") { const y = connProbe("you"), cf = connProbe("cloudflare"); st = cf && cf.state === "down" ? "down" : y ? y.state : "off"; }
+      if (t === "engine") { const e = connProbe("engine"), tu = connProbe("tunnel"); st = tu && tu.state === "down" ? "down" : e ? e.state : "off"; }
+      if (!["up", "degraded", "down", "off"].includes(st)) st = "off";
+      if ((st === "up" || st === "degraded") && p && p.age_s > 150) st = "off";
+      const d = archEdgePath(a, b, { x: box.left, y: box.top }); const mid = (a.left + a.right + b.left + b.right) / 4 - box.left, my = (a.top + a.bottom + b.top + b.bottom) / 4 - box.top;
+      out += `<path class="ed ${st}" id="ce${i}" d="${d}"><title>${esc(st === "up" ? "link checked OK" : st === "down" ? "link is down" : st === "degraded" ? "link works but needs a look" : "no recent successful check")}</title></path>`;
+      if ((st === "up" || st === "degraded") && !reduce) out += `<circle r="3.5" fill="var(${st === "up" ? "--good" : "--warn"})"><animateMotion dur="2.2s" begin="${(i * .3).toFixed(2)}s" repeatCount="indefinite"><mpath href="#ce${i}"/></animateMotion></circle>`;
+      if (st === "down") out += `<text class="xm" x="${mid}" y="${my}" text-anchor="middle" dominant-baseline="middle">✕</text>`;
+    });
+    svg.setAttribute("viewBox", `0 0 ${box.width} ${box.height}`); svg.innerHTML = out;
+  }
+  function renderConn() {
+    const g = $("connGrid"); if (!D.conn) { g.innerHTML = `<div class="card"><div class="empty">${esc(D.conn_err ? "Can't reach the engine (" + D.conn_err + "). Nothing is shown until it answers." : "Checking links…")}</div></div>`; $("connSvg").innerHTML = ""; return; }
+    const sum = connSummary();
+    $("connSum").innerHTML = (sum.down.length ? `<span class="chip bad"><span class="d"></span>${sum.down.length} disconnected: ${esc(sum.down.map(i => CONN[i].name).join(", "))}</span>` : "") + (sum.deg.length ? `<span class="chip warn"><span class="d"></span>Needs a look: ${esc(sum.deg.map(i => CONN[i].name).join(", "))}</span>` : "") + (!sum.down.length && !sum.deg.length ? `<span class="chip good"><span class="d"></span>All ${sum.total} checked links are up</span>` : "") + `<span class="spacer"></span><span class="updated">checks run every ${D.conn.check_every_s} s</span>`;
+    const node = id => { const p = connProbe(id), m = CONN[id], k = p ? CCLS[p.state] || "idle" : "idle";
+      return `<button type="button" class="node ${k}${id === connSel ? " sel" : ""}" data-n="${id}"><span class="nn">${esc(m.name)}</span><span class="ns">${esc(m.sub)}</span><span class="nt"><i></i>${esc(connLabel(p))}</span></button>`; };
+    g.innerHTML = CZ.map(z => `<div class="zone"><div class="zt"><b>${esc(z[1])}</b></div><div class="zn">${z[2].map(node).join("")}</div></div>`).join("");
+    g.querySelectorAll(".node").forEach(b => b.addEventListener("click", () => { connSel = b.dataset.n; renderConn(); }));
+    const hist = h => `<span class="hist">${(h || []).map(x => `<i class="${x}" title="${x}"></i>`).join("")}</span>`;
+    const rows = Object.keys(CONN).filter(i => i !== "you");
+    $("connTable").innerHTML = table([
+      { h: "Link", f: i => esc(CONN[i].name) }, { h: "Status", f: i => { const p = connProbe(i); return p ? pill(p.state === "down" ? "disconnected" : p.state === "up" ? "connected" : p.state === "degraded" ? "needs a look" : p.state === "off" ? "not configured" : "unknown", CCLS[p.state] || "idle") : pill("not checked", "idle"); } },
+      { h: "Speed", f: i => { const p = connProbe(i); return p && p.ms != null && p.state !== "off" ? p.ms + " ms" : "—"; } },
+      { h: "Last checked", f: i => { const p = connProbe(i); return p ? ago(p.age_s) + " ago" : "—"; } },
+      { h: "In this state", f: i => { const p = connProbe(i); return p ? ago(p.in_state_s) : "—"; } },
+      { h: "Last OK", f: i => { const p = connProbe(i); return p && p.last_up ? dt(p.last_up) + " UTC" : "never"; } },
+      { h: "Recent checks", f: i => { const p = connProbe(i); return p ? hist(p.history) : ""; } },
+      { h: "What the check saw", f: i => { const p = connProbe(i); return p ? `<span class="muted">${esc(p.detail)}</span>` : ""; } }
+    ], rows, "No checks yet.");
+    $("connNote").textContent = D.conn.history_note + ". A check is read-only: nothing is sent to Telegram, GitHub or Alpaca beyond a harmless read.";
+    const tg = D.conn.telegram_log || { rows: [] };
+    $("tgSum").textContent = tg.rows.length ? `Last 100 calls: ${tg.sent_ok} alerts accepted, ${tg.sent_failed} failed, ${tg.received} commands received from you` + (tg.avg_ms != null ? `, average reply ${tg.avg_ms} ms.` : ".") + " Proof of delivery is the message id Telegram assigns." : "Nothing recorded yet. Telegram calls appear here as they happen.";
+    const WHAT = { sendMessage: "alert sent", getMe: "bot check", getChat: "chat check", getUpdates: "commands polled", received: "command from you" };
+    $("tgTable").innerHTML = table([
+      { h: "When (UTC)", f: r => dt(r.ts) }, { h: "What", f: r => esc(WHAT[r.m] || r.m) + (r.cmd ? ` <span class="muted">${esc(r.cmd)}</span>` : "") },
+      { h: "Result", f: r => r.ok ? pill("ok" + (r.http ? " " + r.http : ""), "good") : pill("failed" + (r.http ? " " + r.http : ""), "bad") },
+      { h: "Speed", f: r => r.ms != null ? r.ms + " ms" : "—" },
+      { h: "Telegram said", f: r => r.mid ? `<span class="muted">message id ${esc(r.mid)}</span>` : r.err ? `<span class="muted">${esc(r.err)}</span>` : r.n ? `<span class="muted">${esc(r.n)} update(s)</span>` : "" }
+    ], tg.rows.slice(0, 12), "Nothing recorded yet.");
+    $("evTable").innerHTML = table([
+      { h: "Link", f: e => esc((CONN[e.id] || {}).name || e.id) },
+      { h: "Event", f: e => e.ev === "down" ? pill("went down", "bad") : pill("recovered", "good") },
+      { h: "When (UTC)", f: e => dt(e.ts) },
+      { h: "Down since", f: e => dt(e.since) },
+      { h: "Reason", f: e => `<span class="muted">${esc(e.detail)}</span>` }
+    ], D.conn.events || [], "No outages recorded.");
+    const f = connSel && CONN[connSel], p = connSel && connProbe(connSel), d = $("connDetail");
+    d.innerHTML = !f ? `<div class="empty">Tap a box to see its live check.</div>` : `<h2>${esc(f.name)} <span class="muted" style="font-weight:400">· ${esc(f.sub)}</span></h2>` + (p ? `<dl class="kv"><dt>Status</dt><dd>${esc(connLabel(p))}</dd><dt>What the check saw</dt><dd>${esc(p.detail)}</dd><dt>Last checked</dt><dd>${esc(ago(p.age_s))} ago</dd><dt>Recent checks (oldest to newest)</dt><dd>${hist(p.history)}</dd></dl>` + (p.state === "down" || p.state === "degraded" ? `<div class="fix"><b>What to do:</b> ${esc(f.fix)}</div>` : "") : `<div class="empty">Not checked yet.</div>`);
+    requestAnimationFrame(drawConn);
+  }
+  if (window.ResizeObserver) new ResizeObserver(() => { if (view === "conn") drawConn(); }).observe($("connWrap"));
   function renderAll() {
     renderStatus();
-    ({ overview: renderOverview, holdings: renderHoldings, us: renderUS, orders: renderOrders, market: renderMarket, crypto: renderCrypto, safety: renderSafety, health: renderHealth, map: renderArch })[view]();
+    ({ overview: renderOverview, holdings: renderHoldings, us: renderUS, orders: renderOrders, market: renderMarket, crypto: renderCrypto, safety: renderSafety, health: renderHealth, map: renderArch, conn: renderConn })[view]();
   }
 
   // ---------- controls
@@ -816,6 +938,7 @@ tbody tr:hover { background: var(--panel2); }
   // ---------- polling: status every 5 s; the open section's data every 30 s
   show();
   setInterval(() => { if (!document.hidden) refresh(["status"]); }, 5000);
+  refresh(["conn"]); setInterval(() => { if (!document.hidden) refresh(["conn"]); }, 15000);
   setInterval(() => { if (!document.hidden) { const k = (NEEDS[view] || []).filter(x => x !== "status"); if (k.length) refresh(k); } }, 30000);
 })();
 

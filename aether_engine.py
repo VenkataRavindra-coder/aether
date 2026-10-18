@@ -2133,3 +2133,8 @@ def _map_engine_info() -> dict:
 
 
 app.include_router(_build_map_router(lambda: None, _map_engine_info))
+
+# connectivity (2026-10-18): GET /api/connectivity, read-only link checks (Cloudflare, tunnel, Telegram,
+# GitHub, Alpaca, internet). Same default-deny _dashboard_auth middleware as every other page.
+from connectivity import build_router as _build_connectivity_router  # noqa: E402
+app.include_router(_build_connectivity_router(lambda: None))

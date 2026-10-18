@@ -1,0 +1,23 @@
+[Unit]
+Description=AETHER dead-man monitor (runs on a DIFFERENT machine than the trading server)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+# Copy deadman.py to /opt/aether-deadman/ on the second machine, then put the settings in
+# /etc/aether-deadman.env (DEADMAN_SECRET, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, ...). See deadman.py header.
+EnvironmentFile=/etc/aether-deadman.env
+WorkingDirectory=/opt/aether-deadman
+Environment=DEADMAN_STATE=/opt/aether-deadman/deadman_state.json
+ExecStart=/usr/bin/python3 /opt/aether-deadman/deadman.py
+Restart=always
+RestartSec=5
+StartLimitIntervalSec=0
+DynamicUser=yes
+StateDirectory=aether-deadman
+NoNewPrivileges=yes
+ProtectSystem=strict
+ReadWritePaths=/opt/aether-deadman
+
+[Install]
+WantedBy=multi-user.target
