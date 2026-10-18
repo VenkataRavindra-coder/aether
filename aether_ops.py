@@ -5,6 +5,7 @@ import json
 import os
 import urllib.parse
 import urllib.request
+from pathlib import Path
 
 from safety_guard import home
 
@@ -17,8 +18,12 @@ def load_env() -> None:
     watchdog) no longer carry real-money credentials. Scripts that need them -- risk_mark.py,
     risk_admin.py -- get them through this loader; aether.service loads it as a second
     EnvironmentFile. Keys still sitting in .env keep working exactly as before."""
-    for name in (".env", ".env.live"):
-        _load_file(home() / name)
+    # The repo folder first: AETHER_HOME is itself defined in .env, so from an interactive shell
+    # (no systemd EnvironmentFile) home() would fall back to ~ and miss .env entirely -- and a
+    # ledger written there would be one the engine never reads. setdefault: first value wins.
+    for folder in (Path(__file__).resolve().parent, home()):
+        for name in (".env", ".env.live"):
+            _load_file(folder / name)
 
 
 def _load_file(p) -> None:
