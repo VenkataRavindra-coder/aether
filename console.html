@@ -6,16 +6,16 @@
 <title>AETHER</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700&family=Archivo:wght@400;500;600;700&family=Archivo+Narrow:wght@600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <style>
 /* Layout: one console. Fixed left menu (collapses to a top bar + drawer on phones), a slim status
    bar on top of the content, one section visible at a time. Same tokens as the live map. */
 :root {
-  --bg: #0b1117; --panel: #111a22; --panel2: #16212b; --side: #0e161d; --ink: #e3eaf0; --muted: #8798a8;
-  --line: #26343f; --focus: #e3eaf0; --good: #4fc184; --warn: #e8a33d; --bad: #f2665b; --idle: #6f8090;
-  --live: #f2665b; --paper: #6aa6ec; --accent: #f0a33f; --research: #b38be6;
-  --font-display: "Archivo Narrow", "Arial Narrow", "Helvetica Neue", Arial, sans-serif;
-  --font-body: "Archivo", "Helvetica Neue", Arial, sans-serif;
+  --bg: #101214; --panel: #181b1f; --panel2: #1f2328; --side: #0d0f11; --ink: #e6e9ee; --muted: #8f969f;
+  --line: #2a2e34; --focus: #e6e9ee; --good: #34d98f; --warn: #ffb830; --bad: #ff6258; --idle: #6f7782;
+  --live: #ff6258; --paper: #7fb0ff; --accent: #e6e9ee; --research: #b38be6;
+  --font-display: "Manrope", "Helvetica Neue", Arial, sans-serif;
+  --font-body: "Manrope", "Helvetica Neue", Arial, sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
   color-scheme: dark;
 }
@@ -135,73 +135,29 @@ iframe.map { width: 100%; height: calc(100vh - 150px); min-height: 640px; border
 }
 @media (prefers-reduced-motion: reduce) { *, *::after { animation: none !important; transition: none !important; } }
 
-/* ===== Futuristic skin: glass panels, neon edges, 3D depth. Pure presentation; no data is drawn here. ===== */
-:root { --neon: #38e1ff; --neon2: #8a6bff; --glow: 0 0 18px color-mix(in srgb, var(--neon) 35%, transparent);
-  --font-tech: "Orbitron", var(--font-display); }
-body { background: radial-gradient(1200px 700px at 78% -10%, color-mix(in srgb, var(--neon2) 22%, transparent), transparent 60%),
-  radial-gradient(900px 600px at 5% 105%, color-mix(in srgb, var(--neon) 16%, transparent), transparent 60%), var(--bg); background-attachment: fixed; }
-/* perspective grid floor + drifting stars */
-.fx { position: fixed; inset: 0; z-index: 0; pointer-events: none; overflow: hidden; perspective: 600px; }
-.fx .floor { position: absolute; left: -50%; right: -50%; bottom: -10%; height: 70%; transform: rotateX(68deg); transform-origin: 50% 100%;
-  background-image: linear-gradient(color-mix(in srgb, var(--neon) 32%, transparent) 1px, transparent 1px), linear-gradient(90deg, color-mix(in srgb, var(--neon) 32%, transparent) 1px, transparent 1px);
-  background-size: 64px 64px; animation: drift 6s linear infinite; opacity: .22;
-  -webkit-mask-image: linear-gradient(to top, #000 10%, transparent 90%); mask-image: linear-gradient(to top, #000 10%, transparent 90%); }
-@keyframes drift { to { background-position: 0 64px; } }
-.fx .stars { position: absolute; inset: 0; opacity: .5;
-  background-image: radial-gradient(1px 1px at 12% 20%, #fff, transparent), radial-gradient(1px 1px at 33% 64%, #9fe9ff, transparent), radial-gradient(1.5px 1.5px at 58% 12%, #fff, transparent),
-  radial-gradient(1px 1px at 81% 44%, #c9b8ff, transparent), radial-gradient(1px 1px at 92% 78%, #fff, transparent), radial-gradient(1px 1px at 47% 88%, #9fe9ff, transparent), radial-gradient(1.5px 1.5px at 70% 30%, #fff, transparent); }
-:root[data-theme="light"] .fx .stars { display: none; }
-.shell, main, nav.side { position: relative; z-index: 1; }
-.shell { background: none; }
-nav.side { background: linear-gradient(180deg, color-mix(in srgb, var(--side) 88%, transparent), color-mix(in srgb, var(--side) 70%, transparent)); backdrop-filter: blur(16px) saturate(140%); -webkit-backdrop-filter: blur(16px) saturate(140%); border-right: 1px solid color-mix(in srgb, var(--neon) 28%, var(--line)); box-shadow: 0 0 40px rgba(0,0,0,.35); }
-.brand b { font-family: var(--font-tech); font-weight: 700; letter-spacing: .22em; background: linear-gradient(90deg, var(--neon), var(--neon2)); -webkit-background-clip: text; background-clip: text; color: transparent; filter: drop-shadow(0 0 8px color-mix(in srgb, var(--neon) 45%, transparent)); }
-.menu a { transition: transform .18s ease, background .18s ease, box-shadow .18s ease; transform-style: preserve-3d; }
-.menu a:hover { background: color-mix(in srgb, var(--neon) 9%, transparent); transform: translateX(4px) translateZ(0); }
-.menu a[aria-current="page"] { background: linear-gradient(90deg, color-mix(in srgb, var(--neon) 20%, transparent), transparent); box-shadow: inset 3px 0 0 var(--neon), var(--glow); }
-.menu a[aria-current="page"] svg { stroke: var(--neon); filter: drop-shadow(0 0 5px var(--neon)); }
-h1 { font-family: var(--font-tech); font-size: 22px; letter-spacing: .12em; text-transform: uppercase; }
-h2 { letter-spacing: .06em; text-transform: uppercase; font-size: 14px; color: color-mix(in srgb, var(--ink) 80%, var(--neon)); }
-.eyebrow { color: color-mix(in srgb, var(--neon) 70%, var(--muted)); }
-/* glass cards with depth + tilt (tilt set by script through --rx/--ry) */
-.grid, section.view { perspective: 1100px; }
-.card { position: relative; background: linear-gradient(145deg, color-mix(in srgb, var(--panel) 82%, transparent), color-mix(in srgb, var(--panel2) 60%, transparent));
-  backdrop-filter: blur(12px) saturate(130%); -webkit-backdrop-filter: blur(12px) saturate(130%);
-  border: 1px solid color-mix(in srgb, var(--neon) 20%, var(--line)); border-radius: 14px;
-  box-shadow: 0 1px 0 rgba(255,255,255,.06) inset, 0 14px 30px -12px rgba(0,0,0,.65), 0 0 0 1px rgba(0,0,0,.2);
-  transform: rotateX(var(--rx,0deg)) rotateY(var(--ry,0deg)) translateZ(0); transition: transform .25s ease, box-shadow .25s ease, border-color .25s ease; transform-style: preserve-3d; }
-.card::before { content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
-  background: radial-gradient(260px 160px at var(--mx,20%) var(--my,0%), color-mix(in srgb, var(--neon) 16%, transparent), transparent 70%); opacity: 0; transition: opacity .25s; }
-.card:hover { border-color: color-mix(in srgb, var(--neon) 60%, var(--line)); box-shadow: 0 1px 0 rgba(255,255,255,.08) inset, 0 22px 40px -14px rgba(0,0,0,.75), var(--glow); }
-.card:hover::before { opacity: 1; }
-.card.alert { border-color: var(--bad); box-shadow: 0 0 22px color-mix(in srgb, var(--bad) 40%, transparent); }
-.kpi .v { font-family: var(--font-tech); font-weight: 700; font-size: 24px; letter-spacing: .02em; text-shadow: 0 0 14px color-mix(in srgb, var(--neon) 40%, transparent); }
-.kpi .v.pos { text-shadow: 0 0 14px color-mix(in srgb, var(--good) 55%, transparent); } .kpi .v.neg { text-shadow: 0 0 14px color-mix(in srgb, var(--bad) 55%, transparent); }
-.chip { background: color-mix(in srgb, var(--panel) 70%, transparent); backdrop-filter: blur(8px); border-color: color-mix(in srgb, var(--neon) 22%, var(--line)); }
-.chip.good .d { box-shadow: 0 0 8px var(--good); } .chip.warn .d { box-shadow: 0 0 8px var(--warn); } .chip.bad .d { box-shadow: 0 0 8px var(--bad); }
-.badge.good { box-shadow: 0 0 8px var(--good); } .badge.warn { box-shadow: 0 0 8px var(--warn); } .badge.bad { box-shadow: 0 0 10px var(--bad); }
+/* ===== Graphite skin: neutral charcoal, soft depth, one restrained accent. ===== */
+body { background: var(--bg); }
+nav.side { border-right: 1px solid var(--line); }
+.brand b { font-family: var(--font-display); font-weight: 800; letter-spacing: .14em; }
+h1 { font-size: 24px; font-weight: 800; letter-spacing: -.01em; }
+h2 { font-size: 15px; font-weight: 700; letter-spacing: .01em; }
+.card { border-radius: 16px; background: var(--panel); border-color: var(--line); box-shadow: 0 1px 0 rgba(255,255,255,.03) inset, 0 8px 22px -14px rgba(0,0,0,.7); padding: 16px 18px; }
+.card.alert { border-color: var(--bad); }
+.kpi .v { font-weight: 800; font-size: 26px; letter-spacing: -.01em; }
+.menu a { border-radius: 10px; }
+.menu a:hover { background: var(--panel2); }
+.menu a[aria-current="page"] { background: var(--panel2); box-shadow: inset 3px 0 0 var(--accent); }
+.menu a[aria-current="page"] svg { stroke: var(--accent); }
+.chip { background: var(--panel); border-color: var(--line); }
 .pill { border-radius: 999px; background: color-mix(in srgb, currentColor 10%, transparent); }
-th { color: color-mix(in srgb, var(--neon) 60%, var(--muted)); }
-tbody tr { transition: background .15s; } tbody tr:hover { background: color-mix(in srgb, var(--neon) 7%, transparent); }
-.bar { background: color-mix(in srgb, var(--panel2) 80%, #000); box-shadow: inset 0 1px 3px rgba(0,0,0,.5); }
-.bar > span { box-shadow: 0 0 10px currentColor; }
-.seg { border-color: color-mix(in srgb, var(--neon) 30%, var(--line)); border-radius: 999px; }
-.seg button[aria-pressed="true"] { background: linear-gradient(90deg, var(--neon), var(--neon2)); color: #04121a; }
-.idea { border-radius: 12px; background: color-mix(in srgb, var(--panel2) 70%, transparent); border-color: color-mix(in srgb, var(--neon) 18%, var(--line)); }
-.today { border-left-width: 4px; box-shadow: inset 24px 0 40px -30px var(--good); }
-.today.orange { box-shadow: inset 24px 0 40px -30px var(--warn); } .today.red { box-shadow: inset 24px 0 40px -30px var(--bad); }
-.ck { border-radius: 8px; }
-iframe.map { border-radius: 14px; border-color: color-mix(in srgb, var(--neon) 30%, var(--line)); box-shadow: var(--glow); }
-.danger:hover { box-shadow: 0 0 16px color-mix(in srgb, var(--bad) 60%, transparent); }
-section.view:not([hidden]) > * { animation: rise .45s cubic-bezier(.2,.8,.2,1) both; }
-section.view:not([hidden]) > *:nth-child(2) { animation-delay: .05s; } section.view:not([hidden]) > *:nth-child(3) { animation-delay: .1s; } section.view:not([hidden]) > *:nth-child(n+4) { animation-delay: .15s; }
-@keyframes rise { from { opacity: 0; transform: translateY(14px) rotateX(8deg); } to { opacity: 1; transform: none; } }
-:root[data-theme="light"] { --neon: #0a7fb3; --neon2: #6a4fd6; }
-@media (prefers-color-scheme: light) { :root:not([data-theme="dark"]) { --neon: #0a7fb3; --neon2: #6a4fd6; } }
-@media (max-width: 900px) { .card { transform: none !important; backdrop-filter: none; } .fx .floor { opacity: .14; } nav.side { backdrop-filter: none; background: var(--side); } }
+.idea { border-radius: 12px; }
+.seg { border-radius: 999px; }
+.seg button[aria-pressed="true"] { background: var(--ink); color: var(--bg); }
+tbody tr:hover { background: var(--panel2); }
+iframe.map { border-radius: 16px; }
 </style>
 </head>
 <body>
-<div class="fx" aria-hidden="true"><div class="stars"></div><div class="floor"></div></div>
 <div class="mobilebar"><button id="menuBtn" type="button" aria-label="Open menu"><svg width="22" height="22" viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button><b>AETHER</b><span class="updated" id="mUpdated"></span></div>
 <div class="shell">
   <nav class="side" aria-label="Sections">
@@ -695,22 +651,7 @@ section.view:not([hidden]) > *:nth-child(2) { animation-delay: .05s; } section.v
   setInterval(() => { if (!document.hidden) { const k = (NEEDS[view] || []).filter(x => x !== "status"); if (k.length) refresh(k); } }, 30000);
 })();
 
-// 3D tilt + light follow on cards (presentation only; touch and reduced-motion users get none).
-(function () {
-  if (matchMedia("(prefers-reduced-motion: reduce)").matches || matchMedia("(hover: none)").matches) return;
-  document.addEventListener("pointermove", function (e) {
-    var c = e.target.closest && e.target.closest(".card");
-    if (!c) return;
-    var r = c.getBoundingClientRect(), x = (e.clientX - r.left) / r.width, y = (e.clientY - r.top) / r.height;
-    c.style.setProperty("--ry", ((x - .5) * 5).toFixed(2) + "deg");
-    c.style.setProperty("--rx", ((.5 - y) * 4).toFixed(2) + "deg");
-    c.style.setProperty("--mx", (x * 100).toFixed(0) + "%"); c.style.setProperty("--my", (y * 100).toFixed(0) + "%");
-  }, { passive: true });
-  document.addEventListener("pointerout", function (e) {
-    var c = e.target.closest && e.target.closest(".card");
-    if (c && !c.contains(e.relatedTarget)) { c.style.setProperty("--rx", "0deg"); c.style.setProperty("--ry", "0deg"); }
-  }, { passive: true });
-})();
+
 </script>
 </body>
 </html>
