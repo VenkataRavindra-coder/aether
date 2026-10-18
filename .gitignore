@@ -24,3 +24,8 @@
 !deploy/cloudflare-monitor/worker.js
 !deploy/cloudflare-monitor/wrangler.toml
 !deploy/cloudflare-monitor/test_worker.mjs
+!deploy/offsite_gate.sh
+!deploy/mac-icloud-backup/
+!deploy/mac-icloud-backup/pull_backups.sh
+!deploy/mac-icloud-backup/com.aether.icloud-backup.plist
+!deploy/mac-icloud-backup/README.md

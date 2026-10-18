@@ -200,7 +200,29 @@ def backups_view(home: Path = REPO) -> dict:
     return {"last": _iso(m), "age_h": round((time.time() - m) / 3600, 1), "count": len(files),
             "size_kb": round(os.path.getsize(files[-1]) / 1024),
             "offsite_target": "storagebox" if os.getenv("BACKUP_STORAGEBOX") else
-                              ("azure" if os.getenv("BACKUP_SAS_URL") else None)}
+                              ("azure" if os.getenv("BACKUP_SAS_URL") else _icloud_target(home, files[-1])),
+            "offsite_age_h": _icloud_age(home)}
+
+
+def _receipt(home: Path):
+    try:
+        name, ts, _w = (home / ".offsite_receipt").read_text().split()[:3]
+        return name, (time.time() - float(ts)) / 3600
+    except Exception:
+        return None
+
+
+def _icloud_target(home: Path, newest: str):
+    """'iCloud (Mac)' only when the Mac confirmed holding the NEWEST archive; otherwise report it as behind."""
+    r = _receipt(home)
+    if not r:
+        return None
+    return "iCloud (via Mac)" if r[0] == os.path.basename(newest) else f"iCloud is behind ({round(r[1])} h)"
+
+
+def _icloud_age(home: Path):
+    r = _receipt(home)
+    return None if not r else round(r[1], 1)
 
 
 def daily_view(home: Path = REPO) -> dict:
