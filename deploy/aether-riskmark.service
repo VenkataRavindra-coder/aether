@@ -1,0 +1,11 @@
+[Unit]
+Description=AETHER daily live risk mark (read-only: live equity -> safety_guard ledger, breakers)
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=ratelark
+WorkingDirectory=/home/ratelark/ratelark
+EnvironmentFile=/home/ratelark/ratelark/.env
+ExecStart=/home/ratelark/ratelark/.venv/bin/python3 /home/ratelark/ratelark/risk_mark.py
+TimeoutStartSec=120
