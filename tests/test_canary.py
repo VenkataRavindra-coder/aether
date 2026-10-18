@@ -216,6 +216,7 @@ def test_buy_refused_when_engine_is_live(env, monkeypatch):
 
 def test_buy_price_band(env, monkeypatch):
     monkeypatch.setattr(canary, "_quote", lambda s: {"bid": 299.9, "ask": 300.0, "t": "x"})
+    monkeypatch.setattr(canary, "_session_window_problem", lambda c: None)   # test_canary_report covers the window
     mark_ledger()
     b = FakeBroker()
     assert canary.cmd_buy(live_exec(b), args(usd=8, limit=304)) == 1 and not b.submitted
