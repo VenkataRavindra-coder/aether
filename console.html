@@ -189,7 +189,7 @@ iframe.map { width: 100%; height: calc(100vh - 150px); min-height: 640px; border
         <div class="card"><h2>Approval and next step</h2><dl class="kv" id="usApproval"></dl><div class="note">Approve or reject on Telegram (/approve_&lt;id&gt;). This page never places orders.</div></div>
       </div>
       <div class="card"><h2>Rebalance history</h2><div class="tablewrap" id="usHistory"></div></div>
-      <div class="card"><h2>Is there an edge?</h2><dl class="kv" id="usEdge"></dl><div class="note">Promotion to real money needs DSR ≥ 0.95 and PBO ≤ 0.05 (strategy.md). Current verdict for us_etf_momentum_v1: NO-GO.</div></div>
+      <div class="card"><h2>Is there an edge?</h2><dl class="kv" id="usEdge"></dl><div class="note" id="usVerdict"></div></div>
     </section>
 
     <section class="view" id="v-orders" hidden>
@@ -308,8 +308,8 @@ iframe.map { width: 100%; height: calc(100vh - 150px); min-height: 640px; border
   // ---------- data
   const D = {}; const age = {};
   const SRC = { status: "/api/map/status", overview: "/api/overview", us: "/api/us", summary: "/api/us/summary", extras: "/api/us/extras", strategy: "/api/strategy", safety: "/api/safety" };
-  const NEEDS = { overview: ["overview", "us", "status", "safety", "strategy"], holdings: ["overview"], us: ["us", "safety", "extras", "overview"], orders: ["extras"], market: ["market", "overview"],
-    crypto: ["strategy"], safety: ["status", "summary", "overview"], map: [], health: ["status", "extras", "overview"] };
+  const NEEDS = { overview: ["overview", "us", "status", "safety", "strategy"], holdings: ["overview"], us: ["us", "safety", "extras", "overview", "status"], orders: ["extras"], market: ["market", "overview"],
+    crypto: ["strategy"], safety: ["status", "summary", "overview"], map: [], health: ["status", "extras", "overview", "safety"] };
   let loggedOut = false;
   async function load(key) {
     let url = SRC[key];
@@ -356,7 +356,8 @@ iframe.map { width: 100%; height: calc(100vh - 150px); min-height: 640px; border
     chips.push([failed.length ? "bad" : "good", failed.length ? "Failing: " + failed.join(", ") : "All jobs OK"]);
     bar.innerHTML = chips.map(([k, t]) => `<span class="chip ${k}"><span class="d"></span>${esc(t)}</span>`).join("") + `<span class="spacer"></span><span class="updated">updated ${hm(s.generated_at)} UTC</span>`;
     $("mUpdated").textContent = hm(s.generated_at) + " UTC";
-    $("sideMode").textContent = fl.US_LIVE ? "US engine: LIVE" : "US engine: paper · canary live";
+    const liveAcct = D.overview && D.overview.accounts && D.overview.accounts.live;
+    $("sideMode").textContent = (fl.US_LIVE ? "US engine: LIVE" : "US engine: paper") + (liveAcct && liveAcct.configured ? " · live account " + money(liveAcct.equity) : "");
     badge("safety", gk === "bad" ? "bad" : gk === "warn" ? "warn" : "");
     badge("health", failed.length || !up ? "bad" : hbA != null && hbA > 180 ? "warn" : "");
     badge("overview", !up ? "bad" : "");
@@ -367,8 +368,12 @@ iframe.map { width: 100%; height: calc(100vh - 150px); min-height: 640px; border
   // "Needs your action" box: same rules as the former dashboard's summary (patch_summary_box).
   function etParts(d) { const f = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false }); const o = {}; f.formatToParts(d).forEach(p => o[p.type] = p.value); return o; }
   function etDate(d) { const o = etParts(d); return o.year + "-" + o.month + "-" + o.day; }
-  function nextSession(now) { const o = etParts(now); const h = +o.hour % 24, m = +o.minute; const d = new Date(Date.UTC(+o.year, +o.month - 1, +o.day, 12)); const wk = x => x.getUTCDay() === 0 || x.getUTCDay() === 6;
-    if (h > 15 || (h === 15 && m >= 30) || wk(d)) { do { d.setUTCDate(d.getUTCDate() + 1); } while (wk(d)); } return d.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" }); }
+  function nextSessionDate(now) { const o = etParts(now); const h = +o.hour % 24, m = +o.minute; const d = new Date(Date.UTC(+o.year, +o.month - 1, +o.day, 12)); const wk = x => x.getUTCDay() === 0 || x.getUTCDay() === 6;
+    if (h > 15 || (h === 15 && m >= 30) || wk(d)) { do { d.setUTCDate(d.getUTCDate() + 1); } while (wk(d)); } return d; }
+  function nextSession(now) { return nextSessionDate(now).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" }); }
+  // 15:30 New York time shown in Dubai time, computed for the date in question (US clocks change, UAE's don't).
+  function etToGst(dayUtcNoon) { try { const off = d => { const p = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", timeZoneName: "shortOffset" }).formatToParts(d).find(x => x.type === "timeZoneName").value; const m = p.match(/GMT([+-]\d+)/); return m ? +m[1] : -5; };
+      const h = 15.5 - off(dayUtcNoon) + 4; const H = Math.floor(h % 24), M = Math.round((h % 1) * 60); return String(H).padStart(2, "0") + ":" + String(M).padStart(2, "0"); } catch (e) { return "?"; } }
   const usd0 = x => (x < 0 ? "−$" : "$") + Math.abs(x).toLocaleString("en-US", { maximumFractionDigits: 0 });
   function buildToday(ov, sf, kill, now) {
     const live = sf.us_live === true, ps = (ov && ov.positions) || [], s = (ov && ov.summary) || {};
@@ -378,15 +383,16 @@ iframe.map { width: 100%; height: calc(100vh - 150px); min-height: 640px; border
     let level = "green", action = "nothing", reb;
     if (sf.last_rebalance_month === month) { const n = new Date(Date.UTC(+month.slice(0, 4), +month.slice(5, 7), 1)); reb = "Rebalanced this month; next one early " + n.toLocaleDateString("en-GB", { month: "long", timeZone: "UTC" }) + "."; }
     else if (pr && st === "PENDING" && pr.date === today) { level = "orange"; action = "approve proposal " + pr.id + " on Telegram today (/approve_" + pr.id + "); it runs after 15:30 ET"; reb = "Monthly rebalance proposed today, waiting for your approval."; }
-    else if (pr && st === "APPROVED" && pr.date === today) { reb = "Rebalance approved today; it runs after 15:30 ET (~23:30 GST)."; }
-    else { level = "orange"; const stale = pr && pr.date && pr.date < today ? " Proposal " + pr.id + " from " + pr.date + " has expired: do not approve it." : ""; action = "approve the new US rebalance proposal on Telegram on " + next + " after 15:30 ET (~23:30 GST)"; reb = "Monthly rebalance not done yet (last: " + (sf.last_rebalance_month || "never") + ")." + stale; }
+    else if (pr && st === "APPROVED" && pr.date === today) { reb = "Rebalance approved today; it runs after 15:30 ET (" + etToGst(new Date()) + " Dubai)."; }
+    else { level = "orange"; const stale = pr && pr.date && pr.date < today ? " Proposal " + pr.id + " from " + pr.date + " has expired: do not approve it." : ""; action = "approve the new US rebalance proposal on Telegram on " + next + " after 15:30 ET (" + etToGst(nextSessionDate(now)) + " Dubai)"; reb = "Monthly rebalance not done yet (last: " + (sf.last_rebalance_month || "never") + ")." + stale; }
     if (kill === true) { if (level === "green") level = "orange"; action = (action === "nothing" ? "" : action + "; ") + "crypto daily-loss stop is on (clears 04:00 GST)"; }
     let bk = "unknown"; if (sf.last_backup_utc) { const h = (now - Date.parse(sf.last_backup_utc)) / 3.6e6; bk = (h < 1 ? "under 1" : Math.round(h)) + " h ago" + (h > 26 ? " (LATE)" : ""); if (h > 26) { if (level === "green") level = "orange"; action = (action === "nothing" ? "" : action + "; ") + "check the nightly backup (journalctl -u aether-backup)"; } }
     if (sf.halt === true) { level = "red"; action = "HALTED: all new entries blocked. Resume on the server with rm ~/AETHER_HALT"; }
     const head = { green: "🟢", orange: "🟠", red: "🔴" }[level] + " " + (live ? "LIVE money" : "Practice mode") + " · " + (level === "green" ? "All clear" : level === "red" ? "Stopped" : "Needs your action") + (live ? "" : ". No real money at risk.");
     const lines = [];
     lines.push("US bot: " + (us.length ? "holds " + us.map(p => p.symbol).join(", ") + " (" + usd0(usVal) + "), " + (usPl >= 0 ? "up " : "down ") + usd0(Math.abs(usPl)) + ". " : "no holdings. ") + reb);
-    lines.push("Crypto bot: " + (cr.length ? "holds " + cr.map(p => p.symbol).join(", ") + "." : "no position, watching BTC, ETH, SOL for a signal."));
+    const watched = (D.strategy && D.strategy.symbols ? D.strategy.symbols.map(x => String(x.symbol || "").split("/")[0]) : []).filter(Boolean);
+    lines.push("Crypto bot: " + (cr.length ? "holds " + cr.map(p => p.symbol).join(", ") + "." : "no position" + (watched.length ? ", watching " + watched.join(", ") + " for a signal." : (D.strategy ? ", nothing evaluated yet." : "."))));
     if (ov && ov.accounts) { const pp = ov.accounts.paper, lv = ov.accounts.live, parts = []; if (pp && pp.configured) parts.push("paper " + usd0(pp.equity || 0)); if (lv && lv.configured) parts.push("live " + (lv.equity ? usd0(lv.equity) : "$0 (not funded yet)")); if (parts.length) lines.push("Accounts: " + parts.join(" · ") + "."); }
     if (typeof s.total_pl === "number") lines.push("Since start " + usd0(s.total_pl) + " = " + usd0(s.realized || 0) + " closed trades" + (cr.length === 0 && (s.realized || 0) < 0 ? " (old crypto trades)" : "") + " + " + usd0(s.other || 0) + " fees/other + " + usd0(s.unrealized || 0) + " open positions.");
     lines.push("Last backup: " + bk + " · Live buys today: " + (sf.live_spent_today_usd == null ? "unreadable" : usd0(sf.live_spent_today_usd)) + " of " + usd0(sf.live_budget_usd || 100) + ".");
@@ -452,7 +458,7 @@ iframe.map { width: 100%; height: calc(100vh - 150px); min-height: 640px; border
   function feed(n) {
     const rows = D.status && D.status.activity && D.status.activity.ok ? D.status.activity.rows.slice(0, n) : [];
     if (!rows.length) return '<div class="empty">No decisions logged yet.</div>';
-    return rows.map(r => `<div style="display:grid;grid-template-columns:44px 12px minmax(0,1fr);gap:8px;padding:6px 0;border-top:1px solid var(--line);font-size:12.5px"><span class="mono muted">${hm(r.ts)}</span><span class="badge ${r.decision === "block" ? "bad" : r.decision === "allow" ? "good" : ""}" style="margin-top:5px;${r.decision ? "" : "background:var(--idle)"}"></span><span><b class="mono" style="font-weight:500">${esc(r.engine)} · ${esc(r.event)}${r.symbol ? " · " + esc(r.symbol) : ""}</b><br><span class="muted">${esc([r.decision, r.reason].filter(Boolean).join(": "))}</span></span></div>`).join("");
+    return rows.map(r => `<div style="display:grid;grid-template-columns:44px 12px minmax(0,1fr);gap:8px;padding:6px 0;border-top:1px solid var(--line);font-size:12.5px"><span class="mono muted">${hm(r.ts)}</span><span class="badge" style="margin-top:5px;background:var(--${{ bad: "bad", good: "good", idle: "idle" }[decCls(r.decision)]})"></span><span><b class="mono" style="font-weight:500">${esc(r.engine)} · ${esc(r.event)}${r.symbol ? " · " + esc(r.symbol) : ""}</b><br><span class="muted">${esc([r.decision, r.reason].filter(Boolean).join(": "))}</span></span></div>`).join("");
   }
   function renderHoldings() {
     const o = D.overview; if (!o) { $("hPositions").innerHTML = '<div class="empty">Loading…</div>'; return; }
@@ -491,7 +497,7 @@ iframe.map { width: 100%; height: calc(100vh - 150px); min-height: 640px; border
     $("usRankNote").textContent = "Momentum = the strategy's score; Target = intended weight at the next rebalance.";
     const sf = D.safety || {}; const p = sf.proposal;
     $("usApproval").innerHTML = kv([
-      ["Approval required", "yes (Telegram)"], ["Current proposal", p ? `${esc(p.id)} · ${pill(p.status || "?", /^approved$/i.test(p.status || "") ? "good" : /^(rejected|expired)$/i.test(p.status || "") ? "bad" : "warn")}` : "none"],
+      ["Approval required", (() => { const f = D.status && D.status.engine && D.status.engine.flags; return !f ? "—" : f.US_REQUIRE_APPROVAL ? "yes (Telegram)" : pill("NO: approvals off", "bad"); })()], ["Current proposal", p ? `${esc(p.id)} · ${pill(p.status || "?", /^approved$/i.test(p.status || "") ? "good" : /^(rejected|expired)$/i.test(p.status || "") ? "bad" : "warn")}` : "none"],
       ["Proposal date", p ? esc(p.date) : "—"], ["Orders go out", "after 15:30 New York time, if approved the same day"],
       ["Mode", esc(u.mode || "—")], ["Allocation", money(u.allocation_usd, 0)]]);
     $("usHistory").innerHTML = table([
@@ -503,6 +509,7 @@ iframe.map { width: 100%; height: calc(100vh - 150px); min-height: 640px; border
     $("usEdge").innerHTML = rs ? kv([["Trials logged (incl. backfilled)", `${rs.trials_total} (${rs.trials_backfilled} backfilled)`],
       ["Deflated Sharpe (latest evidence)", num(rs.dsr) ? `${rs.dsr.toFixed(3)} ${rs.dsr >= rs.dsr_gate ? pill("passes", "good") : pill("below gate", "bad")}` : "—"],
       ["Gates", `DSR ≥ ${rs.dsr_gate} · PBO ≤ ${rs.pbo_gate}`], ["Evidence file", esc(rs.evidence_file || "—")]]) : `<div class="empty">${esc(D.extras && D.extras.research ? D.extras.research.error : "Loading…")}</div>`;
+    $("usVerdict").textContent = rs && num(rs.dsr) ? (rs.dsr >= rs.dsr_gate ? "The latest evidence clears the DSR gate; real money still also needs PBO ≤ " + rs.pbo_gate + " and the steps in strategy.md." : "Not cleared for real money: the latest deflated Sharpe is below the " + rs.dsr_gate + " gate.") : "No strategy evidence file yet.";
   }
   function renderOrders() {
     const x = D.extras && D.extras.orders; if (!x) { $("ordTable").innerHTML = `<div class="empty">${esc(D.extras_err || "Loading…")}</div>`; return; }
@@ -572,9 +579,10 @@ iframe.map { width: 100%; height: calc(100vh - 150px); min-height: 640px; border
     const s = D.status; if (!s) { $("heKpis").innerHTML = `<div class="card"><div class="empty">${esc(D.status_err || "Loading…")}</div></div>`; return; }
     const sv = D.extras && D.extras.server && D.extras.server.ok ? D.extras.server : (s.server && s.server.ok ? s.server : null);
     const bk = s.backups && s.backups.ok ? s.backups : null, eng = s.engine || {}, oh = D.overview && D.overview.health;
-    $("heKpis").innerHTML = kpi("Engine uptime", ago(eng.uptime_s), Object.entries(eng.threads || {}).map(([k, v]) => `${k} ${v ? "✓" : "✗"}`).join(" · "))
+    const bkAge = bk && bk.age_h != null ? bk.age_h : D.safety && D.safety.last_backup_utc ? Math.round(since(D.safety.last_backup_utc) / 360) / 10 : null;
+    $("heKpis").innerHTML = kpi("Engine uptime", ago(eng.uptime_s), Object.entries(eng.threads || {}).map(([k, v]) => `${k} ${v ? "✓ running" : "✗ stopped"}`).join(" · "))
       + kpi("Server", sv ? `load ${sv.load1}` : "—", sv ? `${sv.cpus} CPU · memory ${sv.mem_pct}% of ${sv.mem_total_gb} GB · disk ${sv.disk_pct}%` : "")
-      + kpi("Last backup", bk && bk.age_h != null ? bk.age_h + " h ago" : "none", bk ? `${bk.count} kept · ${bk.size_kb || 0} KB · offsite ${esc(bk.offsite_target || "not set")}` : "", bk && bk.age_h != null && bk.age_h <= 26 ? "" : "neg")
+      + kpi("Last backup", bkAge != null ? bkAge + " h ago" : "none found", bk && bk.count ? `${bk.count} kept · ${bk.size_kb || 0} KB · offsite ${esc(bk.offsite_target || "not set")}` : "offsite " + esc((bk && bk.offsite_target) || "not set"), bkAge != null && bkAge <= 26 ? "" : "neg")
       + kpi("Telegram", oh ? (oh.telegram ? "on" : "off") : "—", oh && num(oh.telegram_dropped) ? `${oh.telegram_dropped} alerts dropped` : "");
     const jobs = s.units && s.units.ok ? s.units.jobs : {}; const stress = s.stress && s.stress.ok ? s.stress : null;
     const NAMES = { health: "Health check (1 min)", watchdog: "Watchdog (5 min)", backup: "Backup (03:15 UTC)", daily: "Daily checks (04:30 UTC)", stress: "Stress test (Mon–Fri 16:00 UTC)" };
@@ -591,9 +599,10 @@ iframe.map { width: 100%; height: calc(100vh - 150px); min-height: 640px; border
     const rows = s.activity && s.activity.ok ? s.activity.rows : [];
     $("heFeed").innerHTML = table([
       { h: "Time (UTC)", f: r => dt(r.ts) }, { h: "Engine", f: r => esc(r.engine) }, { h: "Event", f: r => esc(r.event) }, { h: "Symbol", f: r => esc(r.symbol || "") },
-      { h: "Mode", f: r => esc(r.mode || "") }, { h: "Decision", f: r => r.decision ? pill(r.decision, r.decision === "block" ? "bad" : r.decision === "allow" ? "good" : "idle") : "" }, { h: "Reason", f: r => `<span class="muted">${esc(r.reason || "")}</span>` }
+      { h: "Mode", f: r => esc(r.mode || "") }, { h: "Decision", f: r => r.decision ? pill(r.decision, decCls(r.decision)) : "" }, { h: "Reason", f: r => `<span class="muted">${esc(r.reason || "")}</span>` }
     ], rows, "No decisions logged yet.");
   }
+  function decCls(d) { d = String(d || "").toLowerCase(); return /block|fail|error|reject|not_flat|incomplete|kill/.test(d) ? "bad" : /allow|^ok$|pass|flat|filled|submitted|complete/.test(d) ? "good" : "idle"; }
   function renderAll() {
     renderStatus();
     ({ overview: renderOverview, holdings: renderHoldings, us: renderUS, orders: renderOrders, market: renderMarket, crypto: renderCrypto, safety: renderSafety, health: renderHealth, map: () => {} })[view]();

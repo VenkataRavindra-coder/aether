@@ -54,3 +54,14 @@ def test_only_write_is_pause_and_it_needs_two_clicks():
 def test_map_embed_mode():
     m = (ROOT / "map_view.html").read_text()
     assert 'get("embed") === "1"' in m and "/map?embed=1" in PAGE
+
+
+def test_no_example_data_anywhere():
+    """Everything shown is live: no sample/demo data paths in the console or the map."""
+    m = (ROOT / "map_view.html").read_text()
+    for page in (PAGE, m):
+        low = page.lower()
+        for bad in ("function sample", "samplerows", "sample_events", "sample data", "math.random"):
+            assert bad not in low, bad
+    for hard in ("23:30 GST", "BTC, ETH, SOL", "verdict for us_etf_momentum_v1"):
+        assert hard not in PAGE, hard
