@@ -158,6 +158,8 @@ circle.p { pointer-events: none; }
 .tog { font: 500 12px var(--font-mono); padding: 5px 10px; border: 1px solid var(--line); background: transparent; border-radius: 4px; cursor: pointer; }
 .tog[aria-pressed="true"] { background: var(--ink); color: var(--panel); border-color: var(--ink); }
 .foot { color: var(--muted); font-size: 12px; }
+body.embed header.top, body.embed .strip, body.embed .clockcard { display: none; }
+body.embed .wrap { padding-block: 10px; }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
 </style>
 </head>
@@ -227,6 +229,9 @@ circle.p { pointer-events: none; }
 <script>
 (function () {
   "use strict";
+  // Inside the console (/#map) the page loads as /map?embed=1: the console already shows the header,
+  // instruments and clock, so only the map and its side rail are drawn.
+  try { if (new URLSearchParams(location.search).get("embed") === "1") document.body.classList.add("embed"); } catch (e) {}
   const POLL_MS = 5000;
   const FLOWS = [
     { id: "orders", name: "Order path", c: "--f-orders" }, { id: "access", name: "Your access", c: "--f-access" },

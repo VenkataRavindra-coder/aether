@@ -4,7 +4,7 @@ Mount in the existing FastAPI app (keeps session login + Cloudflare Access):
     from us_dashboard import build_router
     app.include_router(build_router(<your session-login dependency>))
 
-Routes: GET /us (page) · GET /api/us/summary (JSON) · POST /api/us/pause
+Routes: GET /us (redirects to the console) · GET /api/us/summary (JSON) · POST /api/us/pause
 There is deliberately NO resume route: resume = ssh aether; rm ~/AETHER_HALT
 """
 from __future__ import annotations
@@ -21,12 +21,10 @@ from pathlib import Path
 from typing import Callable
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import HTMLResponse
 
 import safety_guard as g
 from heartbeat import heartbeat_file
 
-HTML_PATH = Path(__file__).with_name("us_dashboard.html")
 CSRF_TOKEN = secrets.token_urlsafe(32)        # per process, embedded in the served page
 CACHE_TTL = 10
 _cache: dict = {}
@@ -218,9 +216,11 @@ def build_summary() -> dict:
 def build_router(auth_dep: Callable) -> APIRouter:
     r = APIRouter(dependencies=[Depends(auth_dep)])
 
-    @r.get("/us", response_class=HTMLResponse)
+    @r.get("/us")
     def page():
-        return HTML_PATH.read_text().replace("__CSRF__", CSRF_TOKEN)
+        """Retired 2026-10-18: the US view is now the console's "US strategy" and "Safety" sections."""
+        from fastapi.responses import RedirectResponse
+        return RedirectResponse("/#us", status_code=307)
 
     @r.get("/api/us/summary")
     def summary():

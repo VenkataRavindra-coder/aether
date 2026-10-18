@@ -51,11 +51,10 @@ def test_requires_login():
     assert c.post("/api/us/pause", headers={"x-aether-csrf": ud.CSRF_TOKEN}).status_code == 401
 
 
-def test_page_embeds_csrf_and_no_mock_data():
-    html = client().get("/us").text
-    assert ud.CSRF_TOKEN in html and "__CSRF__" not in html
-    for mock in ("NVDA", "Math.random", "248,430"):
-        assert mock not in html
+def test_us_page_redirects_to_console():
+    # 2026-10-18: /us was merged into the single console at / (sections #us and #safety).
+    r = client().get("/us", follow_redirects=False)
+    assert r.status_code == 307 and r.headers["location"] == "/#us"
 
 
 def test_summary_us_only_and_limits_from_guard():

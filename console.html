@@ -1,0 +1,561 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>AETHER</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=Archivo+Narrow:wght@600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one console. Fixed left menu (collapses to a top bar + drawer on phones), a slim status
+   bar on top of the content, one section visible at a time. Same tokens as the live map. */
+:root {
+  --bg: #0b1117; --panel: #111a22; --panel2: #16212b; --side: #0e161d; --ink: #e3eaf0; --muted: #8798a8;
+  --line: #26343f; --focus: #e3eaf0; --good: #4fc184; --warn: #e8a33d; --bad: #f2665b; --idle: #6f8090;
+  --live: #f2665b; --paper: #6aa6ec; --accent: #f0a33f; --research: #b38be6;
+  --font-display: "Archivo Narrow", "Arial Narrow", "Helvetica Neue", Arial, sans-serif;
+  --font-body: "Archivo", "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --bg: #eceff2; --panel: #fbfcfd; --panel2: #f0f3f6; --side: #e2e7ec; --ink: #13202b; --muted: #576675;
+    --line: #c8d0d8; --focus: #13202b; --good: #23824e; --warn: #a8600a; --bad: #c0281c; --idle: #7b8794;
+    --live: #c0281c; --paper: #2160a3; --accent: #b8650a; --research: #6b3fa0; color-scheme: light;
+  }
+}
+:root[data-theme="light"] {
+  --bg: #eceff2; --panel: #fbfcfd; --panel2: #f0f3f6; --side: #e2e7ec; --ink: #13202b; --muted: #576675;
+  --line: #c8d0d8; --focus: #13202b; --good: #23824e; --warn: #a8600a; --bad: #c0281c; --idle: #7b8794;
+  --live: #c0281c; --paper: #2160a3; --accent: #b8650a; --research: #6b3fa0; color-scheme: light;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body { background: var(--bg); color: var(--ink); font: 14px/1.5 var(--font-body); }
+h1, h2, h3 { font-family: var(--font-display); margin: 0; letter-spacing: .01em; text-wrap: balance; }
+h1 { font-size: 26px; line-height: 1.1; }
+h2 { font-size: 17px; }
+button { font: inherit; color: inherit; }
+a { color: var(--paper); }
+.mono { font-family: var(--font-mono); }
+.num { font-variant-numeric: tabular-nums; }
+.muted { color: var(--muted); }
+.eyebrow { font: 500 11px var(--font-mono); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.pos { color: var(--good); } .neg { color: var(--bad); }
+
+/* shell */
+.shell { display: grid; grid-template-columns: 228px minmax(0, 1fr); min-height: 100%; background: linear-gradient(to right, var(--side) 228px, transparent 228px); }
+nav.side { background: var(--side); border-right: 1px solid var(--line); position: sticky; top: 0; height: 100vh; display: flex; flex-direction: column; padding: max(18px, env(safe-area-inset-top, 0px)) 12px 14px max(12px, env(safe-area-inset-left, 0px)); gap: 14px; overflow-y: auto; }
+.brand { display: flex; align-items: baseline; gap: 8px; padding: 0 8px; }
+.brand b { font: 700 22px var(--font-display); letter-spacing: .04em; }
+.brand span { font: 500 11px var(--font-mono); color: var(--muted); }
+.menu { display: grid; gap: 2px; }
+.menu a { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; align-items: center; gap: 8px; padding: 9px 10px; border-radius: 7px; color: var(--ink); text-decoration: none; font-weight: 500; }
+.menu a svg { width: 18px; height: 18px; stroke: var(--muted); fill: none; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.menu a:hover { background: var(--panel2); }
+.menu a[aria-current="page"] { background: var(--panel); box-shadow: inset 3px 0 0 var(--accent); }
+.menu a[aria-current="page"] svg { stroke: var(--accent); }
+.menu a:focus-visible, button:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.badge { width: 9px; height: 9px; border-radius: 50%; background: transparent; }
+.badge.good { background: var(--good); } .badge.warn { background: var(--warn); } .badge.bad { background: var(--bad); animation: blink 1.2s infinite; }
+@keyframes blink { 50% { opacity: .3; } }
+.side .foot { margin-top: auto; display: grid; gap: 8px; padding: 0 8px; font-size: 12px; color: var(--muted); }
+.side .foot button { all: unset; cursor: pointer; color: var(--ink); font-size: 13px; padding: 6px 0; }
+.mobilebar { display: none; }
+
+main { min-width: 0; padding-left: max(20px, env(safe-area-inset-left, 0px)); padding-right: max(20px, env(safe-area-inset-right, 0px)); padding-block: 16px 48px; }
+.status { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 16px; }
+.chip { display: inline-flex; align-items: center; gap: 7px; font: 500 12px var(--font-mono); padding: 5px 10px; border-radius: 999px; border: 1px solid var(--line); background: var(--panel); white-space: nowrap; }
+.chip .d { width: 8px; height: 8px; border-radius: 50%; background: var(--idle); }
+.chip.good .d { background: var(--good); } .chip.warn .d { background: var(--warn); } .chip.bad { border-color: var(--bad); color: var(--bad); } .chip.bad .d { background: var(--bad); }
+.status .spacer { flex: 1; }
+.updated { font: 400 12px var(--font-mono); color: var(--muted); }
+
+section.view { display: grid; gap: 16px; }
+section.view[hidden] { display: none !important; }
+.vhead { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px 16px; align-items: end; }
+.vhead p { color: var(--muted); margin: 4px 0 0; max-width: 70ch; }
+.grid { display: grid; gap: 14px; }
+.g4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.g3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.g2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+@media (max-width: 1200px) { .g4 { grid-template-columns: repeat(2, minmax(0, 1fr)); } .g3 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 720px) { .g4, .g3, .g2 { grid-template-columns: minmax(0, 1fr); } }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; min-width: 0; display: grid; gap: 8px; align-content: start; }
+.card.alert { border-color: var(--bad); }
+.kpi .v { font: 700 26px/1.05 var(--font-display); }
+.kpi .s { font: 400 12px var(--font-mono); color: var(--muted); }
+.tablewrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th { text-align: left; font: 500 11px var(--font-mono); letter-spacing: .05em; text-transform: uppercase; color: var(--muted); padding: 6px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+td { padding: 8px; border-bottom: 1px solid var(--line); font-variant-numeric: tabular-nums; vertical-align: top; }
+tr:last-child td { border-bottom: 0; }
+td.r, th.r { text-align: right; }
+.empty { color: var(--muted); padding: 10px 0; }
+.pill { display: inline-flex; align-items: center; gap: 6px; font: 500 11px var(--font-mono); text-transform: uppercase; letter-spacing: .05em; padding: 2px 8px; border-radius: 4px; border: 1px solid currentColor; white-space: nowrap; }
+.pill.good { color: var(--good); } .pill.warn { color: var(--warn); } .pill.bad { color: var(--bad); } .pill.idle { color: var(--idle); } .pill.paper { color: var(--paper); } .pill.live { color: var(--live); }
+.kv { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px 14px; font-size: 13px; }
+.kv dt { color: var(--muted); } .kv dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.bar { height: 8px; border-radius: 4px; background: var(--panel2); overflow: hidden; display: flex; }
+.bar > span { display: block; height: 100%; }
+svg.chart { display: block; width: 100%; height: auto; }
+svg.chart text { font: 400 10px var(--font-mono); fill: var(--muted); }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.seg button { border: 0; background: transparent; padding: 5px 10px; cursor: pointer; font: 500 12px var(--font-mono); }
+.seg button[aria-pressed="true"] { background: var(--ink); color: var(--panel); }
+.errors { border: 1px solid var(--warn); color: var(--warn); background: color-mix(in srgb, var(--warn) 9%, var(--panel)); border-radius: 8px; padding: 10px 14px; font-size: 13px; }
+.danger { border: 1px solid var(--bad); color: var(--bad); background: transparent; border-radius: 7px; padding: 9px 14px; cursor: pointer; font-weight: 600; }
+.danger.armed { background: var(--bad); color: var(--panel); }
+.checks { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
+.ck { font: 600 12px var(--font-mono); text-align: center; padding: 8px 0; border-radius: 6px; background: var(--panel2); border: 1px solid var(--line); }
+.ck.ok { border-color: var(--good); color: var(--good); } .ck.no { border-color: var(--bad); color: var(--bad); } .ck.na { color: var(--muted); }
+iframe.map { width: 100%; height: calc(100vh - 150px); min-height: 640px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
+.spark { width: 120px; height: 32px; }
+.note { font-size: 12px; color: var(--muted); }
+
+@media (max-width: 900px) {
+  .shell { grid-template-columns: minmax(0, 1fr); background: none; }
+  nav.side { position: fixed; inset: 0 auto 0 0; width: 260px; z-index: 30; transform: translateX(-105%); transition: transform .2s ease; }
+  body.menu-open nav.side { transform: none; }
+  body.menu-open::after { content: ""; position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 20; }
+  .mobilebar { display: flex; align-items: center; gap: 10px; position: sticky; top: 0; z-index: 10; background: var(--side); border-bottom: 1px solid var(--line); padding: calc(env(safe-area-inset-top, 0px) + 10px) max(16px, env(safe-area-inset-right, 0px)) 10px max(16px, env(safe-area-inset-left, 0px)); }
+  .mobilebar button { all: unset; cursor: pointer; padding: 4px; }
+  .mobilebar b { font: 700 18px var(--font-display); letter-spacing: .04em; }
+  main { padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+  iframe.map { height: 80vh; min-height: 520px; }
+}
+@media (prefers-reduced-motion: reduce) { *, *::after { animation: none !important; transition: none !important; } }
+</style>
+</head>
+<body>
+<div class="mobilebar"><button id="menuBtn" type="button" aria-label="Open menu"><svg width="22" height="22" viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button><b>AETHER</b><span class="updated" id="mUpdated"></span></div>
+<div class="shell">
+  <nav class="side" aria-label="Sections">
+    <div class="brand"><b>AETHER</b><span>ratelark</span></div>
+    <div class="menu" id="menu"></div>
+    <div class="foot">
+      <span id="sideMode">—</span>
+      <button type="button" id="themeBtn">Switch to light</button>
+      <button type="button" id="logoutBtn">Log out</button>
+    </div>
+  </nav>
+  <main>
+    <div class="status" id="statusbar" aria-label="System status"></div>
+
+    <section class="view" id="v-overview">
+      <div class="vhead"><div><h1>Overview</h1><p>Your money, today's change and whether everything is healthy, on one screen.</p></div></div>
+      <div class="errors" id="ovErrors" hidden></div>
+      <div class="grid g4" id="ovKpis"></div>
+      <div class="grid g2">
+        <div class="card"><div class="vhead"><h2>Account value</h2><div class="seg" id="histSeg"><button type="button" data-h="week">7 days</button><button type="button" data-h="all">All</button></div></div><div id="histChart"></div></div>
+        <div class="card"><h2>US engine sleeve vs SPY</h2><div id="sleeveChart"></div><div class="note" id="sleeveNote"></div></div>
+      </div>
+      <div class="grid g3">
+        <div class="card"><h2>Where the money is</h2><div id="alloc"></div></div>
+        <div class="card"><h2>Safety at a glance</h2><dl class="kv" id="ovSafety"></dl></div>
+        <div class="card"><h2>Latest decisions</h2><div id="ovFeed"></div></div>
+      </div>
+    </section>
+
+    <section class="view" id="v-holdings" hidden>
+      <div class="vhead"><div><h1>Holdings &amp; trades</h1><p>What the headline account holds now, and what it has bought and sold.</p></div></div>
+      <div class="grid g4" id="hKpis"></div>
+      <div class="card"><h2>Holdings now</h2><div class="tablewrap" id="hPositions"></div></div>
+      <div class="grid g2">
+        <div class="card"><h2>Closed trades</h2><div class="tablewrap" id="hClosed"></div></div>
+        <div class="card"><h2>Recent fills</h2><div class="tablewrap" id="hFills"></div></div>
+      </div>
+    </section>
+
+    <section class="view" id="v-us" hidden>
+      <div class="vhead"><div><h1>US strategy</h1><p>The monthly ETF momentum engine: what it ranks, what it targets, and when it last acted.</p></div><span id="usMode"></span></div>
+      <div class="grid g4" id="usKpis"></div>
+      <div class="grid g2">
+        <div class="card"><h2>Rankings and targets</h2><div class="tablewrap" id="usRanks"></div><div class="note" id="usRankNote"></div></div>
+        <div class="card"><h2>Approval and next step</h2><dl class="kv" id="usApproval"></dl><div class="note">Approve or reject on Telegram (/approve_&lt;id&gt;). This page never places orders.</div></div>
+      </div>
+      <div class="card"><h2>Rebalance history</h2><div class="tablewrap" id="usHistory"></div></div>
+      <div class="card"><h2>Is there an edge?</h2><dl class="kv" id="usEdge"></dl><div class="note">Promotion to real money needs DSR ≥ 0.95 and PBO ≤ 0.05 (strategy.md). Current verdict for us_etf_momentum_v1: NO-GO.</div></div>
+    </section>
+
+    <section class="view" id="v-orders" hidden>
+      <div class="vhead"><div><h1>Orders</h1><p>The last 25 US orders on the engine's account, with fill price and how long each took to fill.</p></div><span id="ordAcct"></span></div>
+      <div class="card"><div class="tablewrap" id="ordTable"></div></div>
+    </section>
+
+    <section class="view" id="v-market" hidden>
+      <div class="vhead"><div><h1>Market</h1><p>Index ETFs and anything you hold, from Alpaca's IEX feed (refreshes every minute).</p></div></div>
+      <div class="grid g4" id="mkQuotes"></div>
+      <div class="card"><h2>Last 60 hours</h2><div class="tablewrap" id="mkTape"></div></div>
+    </section>
+
+    <section class="view" id="v-crypto" hidden>
+      <div class="vhead"><div><h1>Crypto (shadow)</h1><p>The original crypto loop. It runs in shadow only; real-money crypto is blocked by the Risk Controller.</p></div><span id="crMode"></span></div>
+      <div class="grid g4" id="crKpis"></div>
+      <div class="grid g3" id="crSymbols"></div>
+    </section>
+
+    <section class="view" id="v-safety" hidden>
+      <div class="vhead"><div><h1>Safety</h1><p>Every gate between a signal and real money, read live.</p></div></div>
+      <div class="grid g4" id="sfKpis"></div>
+      <div class="grid g2">
+        <div class="card"><h2>Live budgets today</h2><div id="sfBudgets"></div></div>
+        <div class="card"><h2>Live risk breakers</h2><dl class="kv" id="sfBreakers"></dl></div>
+      </div>
+      <div class="card" id="pauseCard"><h2>Pause all new entries</h2>
+        <p class="muted" style="margin:0">Creates the halt file. Every new entry on every path is refused; exits still go through, so nothing gets trapped. Resuming is deliberately not possible from here: on the server run <span class="mono">rm ~/AETHER_HALT</span>.</p>
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><button type="button" class="danger" id="pauseBtn">Pause entries</button><span class="note" id="pauseMsg"></span></div>
+      </div>
+    </section>
+
+    <section class="view" id="v-map" hidden>
+      <div class="vhead"><div><h1>System map</h1><p>Every part of the setup, glowing by live health. Orders animate along their real path.</p></div></div>
+      <iframe class="map" id="mapFrame" title="Live system map" loading="lazy"></iframe>
+    </section>
+
+    <section class="view" id="v-health" hidden>
+      <div class="vhead"><div><h1>Health &amp; jobs</h1><p>Server, scheduled jobs, daily checks and backups.</p></div></div>
+      <div class="grid g4" id="heKpis"></div>
+      <div class="grid g2">
+        <div class="card"><h2>Scheduled jobs</h2><div class="tablewrap" id="heJobs"></div></div>
+        <div class="card"><h2 id="heChecksHead">Daily checks</h2><div class="checks" id="heChecks"></div><div id="heCheckDetail" class="note"></div></div>
+      </div>
+      <div class="card"><h2>Engine decisions (newest first)</h2><div class="tablewrap" id="heFeed"></div></div>
+    </section>
+  </main>
+</div>
+
+<script>
+(function () {
+  "use strict";
+  const CSRF = "__CSRF__";
+  const $ = id => document.getElementById(id);
+  const ICON = {
+    overview: '<path d="M3 13h8V3H3zM13 21h8V11h-8zM3 21h8v-6H3zM13 3v6h8V3z"/>',
+    holdings: '<path d="M3 7h18v13H3zM8 7V4h8v3"/>',
+    us: '<path d="M4 19V9M10 19V5M16 19v-7M22 19H2"/>',
+    orders: '<path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/>',
+    market: '<path d="M3 17l6-6 4 4 8-8M15 7h6v6"/>',
+    crypto: '<circle cx="12" cy="12" r="9"/><path d="M9 8h4.5a2 2 0 010 4H9h5a2 2 0 010 4H9zM11 6v2M11 16v2"/>',
+    safety: '<path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/>',
+    map: '<circle cx="5" cy="6" r="2"/><circle cx="19" cy="6" r="2"/><circle cx="12" cy="18" r="2"/><path d="M7 6h10M6 8l5 8M18 8l-5 8"/>',
+    health: '<path d="M3 12h4l3-7 4 14 3-7h4"/>'
+  };
+  const VIEWS = [["overview", "Overview"], ["holdings", "Holdings & trades"], ["us", "US strategy"], ["orders", "Orders"],
+    ["market", "Market"], ["crypto", "Crypto (shadow)"], ["safety", "Safety"], ["map", "System map"], ["health", "Health & jobs"]];
+  const menu = $("menu");
+  VIEWS.forEach(([id, name]) => {
+    const a = document.createElement("a"); a.href = "#" + id; a.dataset.v = id;
+    a.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true">${ICON[id]}</svg>`;
+    const t = document.createElement("span"); t.textContent = name; const b = document.createElement("span"); b.className = "badge"; b.id = "b-" + id;
+    a.append(t, b); menu.appendChild(a);
+  });
+
+  // ---------- helpers
+  const esc = s => String(s == null ? "" : s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const num = v => v != null && isFinite(v);
+  const money = (v, dp = 2) => num(v) ? (v < 0 ? "−$" : "$") + Math.abs(v).toLocaleString("en-US", { minimumFractionDigits: dp, maximumFractionDigits: dp }) : "—";
+  const signed = (v, dp = 2) => num(v) ? (v > 0 ? "+" : v < 0 ? "−" : "") + "$" + Math.abs(v).toLocaleString("en-US", { minimumFractionDigits: dp, maximumFractionDigits: dp }) : "—";
+  const pct = (v, dp = 2) => num(v) ? (v > 0 ? "+" : "") + v.toFixed(dp) + "%" : "—";
+  const cls = v => !num(v) ? "" : v > 0 ? "pos" : v < 0 ? "neg" : "";
+  const ago = s => { if (!num(s)) return "—"; s = Math.max(0, Math.round(s)); if (s < 90) return s + " s"; if (s < 5400) return Math.round(s / 60) + " min"; if (s < 172800) return Math.round(s / 3600) + " h"; return Math.round(s / 86400) + " d"; };
+  const since = iso => iso ? (Date.now() - Date.parse(iso)) / 1000 : null;
+  const hm = iso => { if (!iso) return "—"; const d = new Date(iso); return isNaN(d) ? "—" : d.toISOString().slice(11, 16); };
+  const dt = iso => { if (!iso) return "—"; const d = new Date(typeof iso === "number" ? iso * 1000 : iso); return isNaN(d) ? String(iso) : d.toISOString().slice(0, 16).replace("T", " "); };
+  const pill = (txt, k) => `<span class="pill ${k}">${esc(txt)}</span>`;
+  const kpi = (label, value, sub, valCls) => `<div class="card kpi"><span class="eyebrow">${esc(label)}</span><span class="v ${valCls || ""}">${value}</span><span class="s">${sub || ""}</span></div>`;
+  const table = (cols, rows, empty) => rows && rows.length ? `<table><thead><tr>${cols.map(c => `<th class="${c.r ? "r" : ""}">${esc(c.h)}</th>`).join("")}</tr></thead><tbody>${rows.map(r => `<tr>${cols.map(c => `<td class="${c.r ? "r" : ""}">${c.f(r)}</td>`).join("")}</tr>`).join("")}</tbody></table>` : `<div class="empty">${esc(empty || "Nothing yet.")}</div>`;
+  const kv = pairs => pairs.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${v}</dd>`).join("");
+  function line(points, opts = {}) {
+    // points: [[x, y], ...] with numeric x; renders an area line with min/max labels
+    if (!points || points.length < 2) return '<div class="empty">Not enough history yet.</div>';
+    const W = 640, H = opts.h || 200, P = 62;
+    const xs = points.map(p => p[0]), ys = points.map(p => p[1]).concat(opts.extra ? opts.extra.map(p => p[1]) : []);
+    const x0 = Math.min(...xs), x1 = Math.max(...xs); let y0 = Math.min(...ys), y1 = Math.max(...ys); if (y0 === y1) { y0 -= 1; y1 += 1; }
+    const X = x => P + (W - P - 8) * (x - x0) / (x1 - x0 || 1), Y = y => 10 + (H - 30) * (1 - (y - y0) / (y1 - y0));
+    const path = pts => pts.map((p, i) => (i ? "L" : "M") + X(p[0]).toFixed(1) + "," + Y(p[1]).toFixed(1)).join("");
+    const up = points[points.length - 1][1] >= points[0][1]; const col = opts.color || (up ? "var(--good)" : "var(--bad)");
+    let g = "";
+    for (let i = 0; i <= 3; i++) { const v = y0 + (y1 - y0) * i / 3; g += `<line x1="${P}" x2="${W - 8}" y1="${Y(v)}" y2="${Y(v)}" stroke="var(--line)" stroke-width="1"/><text x="${P - 4}" y="${Y(v) + 3}" text-anchor="end">${opts.fmt ? opts.fmt(v) : v.toFixed(0)}</text>`; }
+    const area = path(points) + `L${X(x1)},${H - 20}L${X(x0)},${H - 20}Z`;
+    const last = points[points.length - 1];
+    let extra = "";
+    if (opts.extra && opts.extra.length > 1) extra = `<path d="${path(opts.extra)}" fill="none" stroke="var(--muted)" stroke-width="1.5" stroke-dasharray="4 3"/>`;
+    const lab = opts.xlab ? `<text x="${P}" y="${H - 4}">${esc(opts.xlab(x0))}</text><text x="${W - 8}" y="${H - 4}" text-anchor="end">${esc(opts.xlab(x1))}</text>` : "";
+    return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(opts.label || "chart")}">${g}<path d="${area}" fill="${col}" opacity=".12"/>${extra}<path d="${path(points)}" fill="none" stroke="${col}" stroke-width="2"/><circle cx="${X(last[0])}" cy="${Y(last[1])}" r="3.5" fill="${col}"/>${lab}</svg>`;
+  }
+  function spark(vals, up) {
+    if (!vals || vals.length < 2) return "";
+    const W = 120, H = 32, lo = Math.min(...vals), hi = Math.max(...vals) || 1, r = hi - lo || 1;
+    const d = vals.map((v, i) => (i ? "L" : "M") + (i * W / (vals.length - 1)).toFixed(1) + "," + (H - 3 - (H - 6) * (v - lo) / r).toFixed(1)).join("");
+    return `<svg class="spark" viewBox="0 0 ${W} ${H}" aria-hidden="true"><path d="${d}" fill="none" stroke="var(${up ? "--good" : "--bad"})" stroke-width="1.6"/></svg>`;
+  }
+
+  // ---------- data
+  const D = {}; const age = {};
+  const SRC = { status: "/api/map/status", overview: "/api/overview", us: "/api/us", summary: "/api/us/summary", extras: "/api/us/extras", strategy: "/api/strategy", safety: "/api/safety" };
+  const NEEDS = { overview: ["overview", "us", "status"], holdings: ["overview"], us: ["us", "safety", "extras"], orders: ["extras"], market: ["market", "overview"],
+    crypto: ["strategy"], safety: ["status", "summary"], map: [], health: ["status", "extras", "overview"] };
+  let loggedOut = false;
+  async function load(key) {
+    let url = SRC[key];
+    if (key === "market") { const held = ((D.overview && D.overview.positions) || []).map(p => p.symbol).filter(s => /^[A-Z]{1,6}$/.test(s)).slice(0, 6).join(","); url = "/api/market?held=" + encodeURIComponent(held); }
+    try {
+      const r = await fetch(url, { credentials: "same-origin", cache: "no-store" });
+      if (r.status === 401) { loggedOut = true; return; }
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      if (!(r.headers.get("content-type") || "").includes("json")) throw new Error("not JSON");
+      D[key] = await r.json(); age[key] = Date.now(); delete D[key + "_err"];
+    } catch (e) { D[key + "_err"] = String(e.message || e); }
+  }
+  let view = "overview";
+  async function refresh(keys) { await Promise.all(keys.map(load)); renderAll(); }
+  function current() { const h = (location.hash || "").slice(1); return VIEWS.some(v => v[0] === h) ? h : "overview"; }
+  function show() {
+    view = current();
+    document.querySelectorAll("section.view").forEach(s => s.hidden = s.id !== "v-" + view);
+    menu.querySelectorAll("a").forEach(a => { if (a.dataset.v === view) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current"); });
+    document.body.classList.remove("menu-open");
+    if (view === "map" && !$("mapFrame").src) $("mapFrame").src = "/map?embed=1";
+    const stale = (NEEDS[view] || []).filter(k => !age[k] || Date.now() - age[k] > 15000);
+    if (stale.length) refresh(stale); else renderAll();
+    window.scrollTo(0, 0);
+  }
+  window.addEventListener("hashchange", show);
+
+  // ---------- status bar + menu badges (from /api/map/status, every 5 s)
+  function badge(id, k) { const b = $("b-" + id); if (b) b.className = "badge " + (k || ""); }
+  function renderStatus() {
+    const s = D.status, bar = $("statusbar"); const chips = [];
+    if (loggedOut) { bar.innerHTML = `<span class="chip bad"><span class="d"></span>Signed out: reload to sign in through Cloudflare Access</span>`; return; }
+    if (!s) { bar.innerHTML = `<span class="chip warn"><span class="d"></span>${esc(D.status_err ? "Can't reach the engine (" + D.status_err + ")" : "Connecting…")}</span>`; return; }
+    const u = s.units && s.units.ok ? s.units : null, eng = s.engine || {}, g = s.gate && s.gate.ok ? s.gate : null, hb = s.heartbeat && s.heartbeat.ok ? s.heartbeat : null;
+    const up = u ? u.engine.active === "active" : !!eng.ok;
+    chips.push([up ? "good" : "bad", up ? "Engine running" : "Engine DOWN"]);
+    const hbA = hb ? hb.age_s : null; chips.push([hbA == null ? "warn" : hbA < 180 ? "good" : hbA < 900 ? "warn" : "bad", "Heartbeat " + (hbA == null ? "?" : ago(hbA))]);
+    let gk = "warn", gt = "Gate unknown";
+    if (g) { const L = g.ledger || {}; if (g.halt) { gk = "bad"; gt = "PAUSED (halt file)"; } else if (L.latched) { gk = "bad"; gt = "Breaker latched"; } else if (g.kill && g.kill.us) { gk = "bad"; gt = "Kill switch on"; } else { gk = "good"; gt = "Gate open"; } }
+    chips.push([gk, gt]);
+    const fl = eng.flags || {}; chips.push([fl.US_LIVE ? "bad" : "good", fl.US_LIVE ? "US engine LIVE" : "US engine paper"]);
+    const jobs = u ? u.jobs : {}; const failed = Object.entries(jobs).filter(([k, j]) => j.timer_loaded && (!j.timer_active || (j.result && j.result !== "success"))).map(([k]) => k);
+    const st = s.stress && s.stress.ok ? s.stress : null; if (st && st.rc !== 0 && !failed.includes("stress")) failed.push("stress");
+    chips.push([failed.length ? "bad" : "good", failed.length ? "Failing: " + failed.join(", ") : "All jobs OK"]);
+    bar.innerHTML = chips.map(([k, t]) => `<span class="chip ${k}"><span class="d"></span>${esc(t)}</span>`).join("") + `<span class="spacer"></span><span class="updated">updated ${hm(s.generated_at)} UTC</span>`;
+    $("mUpdated").textContent = hm(s.generated_at) + " UTC";
+    $("sideMode").textContent = fl.US_LIVE ? "US engine: LIVE" : "US engine: paper · canary live";
+    badge("safety", gk === "bad" ? "bad" : gk === "warn" ? "warn" : "");
+    badge("health", failed.length || !up ? "bad" : hbA != null && hbA > 180 ? "warn" : "");
+    badge("overview", !up ? "bad" : "");
+    const usk = eng.us || {}; badge("us", usk.kill_switch ? "bad" : usk.last_error ? "warn" : "");
+  }
+
+  // ---------- views
+  let histRange = "week";
+  function renderOverview() {
+    const o = D.overview, s = (o && o.summary) || {}, acc = (o && o.accounts) || {}, us = D.us;
+    const errs = [].concat((o && o.errors) || [], D.overview_err ? ["Overview: " + D.overview_err] : []);
+    $("ovErrors").hidden = !errs.length; $("ovErrors").textContent = errs.join(" · ");
+    const live = acc.live || {}, paper = acc.paper || {};
+    $("ovKpis").innerHTML =
+      kpi("Live account (real money)", live.configured ? money(live.equity) : "—", live.configured ? `${signed(live.today_pl)} today · cash ${money(live.cash)}` : "live keys not configured", "") +
+      kpi("Paper account", paper.configured ? money(paper.equity) : "—", paper.configured ? `${signed(paper.today_pl)} today (${pct(paper.today_pl_pct)})` : "—") +
+      kpi("US engine sleeve", us && num(us.equity) ? money(us.equity) : "—", us ? `of ${money(us.allocation_usd, 0)} allocation · ${esc(us.mode || "")}` : "—") +
+      kpi("Change since start", signed(s.total_pl), s.start_date ? `${pct(s.total_pl_pct)} since ${dt(s.start_date).slice(0, 10)} · includes deposits` : "headline account", cls(s.total_pl));
+    const h = o && o.history ? o.history[histRange] || [] : [];
+    $("histChart").innerHTML = line(h.map(p => [p[0], p[1]]), { label: "Account value", fmt: v => "$" + Math.round(v).toLocaleString(), xlab: t => new Date(t * 1000).toISOString().slice(5, histRange === "week" ? 16 : 10).replace("T", " ") });
+    document.querySelectorAll("#histSeg button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.h === histRange)));
+    const eh = (us && us.equity_history) || [];
+    if (eh.length > 1) {
+      const t = d => Date.parse(d.d) / 1000, base = eh[0].v, spy0 = eh[0].spy;
+      $("sleeveChart").innerHTML = line(eh.map(e => [t(e), e.v]), { label: "Sleeve vs SPY", fmt: v => "$" + Math.round(v).toLocaleString(), extra: spy0 ? eh.map(e => [t(e), base * e.spy / spy0]) : null, xlab: x => new Date(x * 1000).toISOString().slice(0, 10) });
+      const last = eh[eh.length - 1]; const sr = (last.v / base - 1) * 100, br = spy0 ? (last.spy / spy0 - 1) * 100 : null;
+      $("sleeveNote").innerHTML = `Sleeve ${pct(sr)} · SPY buy-and-hold ${pct(br)} (dashed) since ${esc(eh[0].d)}`;
+    } else { $("sleeveChart").innerHTML = '<div class="empty">The sleeve records one point per trading day; the chart appears after two.</div>'; $("sleeveNote").textContent = ""; }
+    const pos = (o && o.positions) || [];
+    const total = (s.cash || 0) + pos.reduce((a, p) => a + Math.max(0, p.value), 0);
+    if (total > 0) {
+      const parts = pos.slice(0, 6).map((p, i) => [p.symbol, p.value, `hsl(${(i * 47 + 200) % 360} 55% 55%)`]);
+      const rest = pos.slice(6).reduce((a, p) => a + p.value, 0); if (rest > 0) parts.push(["Other", rest, "var(--idle)"]);
+      parts.push(["Cash", s.cash || 0, "var(--line)"]);
+      $("alloc").innerHTML = `<div class="bar" style="height:14px">${parts.map(p => `<span style="width:${(100 * p[1] / total).toFixed(2)}%;background:${p[2]}" title="${esc(p[0])}"></span>`).join("")}</div>` +
+        `<dl class="kv" style="margin-top:6px">${parts.map(p => `<dt><span class="badge" style="display:inline-block;background:${p[2]};margin-right:6px"></span>${esc(p[0])}</dt><dd>${money(p[1], 0)} · ${(100 * p[1] / total).toFixed(1)}%</dd>`).join("")}</dl>`;
+    } else $("alloc").innerHTML = '<div class="empty">No account data yet.</div>';
+    const st = D.status, g = st && st.gate && st.gate.ok ? st.gate : null;
+    $("ovSafety").innerHTML = g ? kv([
+      ["Halt file", g.halt ? pill("present", "bad") : pill("clear", "good")],
+      ["Live breakers", (g.ledger || {}).latched ? pill("latched", "bad") : (g.ledger || {}).initialised ? pill((g.ledger.level || "ok"), "good") : pill("not started", "warn")],
+      ["Canary spent today", `${money(g.live_canary.spent)} of ${money(g.live_canary.cap_day, 0)}`],
+      ["Engine live spend today", `${money(g.live_us.spent)} of ${money(g.live_us.cap_day, 0)}`],
+      ["Last backup", st.backups && st.backups.ok && st.backups.age_h != null ? `${st.backups.age_h} h ago` : "—"],
+      ["Telegram", o && o.health ? (o.health.telegram ? pill("on", "good") : pill("off", "warn")) : "—"]]) : '<div class="empty">Waiting for the engine…</div>';
+    $("ovFeed").innerHTML = feed(5);
+  }
+  function feed(n) {
+    const rows = D.status && D.status.activity && D.status.activity.ok ? D.status.activity.rows.slice(0, n) : [];
+    if (!rows.length) return '<div class="empty">No decisions logged yet.</div>';
+    return rows.map(r => `<div style="display:grid;grid-template-columns:44px 12px minmax(0,1fr);gap:8px;padding:6px 0;border-top:1px solid var(--line);font-size:12.5px"><span class="mono muted">${hm(r.ts)}</span><span class="badge ${r.decision === "block" ? "bad" : r.decision === "allow" ? "good" : ""}" style="margin-top:5px;${r.decision ? "" : "background:var(--idle)"}"></span><span><b class="mono" style="font-weight:500">${esc(r.engine)} · ${esc(r.event)}${r.symbol ? " · " + esc(r.symbol) : ""}</b><br><span class="muted">${esc([r.decision, r.reason].filter(Boolean).join(": "))}</span></span></div>`).join("");
+  }
+  function renderHoldings() {
+    const o = D.overview; if (!o) { $("hPositions").innerHTML = '<div class="empty">Loading…</div>'; return; }
+    const s = o.summary || {};
+    const wr = s.closed_count ? Math.round(100 * (s.wins || 0) / s.closed_count) : null;
+    $("hKpis").innerHTML = kpi("Invested", money(s.invested), `${s.holdings || 0} holdings`) + kpi("Worth now", money(s.market_value), `unrealised ${signed(s.unrealized)}`, "") +
+      kpi("Realised profit", signed(s.realized), `${s.closed_count || 0} closed trades (FIFO estimate)`, cls(s.realized)) + kpi("Win rate", wr == null ? "—" : wr + "%", `${s.wins || 0} wins · ${s.losses || 0} losses`);
+    $("hPositions").innerHTML = table([
+      { h: "Asset", f: p => `<b>${esc(p.symbol)}</b> <span class="muted">${esc(p.engine)}</span>` }, { h: "Qty", r: 1, f: p => (+p.qty).toLocaleString(undefined, { maximumFractionDigits: 6 }) },
+      { h: "Avg cost", r: 1, f: p => money(p.avg_entry) }, { h: "Price", r: 1, f: p => money(p.price) }, { h: "Invested", r: 1, f: p => money(p.cost) },
+      { h: "Worth", r: 1, f: p => money(p.value) }, { h: "Gain / loss", r: 1, f: p => `<span class="${cls(p.upl)}">${signed(p.upl)} (${pct(p.upl_pct)})</span>` }, { h: "Today", r: 1, f: p => `<span class="${cls(p.today_pl)}">${signed(p.today_pl)}</span>` }
+    ], o.positions, "No open positions.");
+    $("hClosed").innerHTML = table([
+      { h: "Asset", f: c => esc(c.symbol) }, { h: "Qty", r: 1, f: c => (+c.qty).toLocaleString(undefined, { maximumFractionDigits: 6 }) }, { h: "Bought", r: 1, f: c => money(c.buy) },
+      { h: "Sold", r: 1, f: c => money(c.sell) }, { h: "Profit", r: 1, f: c => `<span class="${cls(c.pnl)}">${signed(c.pnl)}</span>` }, { h: "Closed", f: c => dt(c.closed).slice(0, 10) }
+    ], (o.closed || []).slice(0, 25), "No closed trades yet.");
+    $("hFills").innerHTML = table([
+      { h: "When", f: a => dt(a.t) }, { h: "Asset", f: a => esc(a.symbol) }, { h: "Side", f: a => pill(a.side, a.side === "buy" ? "good" : "warn") },
+      { h: "Qty", r: 1, f: a => (+a.q).toLocaleString(undefined, { maximumFractionDigits: 6 }) }, { h: "Price", r: 1, f: a => money(a.px) }, { h: "Value", r: 1, f: a => money(a.q * a.px) }
+    ], (o.activity || []).slice(0, 20), "No fills yet.");
+  }
+  function renderUS() {
+    const u = D.us; if (!u) { $("usRanks").innerHTML = `<div class="empty">${esc(D.us_err || "Loading…")}</div>`; return; }
+    $("usMode").innerHTML = pill(u.mode || "?", /live/i.test(u.mode || "") ? "live" : "paper");
+    $("usKpis").innerHTML = kpi("Sleeve value", money(u.equity), `cash ${money(u.cash)}`) + kpi("Signal date", esc(u.signal_date || "—"), u.preview ? "preview (not yet acted on)" : "last computed")
+      + kpi("Last rebalance", esc(u.last_rebalance_month || "—"), u.last_rebalance_at ? dt(u.last_rebalance_at) : "none yet")
+      + kpi("Engine check", u.last_check ? hm(u.last_check) + " UTC" : "—", u.kill_switch ? "KILL SWITCH: " + esc(u.kill_reason || "") : esc(u.last_error ? "Error: " + u.last_error : (u.note || "ok")), u.kill_switch ? "neg" : "");
+    const rows = (u.rows || []).slice().sort((a, b) => (a.rank || 99) - (b.rank || 99));
+    const maxT = Math.max(0.0001, ...rows.map(r => r.target || 0));
+    $("usRanks").innerHTML = table([
+      { h: "#", f: r => r.rank || "—" }, { h: "ETF", f: r => `<b>${esc(r.symbol)}</b>` }, { h: "Momentum", r: 1, f: r => num(r.score) ? `<span class="${cls(r.score)}">${(r.score * 100).toFixed(1)}%</span>` : "—" },
+      { h: "Target", f: r => `<div style="display:flex;gap:8px;align-items:center"><div class="bar" style="width:90px"><span style="width:${(100 * (r.target || 0) / maxT).toFixed(0)}%;background:var(--accent)"></span></div><span class="mono">${((r.target || 0) * 100).toFixed(0)}%</span></div>` },
+      { h: "Held", r: 1, f: r => r.qty ? money(r.value) : '<span class="muted">—</span>' }
+    ], rows, "No rankings yet.");
+    $("usRankNote").textContent = "Momentum = the strategy's score; Target = intended weight at the next rebalance.";
+    const sf = D.safety || {}; const p = sf.proposal;
+    $("usApproval").innerHTML = kv([
+      ["Approval required", "yes (Telegram)"], ["Current proposal", p ? `${esc(p.id)} · ${pill(p.status || "?", p.status === "approved" ? "good" : p.status === "rejected" ? "bad" : "warn")}` : "none"],
+      ["Proposal date", p ? esc(p.date) : "—"], ["Orders go out", "after 15:30 New York time, if approved the same day"],
+      ["Mode", esc(u.mode || "—")], ["Allocation", money(u.allocation_usd, 0)]]);
+    $("usHistory").innerHTML = table([
+      { h: "Date", f: h => esc(h.date) }, { h: "Signal", f: h => esc(h.signal_date || "") }, { h: "Mode", f: h => esc(h.mode || "") },
+      { h: "Orders", f: h => (h.orders || []).map(o => `${esc(o.side)} ${esc(o.symbol)} ${o.qty ? o.qty : ""}${o.price ? " @ " + money(o.price) : ""} <span class="muted">${esc(o.state)}</span>`).join("<br>") || "—" },
+      { h: "Equity after", r: 1, f: h => money(h.equity) }, { h: "Done", f: h => h.complete ? pill("complete", "good") : pill("incomplete", "bad") }
+    ], u.history, "No rebalances yet.");
+    const rs = D.extras && D.extras.research && D.extras.research.ok ? D.extras.research : null;
+    $("usEdge").innerHTML = rs ? kv([["Trials logged (incl. backfilled)", `${rs.trials_total} (${rs.trials_backfilled} backfilled)`],
+      ["Deflated Sharpe (latest evidence)", num(rs.dsr) ? `${rs.dsr.toFixed(3)} ${rs.dsr >= rs.dsr_gate ? pill("passes", "good") : pill("below gate", "bad")}` : "—"],
+      ["Gates", `DSR ≥ ${rs.dsr_gate} · PBO ≤ ${rs.pbo_gate}`], ["Evidence file", esc(rs.evidence_file || "—")]]) : `<div class="empty">${esc(D.extras && D.extras.research ? D.extras.research.error : "Loading…")}</div>`;
+  }
+  function renderOrders() {
+    const x = D.extras && D.extras.orders; if (!x) { $("ordTable").innerHTML = `<div class="empty">${esc(D.extras_err || "Loading…")}</div>`; return; }
+    if (!x.ok) { $("ordTable").innerHTML = `<div class="empty">Orders unavailable: ${esc(x.error)}</div>`; return; }
+    $("ordAcct").innerHTML = pill(x.account + " account", x.account === "live" ? "live" : "paper");
+    const sk = s => /filled/.test(s) ? "good" : /cancel|reject|expire/.test(s) ? "bad" : "warn";
+    $("ordTable").innerHTML = table([
+      { h: "Submitted", f: o => dt(o.submitted_at) }, { h: "ETF", f: o => `<b>${esc(o.symbol)}</b>` }, { h: "Side", f: o => pill(o.side, o.side === "buy" ? "good" : "warn") },
+      { h: "Type", f: o => esc(o.type) }, { h: "Status", f: o => pill(o.status, sk(o.status)) }, { h: "Qty / $", r: 1, f: o => o.qty ? esc(o.qty) : o.notional ? money(+o.notional) : "—" },
+      { h: "Limit", r: 1, f: o => o.limit_price ? money(+o.limit_price) : "—" }, { h: "Filled at", r: 1, f: o => o.filled_avg_price ? money(+o.filled_avg_price) : "—" },
+      { h: "Fill time", r: 1, f: o => num(o.fill_latency_sec) ? o.fill_latency_sec + " s" : "—" }, { h: "Still held", f: o => o.holding ? "yes" : "" }
+    ], x.orders, "No US orders yet.");
+  }
+  function renderMarket() {
+    const m = D.market; if (!m) { $("mkQuotes").innerHTML = `<div class="card"><div class="empty">${esc(D.market_err || "Loading…")}</div></div>`; return; }
+    $("mkQuotes").innerHTML = (m.quotes || []).map(q => { const closes = ((m.bars || {})[q.symbol] || []).map(b => b[4]);
+      return `<div class="card kpi"><span class="eyebrow">${esc(q.symbol)} · ${esc(q.label)}</span><span class="v">${money(q.price)}</span><span class="s ${cls(q.change_pct)}">${pct(q.change_pct)} today</span>${spark(closes, (q.change_pct || 0) >= 0)}</div>`; }).join("") || '<div class="card"><div class="empty">No quotes.</div></div>';
+    const bars = m.bars || {};
+    $("mkTape").innerHTML = table([
+      { h: "Symbol", f: k => `<b>${esc(k)}</b>` }, { h: "Last 60 hours", f: k => spark(bars[k].map(b => b[4]), bars[k][bars[k].length - 1][4] >= bars[k][0][4]) },
+      { h: "Low", r: 1, f: k => money(Math.min(...bars[k].map(b => b[3]))) }, { h: "High", r: 1, f: k => money(Math.max(...bars[k].map(b => b[2]))) },
+      { h: "Last", r: 1, f: k => money(bars[k][bars[k].length - 1][4]) }, { h: "Change", r: 1, f: k => { const a = bars[k][0][4], b = bars[k][bars[k].length - 1][4]; return `<span class="${cls(b - a)}">${pct((b / a - 1) * 100)}</span>`; } }
+    ], Object.keys(bars).filter(k => bars[k].length > 1), (m.errors || []).join(" · ") || "No bars.");
+  }
+  function renderCrypto() {
+    const c = D.strategy; if (!c) { $("crKpis").innerHTML = `<div class="card"><div class="empty">${esc(D.strategy_err || "Loading…")}</div></div>`; return; }
+    $("crMode").innerHTML = pill(c.mode || "?", c.mode === "LIVE" ? "live" : "idle");
+    const day = c.day || {};
+    $("crKpis").innerHTML = kpi("Loop", c.enabled ? "enabled" : "disabled", `every ${c.interval_seconds || "?"} s`) + kpi("Kill switch", c.kill_switch ? "ON" : "clear", `daily loss limit ${c.max_daily_loss_pct}%`, c.kill_switch ? "neg" : "")
+      + kpi("Last cycle", c.last_cycle ? dt(c.last_cycle) : "—", c.last_error ? "Error: " + esc(c.last_error) : "no errors") + kpi("Shadow positions", Object.keys(c.positions || {}).length, Object.keys(day).length ? esc(JSON.stringify(day).slice(0, 80)) : "");
+    $("crSymbols").innerHTML = (c.symbols || []).map(s => { const pairs = Object.entries(s).filter(([k, v]) => k !== "symbol" && (v == null || typeof v !== "object"));
+      return `<div class="card"><h2>${esc(s.symbol)}</h2><dl class="kv">${pairs.slice(0, 10).map(([k, v]) => `<dt>${esc(k.replace(/_/g, " "))}</dt><dd>${esc(typeof v === "number" ? +v.toFixed(4) : v)}</dd>`).join("")}</dl></div>`; }).join("") || '<div class="card"><div class="empty">No symbols evaluated yet.</div></div>';
+  }
+  function renderSafety() {
+    const st = D.status, g = st && st.gate && st.gate.ok ? st.gate : null, sm = D.summary, r = sm && sm.risk;
+    if (!g) { $("sfKpis").innerHTML = `<div class="card"><div class="empty">${esc(D.status_err || "Loading…")}</div></div>`; return; }
+    const L = g.ledger || {}, k = g.kill || {};
+    const kill = v => v == null ? "not evaluated" : v ? "ON" : "clear";
+    $("sfKpis").innerHTML = kpi("New entries", g.halt ? "PAUSED" : "allowed", g.halt ? esc((r && r.halt_reason) || "halt file present") : "no halt file", g.halt ? "neg" : "")
+      + kpi("Kill switch (US)", kill(k.us), "crypto: " + kill(k.crypto), k.us ? "neg" : "")
+      + kpi("Live breakers", L.latched ? "LATCHED" : L.initialised ? (L.level || "OK") : "not started", L.last_mark ? "last mark " + esc(L.last_mark) : "run risk_admin.py mark", L.latched ? "neg" : "")
+      + kpi("Market", sm ? (sm.market_open ? "open" : "closed") : "—", "Alpaca clock");
+    const bud = (label, b) => { const f = num(b.spent) && b.cap_day > 0 ? Math.min(1, b.spent / b.cap_day) : 0; const col = f >= 1 ? "--bad" : f >= .7 ? "--warn" : "--good";
+      return `<div style="display:grid;gap:6px;margin-bottom:12px"><div style="display:flex;justify-content:space-between"><b>${esc(label)}</b><span class="mono">${money(b.spent)} of ${money(b.cap_day, 0)} · max ${money(b.cap_order, 0)}/order</span></div><div class="bar"><span style="width:${(100 * f).toFixed(1)}%;background:var(${col})"></span></div></div>`; };
+    $("sfBudgets").innerHTML = bud("Canary (live)", g.live_canary) + bud("US engine (live, not enabled)", g.live_us) + '<div class="note">Paper orders are never capped by these.</div>';
+    const p2 = v => num(v) ? (v * 100).toFixed(2) + "%" : "—";
+    const lim = (r && r.limits) || {};
+    $("sfBreakers").innerHTML = r && r.initialised ? kv([
+      ["Level", pill(r.level || "OK", r.level === "HALT" ? "bad" : r.level === "REDUCE" || r.level === "WARN" ? "warn" : "good")], ["Last mark", `${esc(r.last_mark.date)} · ${money(r.last_mark.equity)} (${r.mark_age_days} d old)`],
+      ["Peak", money(r.peak)], ["Daily loss", `${p2(r.daily_loss)} / limit ${p2(lim.daily)}`], ["Weekly loss", `${p2(r.weekly_loss)} / limit ${p2(lim.weekly)}`],
+      ["Monthly loss", `${p2(r.monthly_loss)} / limit ${p2(lim.monthly)}`], ["Drawdown", `${p2(r.drawdown)} / halt ${p2(lim.dd_halt)}`], ["Latched", r.latched ? pill("yes", "bad") : "no"]])
+      : `<div class="empty">${sm ? "The live ledger has not been started. On the server: risk_admin.py mark." : esc(D.summary_err || "Loading…")}</div>`;
+    $("pauseBtn").disabled = !!g.halt; $("pauseBtn").textContent = g.halt ? "Entries are paused" : (pauseArmed ? "Click again to confirm" : "Pause entries");
+  }
+  let pauseArmed = false, pauseTimer = null;
+  $("pauseBtn").addEventListener("click", async () => {
+    if (!pauseArmed) { pauseArmed = true; $("pauseBtn").classList.add("armed"); renderSafety(); clearTimeout(pauseTimer); pauseTimer = setTimeout(() => { pauseArmed = false; $("pauseBtn").classList.remove("armed"); renderSafety(); }, 5000); return; }
+    pauseArmed = false; $("pauseBtn").classList.remove("armed"); $("pauseMsg").textContent = "Pausing…";
+    try { const r = await fetch("/api/us/pause", { method: "POST", credentials: "same-origin", headers: { "x-aether-csrf": CSRF } });
+      $("pauseMsg").textContent = r.ok ? "Paused. New entries are blocked everywhere. Resume on the server with rm ~/AETHER_HALT." : "Pause failed (HTTP " + r.status + "). Use the server: touch ~/AETHER_HALT";
+    } catch (e) { $("pauseMsg").textContent = "Pause failed: " + e.message + ". Use the server: touch ~/AETHER_HALT"; }
+    refresh(["status", "summary"]);
+  });
+  function renderHealth() {
+    const s = D.status; if (!s) { $("heKpis").innerHTML = `<div class="card"><div class="empty">${esc(D.status_err || "Loading…")}</div></div>`; return; }
+    const sv = D.extras && D.extras.server && D.extras.server.ok ? D.extras.server : (s.server && s.server.ok ? s.server : null);
+    const bk = s.backups && s.backups.ok ? s.backups : null, eng = s.engine || {}, oh = D.overview && D.overview.health;
+    $("heKpis").innerHTML = kpi("Engine uptime", ago(eng.uptime_s), Object.entries(eng.threads || {}).map(([k, v]) => `${k} ${v ? "✓" : "✗"}`).join(" · "))
+      + kpi("Server", sv ? `load ${sv.load1}` : "—", sv ? `${sv.cpus} CPU · memory ${sv.mem_pct}% of ${sv.mem_total_gb} GB · disk ${sv.disk_pct}%` : "")
+      + kpi("Last backup", bk && bk.age_h != null ? bk.age_h + " h ago" : "none", bk ? `${bk.count} kept · ${bk.size_kb || 0} KB · offsite ${esc(bk.offsite_target || "not set")}` : "", bk && bk.age_h != null && bk.age_h <= 26 ? "" : "neg")
+      + kpi("Telegram", oh ? (oh.telegram ? "on" : "off") : "—", oh && num(oh.telegram_dropped) ? `${oh.telegram_dropped} alerts dropped` : "");
+    const jobs = s.units && s.units.ok ? s.units.jobs : {}; const stress = s.stress && s.stress.ok ? s.stress : null;
+    const NAMES = { health: "Health check (1 min)", watchdog: "Watchdog (5 min)", backup: "Backup (03:15 UTC)", daily: "Daily checks (04:30 UTC)", stress: "Stress test (Mon–Fri 16:00 UTC)" };
+    $("heJobs").innerHTML = table([
+      { h: "Job", f: k => esc(NAMES[k] || k) }, { h: "Status", f: k => { const j = jobs[k]; if (!j || !j.timer_loaded) return pill("not installed", "idle"); const bad = !j.timer_active || (j.result && j.result !== "success") || (k === "stress" && stress && stress.rc !== 0); return j.running ? pill("running", "warn") : pill(bad ? "failing" : "ok", bad ? "bad" : "good"); } },
+      { h: "Last run", f: k => jobs[k] && jobs[k].last_run ? `${hm(jobs[k].last_run)} UTC <span class="muted">(${ago(since(jobs[k].last_run))} ago)</span>` : "—" },
+      { h: "Next run", f: k => jobs[k] && jobs[k].next_run ? hm(jobs[k].next_run) + " UTC" : "—" }
+    ], Object.keys(NAMES), "No job data (systemd unavailable).");
+    const d = s.daily && s.daily.ok ? s.daily : null; const by = {}; (d ? d.checks : []).forEach(c => by[c.id] = c);
+    $("heChecksHead").textContent = d && d.utc ? `Daily checks · ${d.utc.slice(0, 10)} ${d.utc.slice(11, 16)} UTC` : "Daily checks · no evidence yet";
+    $("heChecks").innerHTML = ["A1", "A2", "A3", "A4", "A5", "RD1", "RD2", "RD3", "RD4", "RD5"].map(id => { const c = by[id]; return `<button type="button" class="ck ${!c || c.ok == null ? "na" : c.ok ? "ok" : "no"}" data-ck="${id}">${id}</button>`; }).join("");
+    $("heChecks").querySelectorAll("[data-ck]").forEach(b => b.addEventListener("click", () => { const c = by[b.dataset.ck]; $("heCheckDetail").textContent = c ? `${c.id}: ${c.detail}` : `${b.dataset.ck}: not run yet`; }));
+    const fails = Object.values(by).filter(c => c.ok === false); if (!$("heCheckDetail").textContent && fails.length) $("heCheckDetail").textContent = fails.map(c => `${c.id}: ${c.detail}`).join(" · ");
+    const rows = s.activity && s.activity.ok ? s.activity.rows : [];
+    $("heFeed").innerHTML = table([
+      { h: "Time (UTC)", f: r => dt(r.ts) }, { h: "Engine", f: r => esc(r.engine) }, { h: "Event", f: r => esc(r.event) }, { h: "Symbol", f: r => esc(r.symbol || "") },
+      { h: "Mode", f: r => esc(r.mode || "") }, { h: "Decision", f: r => r.decision ? pill(r.decision, r.decision === "block" ? "bad" : r.decision === "allow" ? "good" : "idle") : "" }, { h: "Reason", f: r => `<span class="muted">${esc(r.reason || "")}</span>` }
+    ], rows, "No decisions logged yet.");
+  }
+  function renderAll() {
+    renderStatus();
+    ({ overview: renderOverview, holdings: renderHoldings, us: renderUS, orders: renderOrders, market: renderMarket, crypto: renderCrypto, safety: renderSafety, health: renderHealth, map: () => {} })[view]();
+  }
+
+  // ---------- controls
+  document.querySelectorAll("#histSeg button").forEach(b => b.addEventListener("click", () => { histRange = b.dataset.h; renderOverview(); }));
+  $("menuBtn").addEventListener("click", () => document.body.classList.toggle("menu-open"));
+  document.addEventListener("keydown", e => { if (e.key === "Escape") document.body.classList.remove("menu-open"); });
+  const root = document.documentElement;
+  const isDark = () => root.dataset.theme ? root.dataset.theme === "dark" : !matchMedia("(prefers-color-scheme: light)").matches;
+  try { const t = localStorage.getItem("aether-map-theme"); if (t) root.dataset.theme = t; } catch (e) {}
+  const themeLabel = () => $("themeBtn").textContent = isDark() ? "Switch to light" : "Switch to dark";
+  $("themeBtn").addEventListener("click", () => { root.dataset.theme = isDark() ? "light" : "dark"; try { localStorage.setItem("aether-map-theme", root.dataset.theme); } catch (e) {} themeLabel(); const f = $("mapFrame"); if (f.src) f.contentWindow && f.contentWindow.location.reload(); });
+  themeLabel();
+  $("logoutBtn").addEventListener("click", async () => { try { await fetch("/logout", { method: "POST", credentials: "same-origin" }); } catch (e) {} location.href = "/login"; });
+
+  // ---------- polling: status every 5 s; the open section's data every 30 s
+  show();
+  setInterval(() => { if (!document.hidden) refresh(["status"]); }, 5000);
+  setInterval(() => { if (!document.hidden) { const k = (NEEDS[view] || []).filter(x => x !== "status"); if (k.length) refresh(k); } }, 30000);
+})();
+</script>
+</body>
+</html>
