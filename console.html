@@ -46,8 +46,8 @@ a { color: var(--paper); }
 .pos { color: var(--good); } .neg { color: var(--bad); }
 
 /* shell */
-.shell { display: grid; grid-template-columns: 228px minmax(0, 1fr); min-height: 100%; background: linear-gradient(to right, var(--side) 228px, transparent 228px); }
-nav.side { background: var(--side); border-right: 1px solid var(--line); position: sticky; top: 0; height: 100vh; display: flex; flex-direction: column; padding: max(18px, env(safe-area-inset-top, 0px)) 12px 14px max(12px, env(safe-area-inset-left, 0px)); gap: 14px; overflow-y: auto; }
+.shell { display: grid; grid-template-columns: 228px minmax(0, 1fr); min-height: 100%; background: linear-gradient(to right, var(--side) 227px, var(--line) 227px, var(--line) 228px, transparent 228px); }
+nav.side { background: var(--side); position: sticky; top: 0; height: 100vh; display: flex; flex-direction: column; padding: max(18px, env(safe-area-inset-top, 0px)) 12px 14px max(12px, env(safe-area-inset-left, 0px)); gap: 14px; overflow-y: auto; }
 .brand { display: flex; align-items: baseline; gap: 8px; padding: 0 8px; }
 .brand b { font: 700 22px var(--font-display); letter-spacing: .04em; }
 .brand span { font: 500 11px var(--font-mono); color: var(--muted); }
@@ -114,6 +114,13 @@ svg.chart text { font: 400 10px var(--font-mono); fill: var(--muted); }
 iframe.map { width: 100%; height: calc(100vh - 150px); min-height: 640px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
 .spark { width: 120px; height: 32px; }
 .note { font-size: 12px; color: var(--muted); }
+.today { border-left: 4px solid var(--good); display: grid; gap: 3px; font-size: 13.5px; }
+.today.orange { border-left-color: var(--warn); } .today.red { border-left-color: var(--bad); }
+.today .head { font: 700 16px var(--font-display); }
+.today .act { margin-top: 4px; font-weight: 600; }
+.today.orange .act { color: var(--warn); } .today.red .act { color: var(--bad); }
+.idea { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; display: grid; gap: 4px; background: var(--panel2); }
+.idea .top { display: flex; justify-content: space-between; gap: 8px; align-items: center; }
 
 @media (max-width: 900px) {
   .shell { grid-template-columns: minmax(0, 1fr); background: none; }
@@ -146,6 +153,7 @@ iframe.map { width: 100%; height: calc(100vh - 150px); min-height: 640px; border
 
     <section class="view" id="v-overview">
       <div class="vhead"><div><h1>Overview</h1><p>Your money, today's change and whether everything is healthy, on one screen.</p></div></div>
+      <div class="card today" id="ovToday"><div class="head">Loading…</div></div>
       <div class="errors" id="ovErrors" hidden></div>
       <div class="grid g4" id="ovKpis"></div>
       <div class="grid g2">
@@ -157,12 +165,16 @@ iframe.map { width: 100%; height: calc(100vh - 150px); min-height: 640px; border
         <div class="card"><h2>Safety at a glance</h2><dl class="kv" id="ovSafety"></dl></div>
         <div class="card"><h2>Latest decisions</h2><div id="ovFeed"></div></div>
       </div>
+      <div class="grid g2">
+        <div class="card"><div class="vhead"><h2>Where could I invest next?</h2><div class="seg" id="radarSeg"><button type="button" data-r="buy">Buy ideas</button><button type="button" data-r="sell">Exit candidates</button><button type="button" data-r="watch">Crypto watchlist</button></div></div><div class="grid" id="radar" style="gap:8px"></div><div class="note">From your engine's own targets and signals. Not a guarantee, and nothing here places an order.</div></div>
+        <div class="card"><h2>Your trading track record</h2><div class="grid g3" id="track" style="gap:10px"></div><div class="note" id="trackNote"></div></div>
+      </div>
     </section>
 
     <section class="view" id="v-holdings" hidden>
       <div class="vhead"><div><h1>Holdings &amp; trades</h1><p>What the headline account holds now, and what it has bought and sold.</p></div></div>
-      <div class="grid g4" id="hKpis"></div>
-      <div class="card"><h2>Holdings now</h2><div class="tablewrap" id="hPositions"></div></div>
+      <div class="grid g4" id="hKpis" style="grid-template-columns:repeat(auto-fit,minmax(200px,1fr))"></div>
+      <div class="card"><div class="vhead"><h2>Holdings now</h2><div class="seg" id="engSeg"><button type="button" data-e="all">All</button><button type="button" data-e="US ETFs">US markets</button><button type="button" data-e="crypto">Crypto</button></div></div><div class="tablewrap" id="hPositions"></div></div>
       <div class="grid g2">
         <div class="card"><h2>Closed trades</h2><div class="tablewrap" id="hClosed"></div></div>
         <div class="card"><h2>Recent fills</h2><div class="tablewrap" id="hFills"></div></div>
@@ -296,8 +308,8 @@ iframe.map { width: 100%; height: calc(100vh - 150px); min-height: 640px; border
   // ---------- data
   const D = {}; const age = {};
   const SRC = { status: "/api/map/status", overview: "/api/overview", us: "/api/us", summary: "/api/us/summary", extras: "/api/us/extras", strategy: "/api/strategy", safety: "/api/safety" };
-  const NEEDS = { overview: ["overview", "us", "status"], holdings: ["overview"], us: ["us", "safety", "extras"], orders: ["extras"], market: ["market", "overview"],
-    crypto: ["strategy"], safety: ["status", "summary"], map: [], health: ["status", "extras", "overview"] };
+  const NEEDS = { overview: ["overview", "us", "status", "safety", "strategy"], holdings: ["overview"], us: ["us", "safety", "extras", "overview"], orders: ["extras"], market: ["market", "overview"],
+    crypto: ["strategy"], safety: ["status", "summary", "overview"], map: [], health: ["status", "extras", "overview"] };
   let loggedOut = false;
   async function load(key) {
     let url = SRC[key];
@@ -352,6 +364,44 @@ iframe.map { width: 100%; height: calc(100vh - 150px); min-height: 640px; border
   }
 
   // ---------- views
+  // "Needs your action" box: same rules as the former dashboard's summary (patch_summary_box).
+  function etParts(d) { const f = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false }); const o = {}; f.formatToParts(d).forEach(p => o[p.type] = p.value); return o; }
+  function etDate(d) { const o = etParts(d); return o.year + "-" + o.month + "-" + o.day; }
+  function nextSession(now) { const o = etParts(now); const h = +o.hour % 24, m = +o.minute; const d = new Date(Date.UTC(+o.year, +o.month - 1, +o.day, 12)); const wk = x => x.getUTCDay() === 0 || x.getUTCDay() === 6;
+    if (h > 15 || (h === 15 && m >= 30) || wk(d)) { do { d.setUTCDate(d.getUTCDate() + 1); } while (wk(d)); } return d.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" }); }
+  const usd0 = x => (x < 0 ? "−$" : "$") + Math.abs(x).toLocaleString("en-US", { maximumFractionDigits: 0 });
+  function buildToday(ov, sf, kill, now) {
+    const live = sf.us_live === true, ps = (ov && ov.positions) || [], s = (ov && ov.summary) || {};
+    const us = ps.filter(p => p.engine === "US ETFs"), cr = ps.filter(p => p.engine !== "US ETFs");
+    const usVal = us.reduce((a, p) => a + (p.value || 0), 0), usPl = us.reduce((a, p) => a + (p.upl || 0), 0);
+    const today = etDate(now), month = today.slice(0, 7), next = nextSession(now), pr = sf.proposal, st = pr && (pr.status || "").toUpperCase();
+    let level = "green", action = "nothing", reb;
+    if (sf.last_rebalance_month === month) { const n = new Date(Date.UTC(+month.slice(0, 4), +month.slice(5, 7), 1)); reb = "Rebalanced this month; next one early " + n.toLocaleDateString("en-GB", { month: "long", timeZone: "UTC" }) + "."; }
+    else if (pr && st === "PENDING" && pr.date === today) { level = "orange"; action = "approve proposal " + pr.id + " on Telegram today (/approve_" + pr.id + "); it runs after 15:30 ET"; reb = "Monthly rebalance proposed today, waiting for your approval."; }
+    else if (pr && st === "APPROVED" && pr.date === today) { reb = "Rebalance approved today; it runs after 15:30 ET (~23:30 GST)."; }
+    else { level = "orange"; const stale = pr && pr.date && pr.date < today ? " Proposal " + pr.id + " from " + pr.date + " has expired: do not approve it." : ""; action = "approve the new US rebalance proposal on Telegram on " + next + " after 15:30 ET (~23:30 GST)"; reb = "Monthly rebalance not done yet (last: " + (sf.last_rebalance_month || "never") + ")." + stale; }
+    if (kill === true) { if (level === "green") level = "orange"; action = (action === "nothing" ? "" : action + "; ") + "crypto daily-loss stop is on (clears 04:00 GST)"; }
+    let bk = "unknown"; if (sf.last_backup_utc) { const h = (now - Date.parse(sf.last_backup_utc)) / 3.6e6; bk = (h < 1 ? "under 1" : Math.round(h)) + " h ago" + (h > 26 ? " (LATE)" : ""); if (h > 26) { if (level === "green") level = "orange"; action = (action === "nothing" ? "" : action + "; ") + "check the nightly backup (journalctl -u aether-backup)"; } }
+    if (sf.halt === true) { level = "red"; action = "HALTED: all new entries blocked. Resume on the server with rm ~/AETHER_HALT"; }
+    const head = { green: "🟢", orange: "🟠", red: "🔴" }[level] + " " + (live ? "LIVE money" : "Practice mode") + " · " + (level === "green" ? "All clear" : level === "red" ? "Stopped" : "Needs your action") + (live ? "" : ". No real money at risk.");
+    const lines = [];
+    lines.push("US bot: " + (us.length ? "holds " + us.map(p => p.symbol).join(", ") + " (" + usd0(usVal) + "), " + (usPl >= 0 ? "up " : "down ") + usd0(Math.abs(usPl)) + ". " : "no holdings. ") + reb);
+    lines.push("Crypto bot: " + (cr.length ? "holds " + cr.map(p => p.symbol).join(", ") + "." : "no position, watching BTC, ETH, SOL for a signal."));
+    if (ov && ov.accounts) { const pp = ov.accounts.paper, lv = ov.accounts.live, parts = []; if (pp && pp.configured) parts.push("paper " + usd0(pp.equity || 0)); if (lv && lv.configured) parts.push("live " + (lv.equity ? usd0(lv.equity) : "$0 (not funded yet)")); if (parts.length) lines.push("Accounts: " + parts.join(" · ") + "."); }
+    if (typeof s.total_pl === "number") lines.push("Since start " + usd0(s.total_pl) + " = " + usd0(s.realized || 0) + " closed trades" + (cr.length === 0 && (s.realized || 0) < 0 ? " (old crypto trades)" : "") + " + " + usd0(s.other || 0) + " fees/other + " + usd0(s.unrealized || 0) + " open positions.");
+    lines.push("Last backup: " + bk + " · Live buys today: " + (sf.live_spent_today_usd == null ? "unreadable" : usd0(sf.live_spent_today_usd)) + " of " + usd0(sf.live_budget_usd || 100) + ".");
+    return { level, head, lines, action };
+  }
+  let radarTab = "buy", engFilter = "all";
+  function renderRadar() {
+    const rows = (D.us && D.us.rows) || [], syms = (D.strategy && D.strategy.symbols) || []; let ideas = [];
+    if (radarTab === "buy") ideas = rows.filter(r => (r.target || 0) > 0 && !((r.value || 0) > 0.5 || (r.qty || 0) > 0)).map(r => ({ s: r.symbol, tag: ["Engine selection", "good"], why: "Your engine selected this ETF for its next allocation.", d: Math.round(r.target * 100) + "% target weight · bought only at the next approved rebalance" }));
+    if (radarTab === "sell") ideas = rows.filter(r => ((r.value || 0) > 0.5 || (r.qty || 0) > 0) && !(r.target > 0)).map(r => ({ s: r.symbol, tag: ["Exit candidate", "warn"], why: "This holding is no longer in your engine's target allocation.", d: "Sold at the next approved rebalance. Not necessarily a profit-taking signal." }));
+    if (radarTab === "watch") ideas = syms.map(r => ({ s: r.symbol, tag: ["Watch · " + (r.state || "unknown"), "idle"], why: r.trend === "UP" ? "The engine reports a rising trend; an entry is not confirmed." : "Waiting for the engine's entry conditions.", d: "Exit level " + money(r.stop != null ? r.stop : r.stop_price) + " · target " + money(r.target_price) }));
+    document.querySelectorAll("#radarSeg button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.r === radarTab)));
+    $("radar").innerHTML = ideas.length ? ideas.map(i => `<div class="idea"><div class="top"><b>${esc(i.s)}</b>${pill(i.tag[0], i.tag[1])}</div><span>${esc(i.why)}</span><span class="note">${esc(i.d)}</span></div>`).join("")
+      : `<div class="empty">${radarTab === "watch" ? (D.strategy ? "No watchlist reported." : "Crypto data unavailable.") : !D.us ? "US engine data unavailable." : radarTab === "buy" ? "No new buy candidates: everything the engine targets is already held, or nothing is targeted yet." : "No exit candidates: every holding is still in the engine's targets."}</div>`;
+  }
   let histRange = "week";
   function renderOverview() {
     const o = D.overview, s = (o && o.summary) || {}, acc = (o && o.accounts) || {}, us = D.us;
@@ -362,7 +412,7 @@ iframe.map { width: 100%; height: calc(100vh - 150px); min-height: 640px; border
       kpi("Live account (real money)", live.configured ? money(live.equity) : "—", live.configured ? `${signed(live.today_pl)} today · cash ${money(live.cash)}` : "live keys not configured", "") +
       kpi("Paper account", paper.configured ? money(paper.equity) : "—", paper.configured ? `${signed(paper.today_pl)} today (${pct(paper.today_pl_pct)})` : "—") +
       kpi("US engine sleeve", us && num(us.equity) ? money(us.equity) : "—", us ? `of ${money(us.allocation_usd, 0)} allocation · ${esc(us.mode || "")}` : "—") +
-      kpi("Change since start", signed(s.total_pl), s.start_date ? `${pct(s.total_pl_pct)} since ${dt(s.start_date).slice(0, 10)} · includes deposits` : "headline account", cls(s.total_pl));
+      kpi("Change since start", signed(s.total_pl), s.start_date ? `${pct(s.total_pl_pct)} from ${money(s.start_equity, 0)} on ${dt(s.start_date).slice(0, 10)} · includes deposits` : "headline account", cls(s.total_pl));
     const h = o && o.history ? o.history[histRange] || [] : [];
     $("histChart").innerHTML = line(h.map(p => [p[0], p[1]]), { label: "Account value", fmt: v => "$" + Math.round(v).toLocaleString(), xlab: t => new Date(t * 1000).toISOString().slice(5, histRange === "week" ? 16 : 10).replace("T", " ") });
     document.querySelectorAll("#histSeg button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.h === histRange)));
@@ -388,9 +438,16 @@ iframe.map { width: 100%; height: calc(100vh - 150px); min-height: 640px; border
       ["Live breakers", (g.ledger || {}).latched ? pill("latched", "bad") : (g.ledger || {}).initialised ? pill((g.ledger.level || "ok"), "good") : pill("not started", "warn")],
       ["Canary spent today", `${money(g.live_canary.spent)} of ${money(g.live_canary.cap_day, 0)}`],
       ["Engine live spend today", `${money(g.live_us.spent)} of ${money(g.live_us.cap_day, 0)}`],
-      ["Last backup", st.backups && st.backups.ok && st.backups.age_h != null ? `${st.backups.age_h} h ago` : "—"],
+      ["Last backup", st.backups && st.backups.ok && st.backups.age_h != null ? `${st.backups.age_h} h ago` : D.safety && D.safety.last_backup_utc ? `${Math.round(since(D.safety.last_backup_utc) / 3600)} h ago` : "none found"],
       ["Telegram", o && o.health ? (o.health.telegram ? pill("on", "good") : pill("off", "warn")) : "—"]]) : '<div class="empty">Waiting for the engine…</div>';
     $("ovFeed").innerHTML = feed(5);
+    const sf = D.safety;
+    if (o && sf) { const t = buildToday(o, sf, D.strategy ? D.strategy.kill_switch : undefined, Date.now()); const box = $("ovToday"); box.className = "card today " + t.level;
+      box.innerHTML = `<div class="head">${esc(t.head)}</div>${t.lines.map(l => `<div>${esc(l)}</div>`).join("")}${t.action !== "nothing" ? `<div class="act">Needs your action: ${esc(t.action)}.</div>` : ""}`; }
+    else $("ovToday").innerHTML = `<div class="head">${esc(D.overview_err || D.safety_err ? "Can't build today's summary: " + (D.overview_err || D.safety_err) : "Loading today's summary…")}</div>`;
+    renderRadar();
+    $("track").innerHTML = kpi("Orders with fills", num(s.trade_count) ? s.trade_count : "—", "all time") + kpi("Wins", num(s.wins) ? s.wins : "—", signed(s.winning_gains), "pos") + kpi("Losses", num(s.losses) ? s.losses : "—", signed(s.losing_losses), "neg");
+    $("trackNote").textContent = s.closed_count ? `Win rate ${Math.round(100 * (s.wins || 0) / s.closed_count)}% over ${s.closed_count} closed trades (FIFO estimate, before fees).` : "No closed trades yet.";
   }
   function feed(n) {
     const rows = D.status && D.status.activity && D.status.activity.ok ? D.status.activity.rows.slice(0, n) : [];
@@ -401,13 +458,14 @@ iframe.map { width: 100%; height: calc(100vh - 150px); min-height: 640px; border
     const o = D.overview; if (!o) { $("hPositions").innerHTML = '<div class="empty">Loading…</div>'; return; }
     const s = o.summary || {};
     const wr = s.closed_count ? Math.round(100 * (s.wins || 0) / s.closed_count) : null;
-    $("hKpis").innerHTML = kpi("Invested", money(s.invested), `${s.holdings || 0} holdings`) + kpi("Worth now", money(s.market_value), `unrealised ${signed(s.unrealized)}`, "") +
+    $("hKpis").innerHTML = kpi("Cash ready to invest", money(s.cash), "uninvested cash · excludes margin") + kpi("Invested", money(s.invested), `${s.holdings || 0} holdings`) + kpi("Worth now", money(s.market_value), `unrealised ${signed(s.unrealized)}`, "") +
       kpi("Realised profit", signed(s.realized), `${s.closed_count || 0} closed trades (FIFO estimate)`, cls(s.realized)) + kpi("Win rate", wr == null ? "—" : wr + "%", `${s.wins || 0} wins · ${s.losses || 0} losses`);
     $("hPositions").innerHTML = table([
       { h: "Asset", f: p => `<b>${esc(p.symbol)}</b> <span class="muted">${esc(p.engine)}</span>` }, { h: "Qty", r: 1, f: p => (+p.qty).toLocaleString(undefined, { maximumFractionDigits: 6 }) },
       { h: "Avg cost", r: 1, f: p => money(p.avg_entry) }, { h: "Price", r: 1, f: p => money(p.price) }, { h: "Invested", r: 1, f: p => money(p.cost) },
       { h: "Worth", r: 1, f: p => money(p.value) }, { h: "Gain / loss", r: 1, f: p => `<span class="${cls(p.upl)}">${signed(p.upl)} (${pct(p.upl_pct)})</span>` }, { h: "Today", r: 1, f: p => `<span class="${cls(p.today_pl)}">${signed(p.today_pl)}</span>` }
-    ], o.positions, "No open positions.");
+    ], (o.positions || []).filter(p => engFilter === "all" || (engFilter === "crypto" ? p.engine !== "US ETFs" : p.engine === engFilter)), engFilter === "all" ? "No open positions." : "No open positions in this market.");
+    document.querySelectorAll("#engSeg button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.e === engFilter)));
     $("hClosed").innerHTML = table([
       { h: "Asset", f: c => esc(c.symbol) }, { h: "Qty", r: 1, f: c => (+c.qty).toLocaleString(undefined, { maximumFractionDigits: 6 }) }, { h: "Bought", r: 1, f: c => money(c.buy) },
       { h: "Sold", r: 1, f: c => money(c.sell) }, { h: "Profit", r: 1, f: c => `<span class="${cls(c.pnl)}">${signed(c.pnl)}</span>` }, { h: "Closed", f: c => dt(c.closed).slice(0, 10) }
@@ -433,7 +491,7 @@ iframe.map { width: 100%; height: calc(100vh - 150px); min-height: 640px; border
     $("usRankNote").textContent = "Momentum = the strategy's score; Target = intended weight at the next rebalance.";
     const sf = D.safety || {}; const p = sf.proposal;
     $("usApproval").innerHTML = kv([
-      ["Approval required", "yes (Telegram)"], ["Current proposal", p ? `${esc(p.id)} · ${pill(p.status || "?", p.status === "approved" ? "good" : p.status === "rejected" ? "bad" : "warn")}` : "none"],
+      ["Approval required", "yes (Telegram)"], ["Current proposal", p ? `${esc(p.id)} · ${pill(p.status || "?", /^approved$/i.test(p.status || "") ? "good" : /^(rejected|expired)$/i.test(p.status || "") ? "bad" : "warn")}` : "none"],
       ["Proposal date", p ? esc(p.date) : "—"], ["Orders go out", "after 15:30 New York time, if approved the same day"],
       ["Mode", esc(u.mode || "—")], ["Allocation", money(u.allocation_usd, 0)]]);
     $("usHistory").innerHTML = table([
@@ -489,7 +547,9 @@ iframe.map { width: 100%; height: calc(100vh - 150px); min-height: 640px; border
       + kpi("Market", sm ? (sm.market_open ? "open" : "closed") : "—", "Alpaca clock");
     const bud = (label, b) => { const f = num(b.spent) && b.cap_day > 0 ? Math.min(1, b.spent / b.cap_day) : 0; const col = f >= 1 ? "--bad" : f >= .7 ? "--warn" : "--good";
       return `<div style="display:grid;gap:6px;margin-bottom:12px"><div style="display:flex;justify-content:space-between"><b>${esc(label)}</b><span class="mono">${money(b.spent)} of ${money(b.cap_day, 0)} · max ${money(b.cap_order, 0)}/order</span></div><div class="bar"><span style="width:${(100 * f).toFixed(1)}%;background:var(${col})"></span></div></div>`; };
-    $("sfBudgets").innerHTML = bud("Canary (live)", g.live_canary) + bud("US engine (live, not enabled)", g.live_us) + '<div class="note">Paper orders are never capped by these.</div>';
+    const ceil = D.overview && D.overview.dashboard_safety ? D.overview.dashboard_safety.us_live_max_usd : null;
+    $("sfBudgets").innerHTML = bud("Canary (live)", g.live_canary) + bud("US engine (live, not enabled)", g.live_us)
+      + `<dl class="kv" style="margin-bottom:8px"><dt>US investment ceiling (US_LIVE_MAX_USD)</dt><dd>${ceil == null ? "not set" : money(ceil, 0)}</dd></dl>` + '<div class="note">Paper orders are never capped by these. The ceiling only applies when the US engine is live.</div>';
     const p2 = v => num(v) ? (v * 100).toFixed(2) + "%" : "—";
     const lim = (r && r.limits) || {};
     $("sfBreakers").innerHTML = r && r.initialised ? kv([
@@ -541,6 +601,8 @@ iframe.map { width: 100%; height: calc(100vh - 150px); min-height: 640px; border
 
   // ---------- controls
   document.querySelectorAll("#histSeg button").forEach(b => b.addEventListener("click", () => { histRange = b.dataset.h; renderOverview(); }));
+  document.querySelectorAll("#radarSeg button").forEach(b => b.addEventListener("click", () => { radarTab = b.dataset.r; renderRadar(); }));
+  document.querySelectorAll("#engSeg button").forEach(b => b.addEventListener("click", () => { engFilter = b.dataset.e; renderHoldings(); }));
   $("menuBtn").addEventListener("click", () => document.body.classList.toggle("menu-open"));
   document.addEventListener("keydown", e => { if (e.key === "Escape") document.body.classList.remove("menu-open"); });
   const root = document.documentElement;
