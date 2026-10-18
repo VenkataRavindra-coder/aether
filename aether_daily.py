@@ -268,6 +268,15 @@ def check_rd2(home=HOME):
     return res("RD2", not problems, "; ".join(problems) if problems else f"{newest.name} restores cleanly")
 
 
+def offsite_receipt(home=HOME):
+    """The Mac writes a receipt (via deploy/offsite_gate.sh) after it pulled and verified an archive."""
+    try:
+        name, ts, _where = (pathlib.Path(home) / ".offsite_receipt").read_text().split()[:3]
+        return {"name": name, "age_h": round((time.time() - float(ts)) / 3600, 1)}
+    except Exception:  # noqa: BLE001
+        return None
+
+
 def check_rd3(home=HOME, run=run):
     arcs = list_archives(home)
     if not arcs:
@@ -276,6 +285,9 @@ def check_rd3(home=HOME, run=run):
     rc, out = run(["journalctl", "-u", "aether-backup.service", "--since", f"{MAX_BACKUP_AGE_H} hours ago",
                    "--no-pager"], timeout=60)
     ok = f"uploaded {name} offsite" in out
+    rcpt = offsite_receipt(home)
+    if not ok and rcpt and rcpt["name"] == name and rcpt["age_h"] <= MAX_BACKUP_AGE_H:
+        return res("RD3", True, f"{name} confirmed held in iCloud by the Mac {rcpt['age_h']} h ago")
     return res("RD3", ok, f"upload of {name} confirmed in the backup log" if ok else
                f"no 'uploaded {name} offsite' line in the last {MAX_BACKUP_AGE_H} h (journal rc={rc})")
 
