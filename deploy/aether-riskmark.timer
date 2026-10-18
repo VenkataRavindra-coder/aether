@@ -1,0 +1,12 @@
+[Unit]
+Description=Mark live equity for the safety guard on weekdays at 15:50 New York time
+# safety_guard refuses live entries when the newest mark is older than GUARD_MAX_MARK_AGE_DAYS (4),
+# and the watchdog alerts on it. Without this timer the ledger goes stale 4 days after a manual mark.
+
+[Timer]
+OnCalendar=Mon..Fri *-*-* 15:50:00 America/New_York
+Persistent=true
+RandomizedDelaySec=60
+
+[Install]
+WantedBy=timers.target

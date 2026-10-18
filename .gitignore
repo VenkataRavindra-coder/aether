@@ -9,6 +9,8 @@
 !requirements-dev.txt
 !deploy/aether-backup.service
 !deploy/aether-backup.timer
+!deploy/aether-riskmark.service
+!deploy/aether-riskmark.timer
 !backup.sh
 !backup_alert.py
 !strategy.md
