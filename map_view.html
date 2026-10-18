@@ -53,7 +53,6 @@ header.top { display: flex; flex-wrap: wrap; gap: 10px 20px; align-items: center
 .conn { display: inline-flex; align-items: center; gap: 8px; font: 500 12px var(--font-mono); padding: 6px 10px; border: 1px solid var(--line); border-radius: 999px; background: var(--panel); }
 .conn .led { width: 9px; height: 9px; border-radius: 50%; background: var(--idle); }
 .conn.live .led { background: var(--good); box-shadow: 0 0 0 0 var(--good); animation: ping 2s infinite; }
-.conn.sample .led { background: var(--warn); }
 .conn.err .led { background: var(--bad); }
 @keyframes ping { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--good) 70%, transparent); } 100% { box-shadow: 0 0 0 10px transparent; } }
 .banner { border: 1px solid var(--warn); color: var(--warn); background: color-mix(in srgb, var(--warn) 10%, var(--panel)); border-radius: 8px; padding: 10px 14px; font-size: 13px; }
@@ -158,6 +157,8 @@ circle.p { pointer-events: none; }
 .tog { font: 500 12px var(--font-mono); padding: 5px 10px; border: 1px solid var(--line); background: transparent; border-radius: 4px; cursor: pointer; }
 .tog[aria-pressed="true"] { background: var(--ink); color: var(--panel); border-color: var(--ink); }
 .foot { color: var(--muted); font-size: 12px; }
+body.embed header.top, body.embed .strip, body.embed .clockcard { display: none; }
+body.embed .wrap { padding-block: 10px; }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
 </style>
 </head>
@@ -178,7 +179,7 @@ circle.p { pointer-events: none; }
   <section class="strip" aria-label="Live instruments">
     <div class="inst" id="iEngine"><span class="eyebrow">Engine</span><span class="big" id="engBig">—</span><span class="sub" id="engSub">—</span></div>
     <div class="inst" id="iHb"><span class="eyebrow">Heartbeat</span>
-      <svg class="ecg" viewBox="0 0 200 34" preserveAspectRatio="none" aria-hidden="true"><path id="ecgPath" d="M0 20 H60 L68 20 L74 6 L82 30 L88 14 L94 20 H140 L146 20 L152 8 L160 28 L166 20 H200" style="stroke:var(--good)"/></svg>
+      <svg class="ecg" viewBox="0 0 200 34" preserveAspectRatio="none" aria-hidden="true"><path id="ecgPath" d="M0 20 H60 L68 20 L74 6 L82 30 L88 14 L94 20 H140 L146 20 L152 8 L160 28 L166 20 H200" style="stroke:var(--idle);animation-play-state:paused;stroke-dasharray:none"/></svg>
       <span class="sub" id="hbSub">—</span></div>
     <div class="inst" id="iGate"><span class="eyebrow">Order gate</span><span class="big" id="gateBig">—</span><span class="sub" id="gateSub">—</span></div>
     <div class="inst" id="iBudget"><span class="eyebrow">Live budget today</span>
@@ -227,6 +228,9 @@ circle.p { pointer-events: none; }
 <script>
 (function () {
   "use strict";
+  // Inside the console (/#map) the page loads as /map?embed=1: the console already shows the header,
+  // instruments and clock, so only the map and its side rail are drawn.
+  try { if (new URLSearchParams(location.search).get("embed") === "1") document.body.classList.add("embed"); } catch (e) {}
   const POLL_MS = 5000;
   const FLOWS = [
     { id: "orders", name: "Order path", c: "--f-orders" }, { id: "access", name: "Your access", c: "--f-access" },
@@ -444,7 +448,9 @@ circle.p { pointer-events: none; }
     $("engSub").textContent = `up ${ago(eng.uptime_s)} · ${flags.US_LIVE ? "US LIVE" : "US paper"}${flags.LIVE_TRADING ? " · crypto LIVE flag" : ""}`;
     inst("iEngine", engActive ? "good" : "bad");
     const age = hb ? hb.age_s : null; const hbState = age == null ? "warn" : age < 180 ? "good" : age < 900 ? "warn" : "bad";
-    $("ecgPath").style.stroke = `var(--${hbState})`; $("ecgPath").style.animationDuration = hbState === "good" ? "1.6s" : "4s";
+    // Animate only on a real heartbeat; no reading = flat grey line (never a fake "alive" pulse).
+    const ecg = $("ecgPath"); ecg.style.stroke = `var(--${age == null ? "idle" : hbState})`; ecg.style.animationDuration = hbState === "good" ? "1.6s" : "4s";
+    ecg.style.animationPlayState = age == null ? "paused" : "running"; ecg.style.strokeDasharray = age == null ? "none" : "";
     $("hbSub").textContent = age == null ? "no heartbeat read" : `last beat ${ago(age)} ago`; inst("iHb", hbState);
     if (gate) {
       const latched = gate.ledger && gate.ledger.latched; const usKill = gate.kill && gate.kill.us;
@@ -560,7 +566,7 @@ circle.p { pointer-events: none; }
   }
   function renderJobs(jobs, stress) {
     const el = $("jobs"); el.textContent = "";
-    [["health", "Health check"], ["watchdog", "Watchdog"], ["backup", "Backup"], ["daily", "Daily checks"], ["stress", "Stress test"]].forEach(([k, name]) => {
+    [["health", "Health check"], ["watchdog", "Watchdog"], ["backup", "Backup"], ["daily", "Daily checks"], ["stress", "Stress test"], ["riskmark", "Live risk mark"]].forEach(([k, name]) => {
       const j = jobs && jobs[k]; const row = document.createElement("div"); row.className = "job";
       const st = !j || !j.timer_loaded ? "idle" : !j.timer_active || (j.result && j.result !== "success") || (k === "stress" && stress && stress.rc !== 0) ? "bad" : "good";
       const d = document.createElement("span"); d.className = "dot"; d.style.background = `var(--${st})`;
@@ -592,48 +598,13 @@ circle.p { pointer-events: none; }
       const s = await r.json(); if (mode !== "live") { mode = "live"; banner(null); }
       lastOk = Date.now(); apply(s); setConn("live", "LIVE · updated " + hhmm(s.generated_at) + " UTC");
     } catch (e) {
-      if (mode === "live" && Date.now() - lastOk < 60000) { setConn("err", "connection lost, retrying"); return; }
-      if (mode !== "sample") { mode = "sample"; setConn("sample", "SAMPLE DATA · not connected"); banner("Sample data. This page shows live state only when opened from the server: ops.ratelark.app/map. Every number below is an example."); apply(sample()); sampleLoop(); }
+      // Live data only: no example numbers are ever drawn. Unreachable = say so and keep retrying.
+      setConn("err", mode === "live" ? "connection lost, retrying" : "not connected");
+      if (mode !== "live" || Date.now() - lastOk > 60000) banner("Can't reach the engine (" + (e && e.message ? e.message : "no answer") + "). Nothing is shown until it answers; retrying every 5 seconds.");
     }
   }
   function banner(t) { const b = $("banner"); if (!t) { b.hidden = true; return; } b.textContent = t; b.hidden = false; }
-  poll(); setInterval(() => { if (mode !== "sample") poll(); }, POLL_MS);
-
-  // ---------------- sample data (offline / preview only; clearly labelled)
-  function sample() {
-    const now = Date.now(), iso = ms => new Date(ms).toISOString().slice(0, 19) + "+00:00";
-    const nextAt = (h, m) => { const d = new Date(); d.setUTCHours(h, m, 0, 0); if (d.getTime() < now) d.setUTCDate(d.getUTCDate() + 1); return d.getTime(); };
-    const job = (lastMs, nextMs) => ({ timer_loaded: true, timer_active: true, last_run: iso(lastMs), next_run: iso(nextMs), running: false, result: "success" });
-    return {
-      generated_at: iso(now),
-      engine: { ok: true, uptime_s: 183000, threads: { us: true, crypto: true, monitor: true }, flags: { US_ENABLED: true, US_EXECUTE: true, US_LIVE: false, LIVE_TRADING: false, STRATEGY_ENABLED: true, US_REQUIRE_APPROVAL: true }, us: { last_check: iso(now - 120000), note: "waiting for month end", kill_switch: false }, crypto: { kill_switch: false } },
-      heartbeat: { ok: true, age_s: 22 },
-      gate: { ok: true, halt: false, kill: { us: false, crypto: false }, live_us: { spent: 0, cap_order: 100, cap_day: 100 }, live_canary: { spent: 8, cap_order: 15, cap_day: 30 }, ledger: { initialised: true, last_mark: iso(now).slice(0, 10), level: "OK", latched: false } },
-      units: { ok: true, engine: { active: "active", sub: "running", loaded: true }, tunnel: { loaded: true, active: "active", sub: "running" },
-        jobs: { health: job(now - 30000, now + 30000), watchdog: job(now - 140000, now + 160000), backup: job(nextAt(3, 15) - 864e5, nextAt(3, 15)), daily: job(nextAt(4, 30) - 864e5, nextAt(4, 30)), stress: job(nextAt(16, 0) - 864e5, nextAt(16, 0)) } },
-      accounts: { ok: true, paper: { ok: true, configured: true, equity: 5012.4, cash: 410.2, today_pl: 6.1, today_pl_pct: .12 }, live: { ok: true, configured: true, equity: 100.02, cash: 92.0, today_pl: .02, today_pl_pct: .02 } },
-      backups: { ok: true, age_h: 6.4, count: 14, size_kb: 812 },
-      daily: { ok: true, utc: iso(nextAt(4, 31) - 864e5), checks: ["A1", "A2", "A3", "A4", "A5", "RD1", "RD2", "RD3", "RD4", "RD5"].map(id => ({ id, ok: true, detail: "example" })) },
-      stress: { ok: true, rc: 0, utc: iso(nextAt(16, 5) - 864e5) },
-      activity: { ok: true, rows: sampleRows },
-      research: { ok: true, trials_total: 28, dsr: .41, dsr_gate: .95, pbo_gate: .05 }
-    };
-  }
-  let sampleRows = [], sid = 100;
-  const SAMPLE_EVENTS = [
-    { engine: "us", mode: "paper", symbol: "SPY", event: "risk_check", decision: "allow", reason: "BUY SPY $412.50: ok" },
-    { engine: "canary", mode: "live", symbol: "VTI", event: "risk_check", decision: "allow", reason: "BUY VTI $8: ok" },
-    { engine: "crypto", mode: "paper", symbol: "BTC/USD", event: "risk_check", decision: "block", reason: "BUY BTC/USD $10: kill_switch_not_evaluated" },
-    { engine: "stress", mode: "paper", symbol: "QQQ", event: "risk_check", decision: "allow", reason: "BUY QQQ $50: ok" },
-    { engine: "canary", mode: "live", symbol: "VTI", event: "risk_check", decision: "block", reason: "BUY VTI $20: over_canary_max_order_usd(15)" },
-    { engine: "us", mode: "paper", symbol: "TLT", event: "risk_check", decision: "allow", reason: "SELL TLT $210.00: closing_always_allowed" }
-  ];
-  for (let i = 0; i < 6; i++) sampleRows.unshift({ id: sid++, ts: new Date(Date.now() - (6 - i) * 60000).toISOString(), ...SAMPLE_EVENTS[i % SAMPLE_EVENTS.length] });
-  let sampleTimer = null;
-  function sampleLoop() {
-    if (sampleTimer) return; let k = 0;
-    sampleTimer = setInterval(() => { sampleRows.unshift({ id: sid++, ts: new Date().toISOString(), ...SAMPLE_EVENTS[k++ % SAMPLE_EVENTS.length] }); sampleRows = sampleRows.slice(0, 15); apply(sample()); }, 3500);
-  }
+  poll(); setInterval(poll, POLL_MS);
 
   // ---------------- daily clock
   const clk = $("clock"); const X0 = 40, X1 = 960, hx = h => X0 + (X1 - X0) * h / 24;
@@ -648,7 +619,7 @@ circle.p { pointer-events: none; }
     for (let h = 0; h <= 24; h++) { mk("line", { x1: hx(h), x2: hx(h), y1: 86, y2: h % 3 ? 90 : 96, style: "stroke:var(--line)" }, clk);
       if (h % 3 === 0 && h < 24) { mk("text", { x: hx(h), y: 112, "text-anchor": "middle", style: "fill:var(--ink);font-size:11px" }, clk).textContent = fmt(h); mk("text", { x: hx(h), y: 128, "text-anchor": "middle", style: "fill:var(--muted);font-size:10px" }, clk).textContent = fmt(h + 4); } }
     mk("text", { x: 0, y: 112, style: "fill:var(--muted);font-size:10px" }, clk).textContent = "UTC"; mk("text", { x: 0, y: 128, style: "fill:var(--muted);font-size:10px" }, clk).textContent = "DXB";
-    [{ h: 3.25, t: "Backup", c: "--f-backups", row: 0 }, { h: 4.5, t: "Daily checks", c: "--f-safety", row: 1 }, { h: 16, t: "Stress (Mon–Fri)", c: "--paper", row: 1 }, { h: orders, t: "US orders (if approved)", c: "--f-orders", row: 0 }].forEach(e => {
+    [{ h: 3.25, t: "Backup", c: "--f-backups", row: 0 }, { h: 4.5, t: "Daily checks", c: "--f-safety", row: 1 }, { h: 16, t: "Stress (Mon–Fri)", c: "--paper", row: 1 }, { h: orders, t: "US orders (if approved)", c: "--f-orders", row: 0 }, { h: orders + 1 / 3, t: "Risk mark (Mon–Fri)", c: "--f-safety", row: 1 }].forEach(e => {
       const x = hx(e.h), y = e.row ? 78 : 58; mk("line", { x1: x, x2: x, y1: y + 4, y2: 90, style: `stroke:var(${e.c});stroke-width:2` }, clk); mk("circle", { cx: x, cy: 90, r: 3.5, style: `fill:var(${e.c})` }, clk);
       const end = x > 700; mk("text", { x: end ? x - 6 : x + 6, y: y + 2, "text-anchor": end ? "end" : "start", style: `fill:var(${e.c});font-size:11px;font-weight:500` }, clk).textContent = `${e.t} ${fmt(e.h)}`; });
     const now = new Date(), nh = now.getUTCHours() + now.getUTCMinutes() / 60;

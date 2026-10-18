@@ -292,6 +292,11 @@ once at import instead of lazily on the first log() call during live trading.
   Until both are set, `cf_access.verify()` always returns `True` (logged once at startup) and
   nothing changes from today's behavior -- this is additive, not a replacement for the Access
   policy itself, so it was safe to ship before those two values were available.
+- **One console (2026-10-18).** `https://ops.ratelark.app/` is the only dashboard: a left menu with
+  Overview, Holdings & trades, US strategy, Orders, Market, Crypto (shadow), Safety, System map and
+  Health & jobs (`console.html`). It replaces `dashboard_v2.html`, `dashboard_classic.html` and the
+  `/us` page; `/us` and `/dashboard/classic` redirect into it, and `/map` is shown inside it. Its only
+  write is "Pause entries" (two clicks, CSRF-checked, creates the halt file); resuming stays SSH-only.
 - **The old `/classic` dashboard (and its `/account`, `/api/stocks`, `/api/history`,
   `/api/portfolio-history`, `/api/snapshot` endpoints) was removed 2026-10-03.** It was the
   pre-rebuild dashboard, superseded by `dashboard_v2.html`, unlinked from any page the dashboard
