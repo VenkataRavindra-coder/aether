@@ -257,6 +257,7 @@ def test_canary_buy_refused_without_quote(env, monkeypatch):
     b = FakeLiveBroker()
     b.acct.multiplier = "1"
     monkeypatch.setattr(canary, "snapshot", lambda c: {"canary_position": None, "canary_open": []})
+    monkeypatch.setattr(canary, "_session_window_problem", lambda c: None)
     mark_ledger()   # every other gate open: only the missing quote can refuse
     assert canary.cmd_buy(make_client(b), SimpleNamespace(usd=8, limit=300)) == 1 and not b.submitted
     monkeypatch.setattr(canary, "_quote", lambda s: {"bid": 299.9, "ask": 300.0, "t": "x"})
