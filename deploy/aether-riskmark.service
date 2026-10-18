@@ -7,6 +7,5 @@ Type=oneshot
 User=ratelark
 WorkingDirectory=/home/ratelark/ratelark
 EnvironmentFile=/home/ratelark/ratelark/.env
-EnvironmentFile=-/home/ratelark/ratelark/.env.live
 ExecStart=/home/ratelark/ratelark/.venv/bin/python3 /home/ratelark/ratelark/risk_mark.py
 TimeoutStartSec=120

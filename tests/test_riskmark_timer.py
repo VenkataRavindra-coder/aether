@@ -8,7 +8,9 @@ def test_riskmark_units_exist_and_point_at_risk_mark():
     svc = (DEPLOY / "aether-riskmark.service").read_text()
     tmr = (DEPLOY / "aether-riskmark.timer").read_text()
     assert "risk_mark.py" in svc and "User=ratelark" in svc
-    assert "EnvironmentFile=-/home/ratelark/ratelark/.env.live" in svc  # live keys live there now
+    # Live keys come from aether_ops.load_env (repo .env.live), not the unit: only aether.service
+    # may name .env.live (audit K1, tests/test_audit_oct17.py).
+    assert ".env.live" not in svc
     assert "Mon..Fri" in tmr and "America/New_York" in tmr and "Persistent=true" in tmr
 
 
