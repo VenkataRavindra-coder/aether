@@ -22,7 +22,7 @@ export class Monitor {
   constructor(ctx, env, deps = {}) {
     this.ctx = ctx; this.env = env;
     this.now = deps.now || (() => Date.now() / 1000);
-    this.fetch = deps.fetch || ((...a) => fetch(...a));
+    this.http = deps.fetch || ((...a) => fetch(...a));
   }
   cfg() {
     const n = (v, d) => (v === undefined || v === "" || Number.isNaN(Number(v)) ? d : Number(v));
@@ -83,7 +83,7 @@ export class Monitor {
   async telegram(text) {
     const { TELEGRAM_BOT_TOKEN: t, TELEGRAM_CHAT_ID: c } = this.env;
     if (!t || !c) return false;
-    const r = await this.fetch(`https://api.telegram.org/bot${t}/sendMessage`, {
+    const r = await this.http(`https://api.telegram.org/bot${t}/sendMessage`, {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ chat_id: c, text: text.slice(0, 3900) }),
     });
     const j = await r.json().catch(() => ({}));
@@ -96,7 +96,7 @@ export class Monitor {
       down_for_s: s.status === "down" && s.down_since ? Math.round(now - s.down_since) : null, grace_s: c.grace, queued_alerts: s.outbox.length };
   }
 
-  async fetchHandler(request) {                    // called by the Worker only after the secret was verified
+  async fetch(request) {                    // called by the Worker only after the secret was verified
     const parts = new URL(request.url).pathname.split("/").filter(Boolean);
     if (parts[0] === "ping") { await this.ping(parts[2] === "fail" ? "fail" : ""); return new Response("OK"); }
     if (parts[0] === "status") return new Response(JSON.stringify(this.status(await this.load())), { headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });

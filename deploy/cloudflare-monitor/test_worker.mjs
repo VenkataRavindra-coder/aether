@@ -14,3 +14,11 @@ await m.ping(); tg = false; t += 400; await m.tick();
 assert.equal((await m.load()).outbox.length, 1);                                    // Telegram down: kept, not lost
 tg = true; t += 15; await m.tick(); assert.equal((await m.load()).outbox.length, 0);
 console.log("worker ok");
+// The runtime calls fetch() on the Durable Object: make sure the routes exist under that exact name.
+const get = async (p) => m.fetch(new Request("https://monitor" + p));
+assert.equal(typeof m.fetch, "function");
+assert.equal((await get("/ping")).status, 200);
+const st = await (await get("/status")).json(); assert.equal(st.up, true);
+assert.equal((await get("/tick")).status, 200);
+assert.equal((await get("/other")).status, 404);
+console.log("do fetch ok");
