@@ -47,3 +47,14 @@ def test_rd3_and_status_use_the_receipt(tmp_path, monkeypatch):
     assert not (r2["ok"] if "ok" in r2 else r2["status"] in ("pass", "ok", True))
     (tmp_path / ".offsite_receipt").unlink()
     assert ms._icloud_target(tmp_path, str(arc)) is None
+
+
+def test_list_and_get_are_limited_to_real_archives(tmp_path):
+    (tmp_path / "backups").mkdir()
+    (tmp_path / "backups" / NAME).write_bytes(b"hello")
+    (tmp_path / "backups" / "secret.txt").write_bytes(b"nope")
+    r = run_gate(tmp_path, "list")
+    assert r.returncode == 0 and r.stdout.split() == [NAME, "5"]
+    assert run_gate(tmp_path, f"get {NAME}").stdout == "hello"
+    for cmd in ("get secret.txt", "get ../backups/" + NAME, f"get {NAME} /etc/passwd", "get "):
+        assert run_gate(tmp_path, cmd).returncode == 1, cmd
