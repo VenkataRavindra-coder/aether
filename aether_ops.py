@@ -10,7 +10,18 @@ from safety_guard import home
 
 
 def load_env() -> None:
-    p = home() / ".env"
+    """Loads AETHER_HOME/.env, then AETHER_HOME/.env.live if present. Existing variables win.
+
+    .env.live holds ONLY the live Alpaca keys (APCA_LIVE_API_KEY_ID / APCA_LIVE_API_SECRET_KEY),
+    mode 600, so the six systemd units that load the shared .env (backup, daily, health, stress,
+    watchdog) no longer carry real-money credentials. Scripts that need them -- risk_mark.py,
+    risk_admin.py -- get them through this loader; aether.service loads it as a second
+    EnvironmentFile. Keys still sitting in .env keep working exactly as before."""
+    for name in (".env", ".env.live"):
+        _load_file(home() / name)
+
+
+def _load_file(p) -> None:
     if not p.exists():
         return
     for line in p.read_text().splitlines():

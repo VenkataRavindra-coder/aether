@@ -13,6 +13,7 @@ import json
 import os
 import secrets
 import sqlite3
+import threading
 import time
 import urllib.request
 from datetime import datetime, timezone
@@ -29,6 +30,7 @@ HTML_PATH = Path(__file__).with_name("us_dashboard.html")
 CSRF_TOKEN = secrets.token_urlsafe(32)        # per process, embedded in the served page
 CACHE_TTL = 10
 _cache: dict = {}
+_cache_lock = threading.Lock()
 
 ACCOUNTS = {
     # name: (base url, env var naming the KEY var, default KEY var, same pair for SECRET)
@@ -52,15 +54,19 @@ def alpaca_get(acct: str, path: str):
 
 
 def _cached(key: str, fn):
+    # Requests run in worker threads: the dict is read/written under a lock, but the fetch itself
+    # (network) runs outside it so one slow Alpaca call never blocks other cards.
     now = time.time()
-    hit = _cache.get(key)
+    with _cache_lock:
+        hit = _cache.get(key)
     if hit and now - hit[0] < CACHE_TTL:
         return hit[1]
     try:
         val = fn()
     except Exception as e:  # never 500 the page; the card shows the error
         val = {"error": f"{type(e).__name__}: {e}"}
-    _cache[key] = (now, val)
+    with _cache_lock:
+        _cache[key] = (now, val)
     return val
 
 
@@ -228,7 +234,8 @@ def build_router(auth_dep: Callable) -> APIRouter:
         if not hf.exists():
             stamp = datetime.now(timezone.utc).isoformat(timespec="seconds")
             g.atomic_write(hf, f"paused from dashboard at {stamp}\n")
-        _cache.clear()
+        with _cache_lock:
+            _cache.clear()
         return {"halted": True}
 
     return r

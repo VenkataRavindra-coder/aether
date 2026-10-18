@@ -47,6 +47,7 @@ def _load_env_file(path: Path) -> None:
 
 if __name__ == "__main__":
     _load_env_file(_HERE / ".env")
+    _load_env_file(_HERE / ".env.live")   # live Alpaca keys, if split out of .env (optional)
 
 import risk_controller  # noqa: E402
 import safety_guard  # noqa: E402
@@ -222,7 +223,12 @@ def cmd_buy(c, args) -> int:
         print("refused: margin account with no day-trade room; wait for the 5-session window to roll.")
         return 1
     q = _quote(CANARY_SYMBOL)
-    if q and q["ask"] > 0 and args.limit > q["ask"] * 1.01:
+    if not q or not q["ask"] > 0:
+        # Fail closed: without a quote the price band cannot be checked, so a typo'd limit
+        # (312.40 vs 3124.0) would go straight to the live account.
+        print("refused: no usable quote for the canary symbol, so the 1% price band cannot be checked.")
+        return 1
+    if args.limit > q["ask"] * 1.01:
         print(f"refused: limit {args.limit} is >1% above ask {q['ask']} (price band).")
         return 1
     qty = round(args.usd / args.limit, 6)

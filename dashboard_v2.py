@@ -27,6 +27,7 @@ import notify
 router = APIRouter()
 
 _PAGE = Path(__file__).with_name("dashboard_v2.html")
+_REPO_DIR = Path(__file__).resolve().parent   # engine state file and backup.sh output live here
 _STARTED = time.time()
 _CACHE = {"t": 0.0, "data": None}
 _LOCK = threading.Lock()
@@ -49,7 +50,13 @@ def _flag(name, default="false"):
 
 
 def _is_live():
-    return _flag("LIVE_TRADING")
+    """The headline account follows the only engine that can spend real money: US_LIVE.
+    (LIVE_TRADING is the crypto shadow flag; crypto real money is blocked by the risk controller.)"""
+    return _flag("US_LIVE")
+
+
+def _headline_mode():
+    return "live" if _is_live() else "paper"
 
 
 def _base_url():
@@ -97,10 +104,10 @@ DATA_URL = "https://data.alpaca.markets"
 
 
 def _get(path, params=None, base=None):
-    key = _env("APCA_API_KEY_ID", "ALPACA_API_KEY", "ALPACA_KEY_ID")
-    sec = _env("APCA_API_SECRET_KEY", "ALPACA_SECRET_KEY", "ALPACA_API_SECRET")
+    # Keys always match the account the base URL points at (live keys for the live API).
+    key, sec = _creds(_headline_mode())
     if not key or not sec:
-        raise RuntimeError("Alpaca API keys are not in the environment")
+        raise RuntimeError(f"Alpaca {_headline_mode()} API keys are not in the environment")
     url = (base or _base_url()) + path
     if params:
         url += "?" + urllib.parse.urlencode(params)
@@ -274,7 +281,7 @@ def _build():
             "live": safe("Live account", lambda: _account_summary("live"), {"configured": False}),
         },
         "engines": {
-            "crypto": {"enabled": _flag("STRATEGY_ENABLED"), "live": _is_live()},
+            "crypto": {"enabled": _flag("STRATEGY_ENABLED"), "live": _flag("LIVE_TRADING")},
             "us": {"enabled": _flag("US_ENABLED"), "execute": _flag("US_EXECUTE")},
         },
         "summary": s,
@@ -285,6 +292,7 @@ def _build():
         "health": {
             "alpaca_ok": acct is not None,
             "telegram": safe("Telegram", notify.enabled, False),
+            "telegram_dropped": safe("Telegram drops", notify.dropped_count, None),
             "vm": safe("VM metrics", notify.vm_metrics, {}),
             "engine_uptime_s": time.time() - _STARTED,
         },
@@ -292,15 +300,41 @@ def _build():
     }
 
 
-@router.get("/api/overview")
-def overview():
-    # Sync on purpose: FastAPI runs it in a worker thread, so slow Alpaca calls never block the server.
+_BUILD_LOCK = threading.Lock()
+
+
+def _fresh_cache():
     with _LOCK:
         if _CACHE["data"] is not None and time.time() - _CACHE["t"] < CACHE_SECONDS:
             return _CACHE["data"]
-        data = _build()
-        _CACHE.update(t=time.time(), data=data)
+    return None
+
+
+@router.get("/api/overview")
+def overview():
+    # Sync on purpose: FastAPI runs it in a worker thread, so slow Alpaca calls never block the server.
+    # _LOCK only guards the cache dict and is never held across network calls. One request at a
+    # time rebuilds (_BUILD_LOCK); while it does, others get the previous result marked stale
+    # instead of queueing behind up to ~50 paged Alpaca calls.
+    data = _fresh_cache()
+    if data is not None:
         return data
+    if not _BUILD_LOCK.acquire(blocking=False):
+        with _LOCK:
+            last = _CACHE["data"]
+        if last is not None:
+            return {**last, "stale": True}
+        _BUILD_LOCK.acquire()   # very first load: nothing to serve yet, wait for the builder
+    try:
+        data = _fresh_cache()  # another request may have finished the rebuild meanwhile
+        if data is not None:
+            return data
+        data = _build()
+        with _LOCK:
+            _CACHE.update(t=time.time(), data=data)
+        return data
+    finally:
+        _BUILD_LOCK.release()
 
 
 # ---------- market data for the ticker strip and the candle "tape" ----------
@@ -390,114 +424,9 @@ def classic_page():
     """Original detailed view; protected by the existing dashboard middleware."""
     return _PAGE.with_name("dashboard_classic.html").read_text()
 
-# Credential setup: protected by the engine's dashboard-session middleware.
-# These routes never change LIVE_TRADING, US_LIVE, or execution/approval flags.
-import hmac
-import re
-import tempfile
-from fastapi import Request
-from fastapi.responses import JSONResponse
-
-_SETTINGS_LOCK = threading.Lock()
-_SETTINGS_LAST_ATTEMPT = 0.0
-_KEY_NAMES = {
-    "paper": ("APCA_API_KEY_ID", "APCA_API_SECRET_KEY"),
-    "live": ("APCA_LIVE_API_KEY_ID", "APCA_LIVE_API_SECRET_KEY"),
-}
-
-
-def _settings_reply(data, status=200):
-    return JSONResponse(data, status_code=status, headers={"Cache-Control": "no-store"})
-
-
-def _write_alpaca_keys(mode, key, secret):
-    """Atomic owner-only dotenv update; preserve all unrelated configuration."""
-    path = _PAGE.with_name(".env")
-    if path.is_symlink():
-        raise RuntimeError("Unsupported configuration file")
-    # Never create a new, partial configuration in the wrong deployment directory.
-    original = path.read_text()
-    names = _KEY_NAMES[mode]
-    replacements = dict(zip(names, (key, secret)))
-    lines, seen = [], set()
-    for line in original.splitlines():
-        match = re.match(r"^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=", line)
-        name = match.group(1) if match else None
-        if name in replacements:
-            if name not in seen:
-                lines.append(name + "=" + replacements[name])
-                seen.add(name)
-        else:
-            lines.append(line)
-    lines.extend(name + "=" + replacements[name] for name in names if name not in seen)
-    fd, tmp = tempfile.mkstemp(prefix=".alpaca-settings-", dir=str(path.parent))
-    try:
-        os.fchmod(fd, 0o600)
-        with os.fdopen(fd, "w") as f:
-            f.write("\n".join(lines) + "\n")
-            f.flush()
-            os.fsync(f.fileno())
-        os.replace(tmp, path)
-    finally:
-        if os.path.exists(tmp):
-            os.unlink(tmp)
-
-
-@router.post("/api/settings/alpaca")
-async def save_alpaca_settings(request: Request):
-    # Same-origin JSON plus password reauthentication defend this secret-writing route.
-    origin = urllib.parse.urlparse(request.headers.get("origin", ""))
-    if origin.scheme != "https" or origin.netloc != request.url.netloc:
-        return _settings_reply({"error": "Open settings from your secure dashboard URL."}, 403)
-    if request.headers.get("content-type", "").split(";")[0].strip() != "application/json":
-        return _settings_reply({"error": "JSON request required."}, 415)
-    raw = bytearray()
-    async for chunk in request.stream():
-        raw.extend(chunk)
-        if len(raw) > 8192:
-            return _settings_reply({"error": "Request too large."}, 413)
-    try:
-        data = json.loads(raw)
-    except (ValueError, UnicodeError):
-        return _settings_reply({"error": "Invalid request."}, 400)
-    if not isinstance(data, dict):
-        return _settings_reply({"error": "Invalid request."}, 400)
-    global _SETTINGS_LAST_ATTEMPT
-    with _SETTINGS_LOCK:
-        if time.monotonic() - _SETTINGS_LAST_ATTEMPT < 5:
-            return _settings_reply({"error": "Please wait five seconds before trying again."}, 429)
-        _SETTINGS_LAST_ATTEMPT = time.monotonic()
-    password, supplied = os.getenv("DASHBOARD_PASSWORD", ""), data.get("password", "")
-    if not password or not isinstance(supplied, str) or not hmac.compare_digest(password.encode(), supplied.encode()):
-        return _settings_reply({"error": "Dashboard password is incorrect."}, 403)
-    mode, key, secret = data.get("mode"), data.get("key"), data.get("secret")
-    if mode not in _KEY_NAMES or not all(isinstance(v, str) and re.fullmatch(r"[A-Za-z0-9_-]{8,256}", v) for v in (key, secret)):
-        return _settings_reply({"error": "Choose an account type and enter both complete Alpaca keys."}, 400)
-    # Network and filesystem work must not block the async FastAPI event loop.
-    from starlette.concurrency import run_in_threadpool
-
-    def verify_and_save():
-        base = "https://paper-api.alpaca.markets" if mode == "paper" else "https://api.alpaca.markets"
-        req = urllib.request.Request(base + "/v2/account", headers={"APCA-API-KEY-ID": key, "APCA-API-SECRET-KEY": secret})
-        try:
-            with urllib.request.urlopen(req, timeout=10) as response:
-                account = json.load(response)
-            if not isinstance(account, dict) or not account.get("id"):
-                return _settings_reply({"error": "Alpaca did not return a valid account. Nothing saved."}, 502)
-        except urllib.error.HTTPError as error:
-            if error.code in (401, 403):
-                return _settings_reply({"error": "Alpaca rejected these keys for the selected account type. Nothing saved."}, 400)
-            return _settings_reply({"error": "Alpaca is unavailable. Nothing saved; try again later."}, 502)
-        except Exception:
-            return _settings_reply({"error": "Could not verify with Alpaca. Nothing saved."}, 502)
-        try:
-            with _SETTINGS_LOCK:
-                _write_alpaca_keys(mode, key, secret)
-        except Exception:
-            return _settings_reply({"error": "Could not save the server configuration."}, 500)
-        return _settings_reply({"ok": True, "restart_required": True, "message": "Keys verified and saved. A service restart is required to load them. Trading modes and approvals were not changed."})
-
-    return await run_in_threadpool(verify_and_save)
+# Alpaca keys are never written from the browser. The former POST /api/settings/alpaca route
+# (password re-entry, then rewrite .env) was removed 2026-10-17: credentials reach the server over
+# SSH only, so a dashboard or Access compromise can never plant or swap live-trading keys.
 
 
 @router.get("/api/safety")
@@ -518,7 +447,8 @@ def safety():
         pass
     except Exception:
         spent = None
-    archives = sorted(glob.glob(str(home / "backups" / "aether-*.tar.gz")))
+    # backup.sh writes to <repo>/backups (its HOME_DIR), not ~/backups.
+    archives = sorted(glob.glob(str(_REPO_DIR / "backups" / "aether-*.tar.gz")))
     last = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(os.path.getmtime(archives[-1]))) if archives else None
     return {"us_live": _flag("US_LIVE"), "halt": halt,
             "live_budget_usd": _f(os.getenv("RISK_MAX_DAILY_BUY_USD_LIVE") or 100),
@@ -531,7 +461,8 @@ def _us_proposal_info():
     import json
     from pathlib import Path
     try:
-        st = json.loads((Path.home() / "aether_state.json").read_text())
+        # Same file the engine writes: aether_engine.STATE_FILE is <repo>/aether_state.json.
+        st = json.loads((_REPO_DIR / "aether_state.json").read_text())
     except Exception:
         return None, None
     u = st.get("us_live" if _flag("US_LIVE") else "us_paper") or {}
