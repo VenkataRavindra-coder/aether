@@ -111,7 +111,6 @@ svg.chart text { font: 400 10px var(--font-mono); fill: var(--muted); }
 .checks { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
 .ck { font: 600 12px var(--font-mono); text-align: center; padding: 8px 0; border-radius: 6px; background: var(--panel2); border: 1px solid var(--line); }
 .ck.ok { border-color: var(--good); color: var(--good); } .ck.no { border-color: var(--bad); color: var(--bad); } .ck.na { color: var(--muted); }
-iframe.map { width: 100%; height: calc(100vh - 150px); min-height: 640px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
 .spark { width: 120px; height: 32px; }
 .note { font-size: 12px; color: var(--muted); }
 .today { border-left: 4px solid var(--good); display: grid; gap: 3px; font-size: 13.5px; }
@@ -131,9 +130,43 @@ iframe.map { width: 100%; height: calc(100vh - 150px); min-height: 640px; border
   .mobilebar button { all: unset; cursor: pointer; padding: 4px; }
   .mobilebar b { font: 700 18px var(--font-display); letter-spacing: .04em; }
   main { padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
-  iframe.map { height: 80vh; min-height: 520px; }
 }
 @media (prefers-reduced-motion: reduce) { *, *::after { animation: none !important; transition: none !important; } }
+
+
+/* architecture view: HTML boxes in zones; SVG lines are drawn between measured boxes, so it adapts to any width */
+#arch { position: relative; }
+#archSvg { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 0; overflow: visible; }
+#archGrid { position: relative; z-index: 1; display: grid; gap: 14px; }
+.ag-main { display: grid; gap: 14px; grid-template-columns: minmax(0, 1fr); }
+@media (min-width: 1280px) { .ag-main { grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 40px; } }
+.zone { display: grid; gap: 12px; align-content: start; padding: 12px; border: 1px solid var(--line); border-radius: 16px; background: color-mix(in srgb, var(--panel) 75%, transparent); }
+.zone > .zt { font: 500 11px var(--font-mono); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.zone > .zt b { color: var(--ink); font-weight: 600; }
+.zone .zn { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+@media (min-width: 1280px) { .ag-main .zone .zn { grid-template-columns: minmax(0, 1fr); } }
+.node { all: unset; box-sizing: border-box; position: relative; cursor: pointer; display: grid; gap: 3px; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--line); background: var(--panel2); border-left: 4px solid var(--idle); transition: filter .2s, border-color .2s, transform .15s; }
+.node:hover { border-color: var(--muted); transform: translateY(-1px); }
+.node:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.node .nn { font-weight: 700; font-size: 13.5px; padding-right: 22px; }
+.node .ns { font-size: 12px; color: var(--muted); }
+.node .nt { font: 500 12px var(--font-mono); display: flex; align-items: center; gap: 6px; color: var(--muted); }
+.node .nt i { width: 8px; height: 8px; border-radius: 50%; background: var(--idle); display: inline-block; flex: none; }
+.node.good { border-left-color: var(--good); } .node.good .nt { color: var(--good); } .node.good .nt i { background: var(--good); }
+.node.warn { border-left-color: var(--warn); } .node.warn .nt { color: var(--warn); } .node.warn .nt i { background: var(--warn); }
+.node.bad { border-left-color: var(--bad); } .node.bad .nt { color: var(--bad); } .node.bad .nt i { background: var(--bad); animation: blink 1.2s infinite; }
+.node.sel { border-color: var(--ink); box-shadow: 0 0 0 1px var(--ink) inset; }
+.node.dim { filter: saturate(.2) brightness(.72); }
+.node .step { position: absolute; top: 8px; right: 8px; width: 20px; height: 20px; border-radius: 50%; background: var(--tc, var(--ink)); color: #101214; font: 700 11px var(--font-mono); display: grid; place-items: center; }
+.ag-rec .zn { grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); }
+#archSvg .ed { fill: none; stroke-linecap: round; }
+#archSvg .ed.on { stroke: var(--tc); stroke-width: 2.4; stroke-dasharray: 7 7; animation: flowdash 1s linear infinite; }
+#archSvg .ed.off { stroke: var(--muted); stroke-width: 1.4; opacity: .55; }
+#archSvg .dot { fill: var(--tc); }
+@keyframes flowdash { to { stroke-dashoffset: -14; } }
+#archStory { font-size: 13.5px; line-height: 1.6; }
+#archStory b { color: var(--tc); }
+#archStory .legend { margin-top: 6px; color: var(--muted); font-size: 12px; }
 
 /* ===== Graphite skin: neutral charcoal, soft depth, one restrained accent. ===== */
 body { background: var(--bg); }
@@ -154,7 +187,6 @@ h2 { font-size: 15px; font-weight: 700; letter-spacing: .01em; }
 .seg { border-radius: 999px; }
 .seg button[aria-pressed="true"] { background: var(--ink); color: var(--bg); }
 tbody tr:hover { background: var(--panel2); }
-iframe.map { border-radius: 16px; }
 </style>
 </head>
 <body>
@@ -244,8 +276,11 @@ iframe.map { border-radius: 16px; }
     </section>
 
     <section class="view" id="v-map" hidden>
-      <div class="vhead"><div><h1>System map</h1><p>Every part of the setup, glowing by live health. Orders animate along their real path.</p></div></div>
-      <iframe class="map" id="mapFrame" title="Live system map" loading="lazy"></iframe>
+      <div class="vhead"><div><h1>System map</h1><p>Everything that is really moving right now, and the fixed paths an order, an alert or a backup takes. A line moves only when the live data shows it carried something in the last 15 minutes. Tap any box for its live details.</p></div></div>
+      <div class="seg" id="archSeg" role="group" aria-label="Path to show"></div>
+      <div class="card" id="archStory" aria-live="polite"></div>
+      <div id="arch"><svg id="archSvg" aria-hidden="true"></svg><div id="archGrid"></div></div>
+      <div class="card" id="archDetail" aria-live="polite"><div class="empty">Tap a box to see its live details.</div></div>
     </section>
 
     <section class="view" id="v-health" hidden>
@@ -330,7 +365,7 @@ iframe.map { border-radius: 16px; }
   const D = {}; const age = {};
   const SRC = { status: "/api/map/status", overview: "/api/overview", us: "/api/us", summary: "/api/us/summary", extras: "/api/us/extras", strategy: "/api/strategy", safety: "/api/safety" };
   const NEEDS = { overview: ["overview", "us", "status", "safety", "strategy"], holdings: ["overview"], us: ["us", "safety", "extras", "overview", "status"], orders: ["extras"], market: ["market", "overview"],
-    crypto: ["strategy"], safety: ["status", "summary", "overview"], map: [], health: ["status", "extras", "overview", "safety"] };
+    crypto: ["strategy"], safety: ["status", "summary", "overview"], map: ["status", "overview"], health: ["status", "extras", "overview", "safety"] };
   let loggedOut = false;
   async function load(key) {
     let url = SRC[key];
@@ -351,7 +386,6 @@ iframe.map { border-radius: 16px; }
     document.querySelectorAll("section.view").forEach(s => s.hidden = s.id !== "v-" + view);
     menu.querySelectorAll("a").forEach(a => { if (a.dataset.v === view) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current"); });
     document.body.classList.remove("menu-open");
-    if (view === "map" && !$("mapFrame").src) $("mapFrame").src = "/map?embed=1";
     const stale = (NEEDS[view] || []).filter(k => !age[k] || Date.now() - age[k] > 15000);
     if (stale.length) refresh(stale); else renderAll();
     window.scrollTo(0, 0);
@@ -626,9 +660,143 @@ iframe.map { border-radius: 16px; }
   }
   const tidy = r => String(r || "").replace(/\s*coid\s+\S+/g, "").replace(/canary-(buy|sell)-[0-9a-f]{12,}/g, "canary-$1");
   function decCls(d) { d = String(d || "").toLowerCase(); return /block|fail|error|reject|not_flat|incomplete|kill/.test(d) ? "bad" : /allow|^ok$|pass|flat|filled|submitted|complete/.test(d) ? "good" : "idle"; }
+
+  // ---------- architecture view (all values come from /api/map/status and /api/overview; no live check = "no live check")
+  let archPath = "live", archSel = null;
+  function archModel() {
+    const s = D.status || {}, u = s.units && s.units.ok ? s.units : null, eng = s.engine || {}, g = s.gate && s.gate.ok ? s.gate : null, hb = s.heartbeat && s.heartbeat.ok ? s.heartbeat : null;
+    const fl = eng.flags || {}, th = eng.threads || {}, acc = s.accounts && s.accounts.ok ? s.accounts : null, jobs = u ? u.jobs : {};
+    const L = g ? (g.ledger || {}) : {}, bk = s.backups && s.backups.ok ? s.backups : null, dl = s.daily && s.daily.ok ? s.daily : null, st = s.stress && s.stress.ok ? s.stress : null;
+    const act = s.activity && s.activity.ok ? s.activity.rows : [], oh = D.overview && D.overview.health;
+    const unitK = x => !x ? ["idle", "no data"] : x.active === "active" ? ["good", "running"] : ["bad", x.active || "down"];
+    const jobK = k => { const j = jobs[k]; if (!j || !j.timer_loaded) return ["idle", "not installed"]; if (j.running) return ["warn", "running"]; const bad = !j.timer_active || (j.result && j.result !== "success") || (k === "stress" && st && st.rc !== 0); return bad ? ["bad", "failing"] : ["good", "ok"]; };
+    const acct = m => { const a = acc && acc[m]; return !a ? ["idle", "no data"] : !a.ok ? ["bad", "unreachable"] : a.configured === false ? ["idle", "not configured"] : ["good", "connected"]; };
+    const jobFacts = k => { const j = jobs[k] || {}; return [["Last run", j.last_run ? dt(j.last_run) + " UTC" : "—"], ["Next run", j.next_run ? dt(j.next_run) + " UTC" : "—"], ["Result", j.result || "—"]]; };
+    const T = [
+      { id: "access", name: "You", sub: "how you reach it", flow: "secure tunnel", nodes: [
+        { id: "browser", name: "Your browser", sub: "this console", path: [], k: ["good", "you are here"], f: [["Sign-in", "Cloudflare Access (only you)"]] },
+        { id: "telegram", name: "Telegram", sub: "alerts and approvals", path: ["orders"], k: oh ? (oh.telegram ? ["good", "configured"] : ["warn", "not configured"]) : ["idle", "no data"], f: [["Alerts dropped since restart", oh && num(oh.telegram_dropped) ? oh.telegram_dropped : "—"], ["Use", "approve or ignore the monthly rebalance"]] },
+        { id: "tv", name: "TradingView alerts", sub: "webhook signals", path: [], k: ["idle", "no live check"], f: [["Receiver", "shadow only, never places orders"]] }
+      ] },
+      { id: "entry", name: "Server entry", sub: "Hetzner, Nuremberg", flow: "signals", nodes: [
+        { id: "tunnel", name: "Cloudflare tunnel", sub: "ops.ratelark.app → :8000", path: [], k: unitK(u && u.tunnel), f: [["Unit", "cloudflared.service"], ["State", u && u.tunnel ? u.tunnel.active + " / " + u.tunnel.sub : "—"]] },
+        { id: "api", name: "Dashboard & API", sub: "this page, read-only data", path: [], k: unitK(u && u.engine), f: [["Unit", u && u.engine ? u.engine.unit : "—"], ["Running since", u && u.engine && u.engine.since ? dt(u.engine.since) + " UTC" : "—"], ["Uptime", ago(eng.uptime_s)]] }
+      ] },
+      { id: "engines", name: "Engines", sub: "decide what to trade", flow: "every order is checked", nodes: [
+        { id: "us", name: "US ETF engine", sub: "monthly momentum", path: ["orders"], k: !eng.ok && !s.engine ? ["idle", "no data"] : !fl.US_ENABLED ? ["idle", "disabled"] : th.us ? ["good", fl.US_LIVE ? "running · LIVE" : "running · paper"] : ["bad", "stopped"], f: [["Enabled", fl.US_ENABLED ? "yes" : "no"], ["Places orders", fl.US_EXECUTE ? "yes" : "no"], ["Needs your approval", fl.US_REQUIRE_APPROVAL ? "yes" : "no"], ["Mode", fl.US_LIVE ? "LIVE" : "paper"]] },
+        { id: "crypto", name: "Crypto engine", sub: "shadow, records only", path: [], k: !fl.STRATEGY_ENABLED ? ["idle", "disabled"] : th.crypto ? ["good", "running · shadow"] : ["bad", "stopped"], f: [["Enabled", fl.STRATEGY_ENABLED ? "yes" : "no"], ["Live trading flag", fl.LIVE_TRADING ? "ON" : "off"]] },
+        { id: "monitor", name: "Monitor loop", sub: "heartbeat every 60 s", path: ["safety"], k: !hb ? ["idle", "no data"] : hb.age_s == null ? ["warn", "no beat"] : hb.age_s < 180 ? ["good", "beat " + ago(hb.age_s) + " ago"] : hb.age_s < 900 ? ["warn", "beat " + ago(hb.age_s) + " ago"] : ["bad", "stale " + ago(hb.age_s)], f: [["Thread", th.monitor ? "running" : "stopped"], ["Last heartbeat", hb && hb.ts ? dt(hb.ts) + " UTC" : "—"]] },
+        { id: "canary", name: "Canary", sub: "tiny live test orders", path: ["orders"], k: !g ? ["idle", "no data"] : ["good", "$" + (g.live_canary.spent || 0) + " of $" + g.live_canary.cap_day + " today"], f: g ? [["Per order cap", "$" + g.live_canary.cap_order], ["Per day cap", "$" + g.live_canary.cap_day], ["Spent today", "$" + (g.live_canary.spent || 0)]] : [] }
+      ] },
+      { id: "gate", name: "Safety gate", sub: "nothing trades without passing", flow: "approved orders only", nodes: [
+        { id: "risk", name: "Risk controller", sub: "caps and kill switches", path: ["orders", "safety"], k: !g ? ["idle", "no data"] : g.kill && (g.kill.us || g.kill.crypto) ? ["bad", "kill switch on"] : ["good", "armed"], f: g ? [["US kill switch", g.kill.us ? "ON" : "off"], ["Crypto kill switch", g.kill.crypto ? "ON" : "off"], ["Live order cap", "$" + g.live_us.cap_order], ["Live per-day cap", "$" + g.live_us.cap_day], ["Live spent today", "$" + (g.live_us.spent || 0)]] : [] },
+        { id: "guard", name: "Safety guard", sub: "breakers and live ledger", path: ["orders", "safety"], k: !g ? ["idle", "no data"] : L.latched ? ["bad", "breaker latched"] : !L.initialised ? ["warn", "not started"] : ["good", "level " + (L.level || "ok")], f: g ? [["Ledger started", L.initialised ? "yes" : "no"], ["Last mark", L.last_mark || "—"], ["Latched", L.latched ? (L.latched_reasons || []).join("; ") || "yes" : "no"]] : [] },
+        { id: "halt", name: "Halt file", sub: "~/AETHER_HALT emergency stop", path: ["orders", "safety"], k: !g ? ["idle", "no data"] : g.halt ? ["bad", "PAUSED"] : ["good", "clear"], f: [["Meaning", g && g.halt ? "all new entries are refused" : "entries allowed"], ["Resume", "rm ~/AETHER_HALT on the server"]] },
+        { id: "exec", name: "Executor", sub: "limit orders only", path: ["orders"], k: !s.engine ? ["idle", "no data"] : fl.US_EXECUTE ? ["good", "enabled"] : ["idle", "off (no orders sent)"], f: [["Order type", "limit"], ["Orders enabled", fl.US_EXECUTE ? "yes" : "no"]] }
+      ] },
+      { id: "brokers", name: "Brokers", sub: "where orders land", flow: "recorded", nodes: [
+        { id: "paper", name: "Alpaca paper", sub: "practice account", path: ["orders"], k: acct("paper"), f: acc && acc.paper && acc.paper.ok ? [["Equity", money(acc.paper.equity)], ["Cash", money(acc.paper.cash)], ["Since last close", money(acc.paper.today_pl)]] : [] },
+        { id: "live", name: "Alpaca live", sub: "real money", path: ["orders"], k: acct("live"), f: acc && acc.live && acc.live.ok ? [["Equity", money(acc.live.equity)], ["Cash", money(acc.live.cash)], ["Since last close", money(acc.live.today_pl)]] : [] }
+      ] },
+      { id: "state", name: "Records & jobs", sub: "evidence and housekeeping", nodes: [
+        { id: "decisions", name: "Decision log", sub: "every decision, with reason", path: ["orders", "data"], k: !s.activity ? ["idle", "no data"] : !s.activity.ok ? ["bad", "unreadable"] : act.length ? ["good", "last " + ago(since(typeof act[0].ts === "number" ? new Date(act[0].ts * 1000).toISOString() : act[0].ts)) + " ago"] : ["idle", "empty"], f: act.slice(0, 3).map(r => [dt(r.ts), `${r.engine} · ${r.event}${r.decision ? " · " + r.decision : ""}`]) },
+        { id: "backups", name: "Backups", sub: "03:15 UTC, offsite copy", path: ["data"], k: !bk ? ["idle", "no data"] : bk.age_h == null ? ["bad", "none found"] : bk.age_h <= 26 ? ["good", bk.age_h + " h ago"] : ["bad", bk.age_h + " h ago"], f: bk ? [["Kept", bk.count], ["Size", (bk.size_kb || 0) + " KB"], ["Offsite", bk.offsite_target || "not set"]] : [] },
+        { id: "daily", name: "Daily checks", sub: "04:30 UTC, 10 tests", path: ["safety", "data"], k: !dl ? ["idle", "no data"] : dl.all_green ? ["good", "all green"] : dl.checks && dl.checks.length ? ["bad", dl.checks.filter(c => c.ok === false).length + " failing"] : ["idle", "no evidence yet"], f: dl && dl.utc ? [["Ran", dt(dl.utc) + " UTC"]].concat((dl.checks || []).filter(c => c.ok === false).map(c => [c.id, c.detail])) : [] },
+        { id: "stress", name: "Stress test", sub: "weekdays 16:00 UTC", path: ["safety"], k: jobK("stress"), f: jobFacts("stress").concat(st ? [["Last exit code", st.rc]] : []) },
+        { id: "riskmark", name: "Live risk mark", sub: "weekdays 15:50 New York", path: ["safety"], k: jobK("riskmark"), f: jobFacts("riskmark") },
+        { id: "health", name: "Health & watchdog", sub: "every 1 and 5 min", path: ["safety"], k: (() => { const a = jobK("health"), b = jobK("watchdog"); return a[0] === "bad" || b[0] === "bad" ? ["bad", "failing"] : a[0] === "idle" || b[0] === "idle" ? ["idle", "not installed"] : ["good", "ok"]; })(), f: jobFacts("health").map(r => ["Health · " + r[0], r[1]]).concat(jobFacts("watchdog").map(r => ["Watchdog · " + r[0], r[1]])) }
+      ] }
+    ];
+    return T;
+  }
+  const ZONES = [
+    ["you", "You", "how you reach it", ["browser", "telegram", "tv"]],
+    ["entry", "Server entry", "Hetzner, Nuremberg", ["tunnel", "api"]],
+    ["engines", "Engines", "decide what to trade", ["us", "crypto", "canary", "monitor"]],
+    ["gate", "Safety gate", "nothing trades without passing", ["risk", "guard", "halt", "exec"]],
+    ["brokers", "Brokers", "where orders land", ["paper", "live"]]
+  ];
+  const REC = ["decisions", "backups", "daily", "stress", "riskmark", "health"];
+  const TRACES = {
+    live: { name: "Live now", c: "#34d98f", steps: [], edges: [], story: "" },
+    orders: { name: "Order path", c: "#ffb830", steps: ["us", "risk", "guard", "exec", "paper"],
+      edges: [["us", "risk"], ["canary", "risk"], ["risk", "guard"], ["guard", "exec"], ["exec", "paper"], ["exec", "live"], ["exec", "decisions"]],
+      story: "<b>1</b> The US engine proposes a trade, or the canary sends a tiny live test. <b>2</b> The Risk controller checks the caps and kill switches. <b>3</b> The Safety guard checks the live breakers. <b>4</b> The Executor sends a limit order. <b>5</b> Alpaca (paper or live) fills it. Every step is written to the Decision log." },
+    access: { name: "Your access", c: "#7fb0ff", steps: ["browser", "tunnel", "api"],
+      edges: [["browser", "tunnel"], ["tunnel", "api"], ["api", "us"], ["api", "risk"]],
+      story: "<b>1</b> You open the console in your browser and sign in with Cloudflare Access. <b>2</b> The Cloudflare tunnel carries the request to the server without opening any port. <b>3</b> The Dashboard and API answer with live data. The only action it can take is pausing new entries." },
+    alerts: { name: "Alerts & approvals", c: "#45c4cc", steps: ["us", "telegram", "browser"],
+      edges: [["us", "telegram"], ["monitor", "telegram"], ["telegram", "us"], ["tv", "tunnel"]],
+      story: "<b>1</b> The US engine sends its monthly rebalance proposal to Telegram. <b>2</b> You approve or ignore it there; nothing is traded without your approval. The monitor also sends health alerts. TradingView webhook signals are recorded in shadow mode only." },
+    safety: { name: "Safety checks", c: "#ff6258", steps: ["halt", "risk", "guard"],
+      edges: [["halt", "risk"], ["guard", "risk"], ["riskmark", "guard"], ["monitor", "guard"], ["stress", "risk"], ["daily", "risk"]],
+      story: "<b>1</b> The halt file is the emergency stop: if it exists, no new entry passes. <b>2</b> The Risk controller enforces the caps. <b>3</b> The Safety guard keeps the live ledger and latches breakers. The risk mark, monitor, stress test and daily checks keep these fresh and prove they work." },
+    data: { name: "Records & backups", c: "#95c66b", steps: ["us", "decisions", "backups"],
+      edges: [["us", "decisions"], ["crypto", "decisions"], ["risk", "decisions"], ["decisions", "backups"], ["daily", "backups"]],
+      story: "<b>1</b> Every engine decision is written to the Decision log. <b>2</b> The nightly backup (03:15 UTC) copies the state, the log and the ledger. <b>3</b> A copy goes offsite. The daily checks verify that all of this happened." }
+  };
+
+  // Real activity only: a line moves when the data says something happened on it recently. Nothing is animated for show.
+  const tsSec = v => v == null ? null : typeof v === "number" ? (v > 1e12 ? v / 1000 : v) : (isNaN(Date.parse(v)) ? null : Date.parse(v) / 1000);
+  function archActivity() {
+    const A = new Map(), why = [], now = Date.now() / 1000, s = D.status || {};
+    const add = (f, t, label) => { const k = f + ">" + t; if (!A.has(k)) A.set(k, label); };
+    const rows = s.activity && s.activity.ok ? s.activity.rows : [];
+    rows.forEach(r => { const t = tsSec(r.ts); if (t == null || now - t > 900) return; const e = String(r.engine || "").toLowerCase(), ev = String(r.event || "").toLowerCase(), dc = String(r.decision || "").toLowerCase(), md = String(r.mode || "").toLowerCase();
+      const lbl = `${r.engine} ${r.event}${r.decision ? " " + r.decision : ""} · ${ago(now - t)} ago`;
+      if (["us", "crypto", "canary"].includes(e)) { add(e, "risk", lbl); add("risk", "decisions", lbl); why.push(lbl + (r.symbol ? " · " + r.symbol : ""));
+        if (ev === "order" || /submitted|filled/.test(dc)) { const live = e === "canary" || md === "live"; add("risk", "guard", lbl); add("guard", "exec", lbl); add("exec", live ? "live" : "paper", lbl); add("exec", "decisions", lbl); } } });
+    const jobs = s.units && s.units.ok ? s.units.jobs : {};
+    [["riskmark", "riskmark", "guard"], ["stress", "stress", "risk"], ["daily", "daily", "risk"], ["backup", "decisions", "backups"]].forEach(([j, f, t]) => { if (jobs[j] && jobs[j].running) { add(f, t, j + " running now"); why.push(j + " job running now"); } });
+    if (D.status && age.status && Date.now() - age.status < 12000) { add("browser", "tunnel", "console refreshing every 5 s"); add("tunnel", "api", "console refreshing every 5 s"); }
+    return { A, why };
+  }
+  function archEdgePath(a, b, o) {
+    const ax = a.left + a.width / 2, bx = b.left + b.width / 2;
+    let x1, y1, x2, y2, h;
+    if (b.left >= a.right - 4 && Math.abs(b.top - a.top) < 900) { x1 = a.right; y1 = a.top + a.height / 2; x2 = b.left; y2 = b.top + b.height / 2; h = true; }
+    else if (b.right <= a.left + 4) { x1 = a.left; y1 = a.top + a.height / 2; x2 = b.right; y2 = b.top + b.height / 2; h = true; }
+    else if (b.top >= a.bottom) { x1 = ax; y1 = a.bottom; x2 = bx; y2 = b.top; h = false; }
+    else { x1 = ax; y1 = a.top; x2 = bx; y2 = b.bottom; h = false; }
+    x1 -= o.x; x2 -= o.x; y1 -= o.y; y2 -= o.y;
+    const d = h ? Math.max(30, Math.abs(x2 - x1) / 2) * Math.sign(x2 - x1 || 1) : Math.max(24, Math.abs(y2 - y1) / 2) * Math.sign(y2 - y1 || 1);
+    return h ? `M${x1},${y1} C${x1 + d},${y1} ${x2 - d},${y2} ${x2},${y2}` : `M${x1},${y1} C${x1},${y1 + d} ${x2},${y2 - d} ${x2},${y2}`;
+  }
+  function drawArchEdges() {
+    const root = $("arch"), svg = $("archSvg"); if (!root || !svg || view !== "map") return;
+    const T = TRACES[archPath], box = root.getBoundingClientRect(), o = { x: box.left, y: box.top }, { A } = archActivity();
+    const edges = archPath === "live" ? [...A.keys()].map(k => k.split(">")) : T.edges;
+    const R = id => { const n = root.querySelector(`.node[data-n="${id}"]`); return n ? n.getBoundingClientRect() : null; };
+    let out = `<defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0L10,5L0,10z" fill="${T.c}"/></marker><marker id="ai" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0L10,5L0,10z" fill="var(--muted)"/></marker></defs>`;
+    const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+    edges.forEach(([f, t], i) => { const a = R(f), b = R(t); if (!a || !b) return; const d = archEdgePath(a, b, o), on = A.has(f + ">" + t);
+      out += `<path class="ed ${on ? "on" : "off"}" id="ae${i}" d="${d}" marker-end="url(#${on ? "ah" : "ai"})"><title>${esc(on ? A.get(f + ">" + t) : "no recent activity")}</title></path>` + (on && !reduce ? `<circle class="dot" r="3.5"><animateMotion dur="2.2s" begin="${(i * .31).toFixed(2)}s" repeatCount="indefinite"><mpath href="#ae${i}"/></animateMotion></circle>` : ""); });
+    svg.setAttribute("viewBox", `0 0 ${box.width} ${box.height}`); svg.style.setProperty("--tc", T.c); svg.innerHTML = out;
+  }
+  function renderArch() {
+    const wrap = $("arch");
+    if (!D.status) { $("archGrid").innerHTML = `<div class="card"><div class="empty">${esc(D.status_err ? "Can't reach the engine (" + D.status_err + "). Nothing is shown until it answers." : "Loading…")}</div></div>`; $("archSvg").innerHTML = ""; return; }
+    const byId = {}; archModel().forEach(t => t.nodes.forEach(n => byId[n.id] = n));
+    const T = TRACES[archPath], onPath = new Set(), LA = archActivity(); (archPath === "live" ? [...LA.A.keys()].map(k => k.split(">")) : T.edges).forEach(e => e.forEach(x => onPath.add(x)));
+    const node = id => { const n = byId[id]; if (!n) return ""; const si = T.steps.indexOf(id);
+      return `<button type="button" class="node ${n.k[0]}${onPath.has(id) ? "" : " dim"}${id === archSel ? " sel" : ""}" data-n="${id}" style="--tc:${T.c}"><span class="nn">${esc(n.name)}</span><span class="ns">${esc(n.sub)}</span><span class="nt"><i></i>${esc(n.k[1])}</span>${si >= 0 ? `<span class="step">${si + 1}</span>` : ""}</button>`; };
+    const zone = (t, cls) => `<div class="zone ${cls || ""}"><div class="zt"><b>${esc(t[1])}</b> · ${esc(t[2])}</div><div class="zn">${t[3].map(node).join("")}</div></div>`;
+    $("archGrid").innerHTML = `<div class="ag-main">${ZONES.map(z => zone(z)).join("")}</div>` + zone(["rec", "Records & jobs", "evidence and housekeeping", REC], "ag-rec");
+    $("archSeg").innerHTML = Object.entries(TRACES).map(([k, v]) => `<button type="button" data-p="${k}" aria-pressed="${k === archPath}">${esc(v.name)}</button>`).join("");
+    $("archSeg").querySelectorAll("button").forEach(b => b.addEventListener("click", () => { archPath = b.dataset.p; renderArch(); }));
+    $("archStory").style.setProperty("--tc", T.c);
+    const L = archActivity();
+    const story = archPath === "live" ? (L.why.length ? `<b>Moving right now</b> (from the live decision log and running jobs): ${L.why.slice(0, 4).map(esc).join(" · ")}${L.why.length > 4 ? ` · and ${L.why.length - 4} more in the last 15 minutes` : ""}` : `<b>Nothing is moving right now.</b> No decision in the last 15 minutes and no job running. The only live traffic is this console refreshing.`) : T.story;
+    $("archStory").innerHTML = `${story}<div class="legend">A moving line means it really carried something in the last 15 minutes; a still grey line means nothing recent (hover a line for the event). Bar on each box: <span class="pos">green</span> healthy · <span style="color:var(--warn)">amber</span> needs a look · <span class="neg">red</span> failing · grey off or no live check.</div>`;
+    wrap.querySelectorAll(".node").forEach(b => b.addEventListener("click", () => { archSel = b.dataset.n; renderArch(); }));
+    const f = archSel && byId[archSel], d = $("archDetail");
+    d.innerHTML = !f ? `<div class="empty">Tap a box to see its live details.</div>` : `<h2>${esc(f.name)} <span class="muted" style="font-weight:400">· ${esc(f.sub)}</span></h2><dl class="kv">` + (f.f.length ? f.f.map(r => `<dt>${esc(r[0])}</dt><dd>${esc(r[1])}</dd>`).join("") : `<dt>Details</dt><dd>no live data</dd>`) + `</dl>`;
+    requestAnimationFrame(drawArchEdges);
+  }
+  if (window.ResizeObserver) new ResizeObserver(() => { if (view === "map") drawArchEdges(); }).observe($("arch"));
   function renderAll() {
     renderStatus();
-    ({ overview: renderOverview, holdings: renderHoldings, us: renderUS, orders: renderOrders, market: renderMarket, crypto: renderCrypto, safety: renderSafety, health: renderHealth, map: () => {} })[view]();
+    ({ overview: renderOverview, holdings: renderHoldings, us: renderUS, orders: renderOrders, market: renderMarket, crypto: renderCrypto, safety: renderSafety, health: renderHealth, map: renderArch })[view]();
   }
 
   // ---------- controls
@@ -641,7 +809,7 @@ iframe.map { border-radius: 16px; }
   const isDark = () => root.dataset.theme ? root.dataset.theme === "dark" : !matchMedia("(prefers-color-scheme: light)").matches;
   try { const t = localStorage.getItem("aether-map-theme"); if (t) root.dataset.theme = t; } catch (e) {}
   const themeLabel = () => $("themeBtn").textContent = isDark() ? "Switch to light" : "Switch to dark";
-  $("themeBtn").addEventListener("click", () => { root.dataset.theme = isDark() ? "light" : "dark"; try { localStorage.setItem("aether-map-theme", root.dataset.theme); } catch (e) {} themeLabel(); const f = $("mapFrame"); if (f.src) f.contentWindow && f.contentWindow.location.reload(); });
+  $("themeBtn").addEventListener("click", () => { root.dataset.theme = isDark() ? "light" : "dark"; try { localStorage.setItem("aether-map-theme", root.dataset.theme); } catch (e) {} themeLabel(); });
   themeLabel();
   $("logoutBtn").addEventListener("click", async () => { try { await fetch("/logout", { method: "POST", credentials: "same-origin" }); } catch (e) {} location.href = "/login"; });
 
