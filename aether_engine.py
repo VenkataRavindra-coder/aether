@@ -1071,7 +1071,7 @@ def handle_command(cmd: str):
 def _ping_healthcheck():
     try:
         import urllib.request
-        urllib.request.urlopen(HEALTHCHECK_PING_URL, timeout=10).read()
+        urllib.request.urlopen(urllib.request.Request(HEALTHCHECK_PING_URL, headers={"User-Agent": "AETHER-ops/1.0 (+https://ops.ratelark.app)"}), timeout=10).read()
     except Exception as e:
         logger.warning(f"Healthcheck ping failed: {type(e).__name__}")
 

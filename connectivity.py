@@ -196,7 +196,8 @@ def p_monitor():
     base, _, rest = url.partition("/ping/")
     secret = rest.split("/")[0].split("?")[0]
     import json as _j
-    with urllib.request.urlopen(f"{base}/status/{secret}", timeout=TIMEOUT) as r:
+    req = urllib.request.Request(f"{base}/status/{secret}", headers={"User-Agent": "AETHER-ops/1.0 (+https://ops.ratelark.app)"})  # Cloudflare 403s the default Python agent
+    with urllib.request.urlopen(req, timeout=TIMEOUT) as r:
         st = _j.loads(r.read())
     age = st.get("last_ping_age_s")
     if age is None:

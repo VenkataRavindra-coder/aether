@@ -161,3 +161,22 @@ def test_probe_in_connectivity_reads_monitor_status(monkeypatch):
         assert cx.p_monitor()[0] == "down"
     finally:
         srv.shutdown()
+
+
+def test_pings_and_probe_send_a_real_user_agent(monkeypatch):
+    """Cloudflare answers 403 to Python's default agent while curl gets 200: every caller must set one."""
+    import urllib.request, aether_ops, connectivity as cx
+    seen = []
+    class R:
+        def read(self): return b'{"up": true, "last_ping_age_s": 1, "grace_s": 240}'
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+    def fake(req, timeout=None):
+        seen.append(req); return R()
+    monkeypatch.setattr(urllib.request, "urlopen", fake)
+    monkeypatch.setenv("HEALTHCHECK_URL", "https://m.example/ping/" + SECRET)
+    aether_ops.ping("https://m.example/ping/" + SECRET)
+    assert cx.p_monitor()[0] == "up"
+    assert len(seen) == 2
+    for req in seen:
+        assert not isinstance(req, str) and req.get_header("User-agent", "").startswith("AETHER")
