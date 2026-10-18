@@ -6,7 +6,7 @@ SERVER=${AETHER_SERVER:-ratelark@2.28.67.174}
 KEY=${AETHER_BACKUP_KEY:-$HOME/.ssh/aether_backup_key}
 DEST=${AETHER_ICLOUD_DIR:-$HOME/Library/Mobile Documents/com~apple~CloudDocs/AETHER-backups}
 LOG=${AETHER_LOG:-$HOME/Library/Logs/aether-icloud-backup.log}
-SSH=(ssh -i "$KEY" -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=20)
+SSH=(ssh -n -i "$KEY" -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=20)
 say() { echo "$(date '+%F %T') $*" >> "$LOG"; }
 
 mkdir -p "$DEST" || { say "FAIL cannot create $DEST (macOS may need Full Disk Access for /bin/bash)"; exit 1; }
