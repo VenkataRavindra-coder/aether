@@ -26,7 +26,7 @@ def test_every_api_the_console_calls_exists():
     paths = _engine_paths()
     missing = {u.rstrip("?") for u in used} - paths - {"/api/market"}
     assert not missing, missing
-    assert "/api/market" in paths and "/map" in paths
+    assert "/api/market" in paths
 
 
 def test_old_pages_redirect_and_files_are_gone():
@@ -51,9 +51,10 @@ def test_only_write_is_pause_and_it_needs_two_clicks():
     assert "/api/settings" not in PAGE
 
 
-def test_map_embed_mode():
-    m = (ROOT / "map_view.html").read_text()
-    assert 'get("embed") === "1"' in m and "/map?embed=1" in PAGE
+def test_system_map_is_native_not_an_iframe():
+    assert "<iframe" not in PAGE and 'id="arch"' in PAGE and "function renderArch" in PAGE
+    for tier in ("Safety gate", "Engines", "Brokers", "Records &amp; jobs"):
+        assert tier.replace("&amp;", "&") in PAGE or tier in PAGE
 
 
 def test_no_example_data_anywhere():
