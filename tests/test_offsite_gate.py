@@ -58,3 +58,34 @@ def test_list_and_get_are_limited_to_real_archives(tmp_path):
     assert run_gate(tmp_path, f"get {NAME}").stdout == "hello"
     for cmd in ("get secret.txt", "get ../backups/" + NAME, f"get {NAME} /etc/passwd", "get "):
         assert run_gate(tmp_path, cmd).returncode == 1, cmd
+
+
+def test_mac_pull_downloads_every_archive_and_receipts_the_newest(tmp_path):
+    """Regression: ssh inside the read loop must not eat the rest of the file list (ssh -n)."""
+    import gzip, textwrap
+    payload = gzip.compress(b"x")
+    names = ["aether-20261013T075659Z.tar.gz", "aether-20261014T031700Z.tar.gz", "aether-20261018T031718Z.tar.gz"]
+    bindir = tmp_path / "bin"; bindir.mkdir()
+    (tmp_path / "payload.gz").write_bytes(payload)
+    listing = "".join(f"{n} {len(payload)}\\n" for n in names)
+    (bindir / "ssh").write_text(textwrap.dedent(f'''\
+        #!/bin/bash
+        n=0; for a in "$@"; do [ "$a" = "-n" ] && n=1; done
+        [ $n = 0 ] && cat >/dev/null
+        last="${{@: -1}}"
+        case "$last" in
+          list) printf '{listing}' ;;
+          get*) cat "{tmp_path}/payload.gz" ;;
+          receipt*) echo "$last" >> "{tmp_path}/receipts" ;;
+        esac
+    '''))
+    (bindir / "stat").write_text('#!/bin/bash\nwc -c < "$3" | tr -d " "\n')     # BSD "stat -f %z FILE" on the Mac
+    for f in bindir.iterdir():
+        f.chmod(0o755)
+    dest = tmp_path / "icloud"
+    env = {**os.environ, "PATH": f"{bindir}:{os.environ['PATH']}", "AETHER_ICLOUD_DIR": str(dest), "AETHER_LOG": str(tmp_path / "log"),
+           "AETHER_BACKUP_KEY": str(tmp_path / "key")}
+    r = subprocess.run(["bash", str(ROOT / "deploy/mac-icloud-backup/pull_backups.sh")], env=env, capture_output=True, text=True)
+    assert r.returncode == 0, (r.stdout, r.stderr, (tmp_path / "log").read_text())
+    assert sorted(p.name for p in dest.glob("aether-*.tar.gz")) == names
+    assert (tmp_path / "receipts").read_text().split() == ["receipt", names[-1]]
