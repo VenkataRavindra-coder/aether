@@ -43,7 +43,7 @@ FIX = {"tunnel": "On the server: sudo systemctl restart cloudflared",
        "engine": "On the server: sudo systemctl restart ratelark",
        "internet": "Check the Hetzner console for the server's network",
        "telegram": "Check TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in .env",
-       "monitor": "Check that deadman.py is running on the other machine and that HEALTHCHECK_URL in .env points to it",
+       "monitor": "Check that the monitor can send to Telegram (re-enter its TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID secrets), then that deadman.py is running on the other machine and that HEALTHCHECK_URL in .env points to it",
        "github": "On the server: cd ~/ratelark; git ls-remote origin main",
        "alpaca_paper": "Check the paper keys in .env and status.alpaca.markets",
        "alpaca_live": "Check the live keys in .env.live and status.alpaca.markets",
@@ -204,6 +204,10 @@ def p_monitor():
         return "degraded", "monitor reachable but has not received a ping yet"
     if not st.get("up"):
         return "down", f"monitor says the server is down ({st.get('status')})"
+    if st.get("queued_alerts", 0) > 0:
+        tg = st.get("telegram") or {}
+        why = tg.get("detail") or "Telegram not reachable from the monitor"
+        return "degraded", f"monitor is up but cannot deliver {st['queued_alerts']} Telegram alert(s): {why}"
     if age > st.get("grace_s", 240) * 0.75:
         return "degraded", f"monitor reachable, but our last ping arrived {age} s ago"
     return "up", f"monitor reachable, last ping seen {age} s ago"

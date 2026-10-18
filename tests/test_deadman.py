@@ -180,3 +180,15 @@ def test_pings_and_probe_send_a_real_user_agent(monkeypatch):
     assert len(seen) == 2
     for req in seen:
         assert not isinstance(req, str) and req.get_header("User-agent", "").startswith("AETHER")
+
+
+def test_probe_flags_undeliverable_alerts(monkeypatch):
+    import urllib.request, connectivity as cx
+    class R:
+        def read(self): return b'{"up": true, "last_ping_age_s": 3, "grace_s": 240, "queued_alerts": 2, "telegram": {"ok": false, "detail": "Unauthorized"}}'
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+    monkeypatch.setattr(urllib.request, "urlopen", lambda req, timeout=None: R())
+    monkeypatch.setenv("HEALTHCHECK_URL", "https://m.example/ping/" + SECRET)
+    state, detail = cx.p_monitor()
+    assert state == "degraded" and "2 Telegram alert" in detail and "Unauthorized" in detail

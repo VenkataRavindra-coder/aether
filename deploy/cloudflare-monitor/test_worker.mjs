@@ -22,3 +22,9 @@ const st = await (await get("/status")).json(); assert.equal(st.up, true);
 assert.equal((await get("/tick")).status, 200);
 assert.equal((await get("/other")).status, 404);
 console.log("do fetch ok");
+// A failed Telegram send must be visible in /status with the reason (no token in it).
+store.clear(); tg = false; t += 1000;
+await m.ping(); await m.ping("fail");
+const bad = await (await m.fetch(new Request("https://monitor/status"))).json();
+assert.equal(bad.telegram.ok, false); assert.ok(bad.queued_alerts >= 1); assert.ok(!JSON.stringify(bad).includes("bot"));
+console.log("tg visible ok");
