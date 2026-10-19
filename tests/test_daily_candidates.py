@@ -260,6 +260,38 @@ def test_verdict_rules():
     assert dc.verdict(mk(I, F, P, P, P)) == "UNSUPPORTED"             # a FAIL is never rescued by INSUFFICIENT
 
 
+def test_unknown_or_missing_status_fails_closed():
+    ok = {f"{i} c": {"result": dc.PASS} for i in (1, 2, 3, 4, 5)}
+    assert dc.verdict(ok) == "WORTH PAPER-TESTING"
+    assert dc.verdict({**ok, "2 c": {"result": "MAYBE"}}) == "INCONCLUSIVE"
+    assert dc.verdict({**ok, "2 c": {"result": None}}) == "INCONCLUSIVE"
+    assert dc.verdict({**ok, "2 c": {}}) == "INCONCLUSIVE"
+    assert dc.verdict({**ok, "F-A x": {"result": "pass"}}) == "INCONCLUSIVE"      # lower case is not PASS
+
+
+def test_open_position_at_the_end_is_not_a_completed_round_trip():
+    h = np.array([[0], [1], [1], [0], [1], [1]], bool)       # one completed run, one still open at the end
+    assert dc.count_runs(h) == 1
+    assert dc.count_runs(np.array([[1], [1], [1]], bool)) == 0
+    assert dc.count_runs(np.array([[1, 0], [0, 1], [1, 1], [0, 0]], bool)) == 3   # sleeves counted separately
+
+
+def test_inventory_is_enforced_in_the_count(tmp_path):
+    f = tmp_path / "inv.md"
+    with pytest.raises(dc.Refused):
+        dc.read_inventory(f)                                  # file missing
+    f.write_text("no number here")
+    with pytest.raises(dc.Refused):
+        dc.read_inventory(f)                                  # line missing
+    f.write_text("# inventory\nN_inventory: 40\n")
+    assert dc.read_inventory(f) == 40
+    db = _db(tmp_path)
+    assert dc.trial_counts(db, {"S-A": .5, "S-B": .4, "S-C": .3})["n_total"] == 31
+    n = dc.trial_counts(db, {"S-A": .5, "S-B": .4, "S-C": .3}, inventory=40)
+    assert n["n_total"] == 43 and n["n_inventory"] == 40       # inventory + the three not yet counted
+    assert dc.trial_counts(db, {}, inventory=10)["n_total"] == 31   # a small inventory never lowers N
+
+
 def test_missing_criterion_five_can_never_be_worth_paper_testing():
     P = dc.PASS
     four = {f"{i} c": {"result": P} for i in (1, 2, 3, 4)}
