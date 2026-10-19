@@ -19,6 +19,7 @@ import datetime
 import hashlib
 import json
 import math
+import re
 import sqlite3
 import statistics
 import subprocess
@@ -36,6 +37,7 @@ DATA_FILE = HERE / "data" / "us_daily_yf.csv.gz"
 RESULTS = HERE / "results"
 TRIAL_DB = HERE.parent / "research.sqlite"
 REPO = HERE.parent.parent
+INVENTORY_FILE = REPO / "docs" / "TRIAL_INVENTORY_daily_v1.md"   # must contain a line "N_inventory: <int>"
 
 TAG = "prereg-daily-v1"
 DATA_SHA256 = "e9524a2a60e1c609af72c991d1be8cc8d42f36d95bcafcf1b1b81dd1971ed9b6"
@@ -55,6 +57,10 @@ FAMILY = {"S-A": [{"sma": s, "confirm": c} for s in (150, 200, 250) for c in (1,
           "S-B": [{"rsi_below": t, "exit_sma": e} for t in (5, 10, 15) for e in (3, 5, 10)],
           "S-C": [{"entry_offset": o, "exit_day": j} for o in (-1, 0, 1) for j in (3, 4, 5)]}
 PASS, FAIL, INSUFFICIENT = "PASS", "FAIL", "INSUFFICIENT"
+# `run` is locked until (1) the execution-price question is settled by a registered amendment (the open is not the
+# 09:45 ET price the rules specify) and (2) the trial inventory has been reviewed by hand. Lifting the lock is a
+# reviewed change to this constant, after the amendment is tagged.
+RUN_LOCKED = True
 
 
 class Refused(Exception):
@@ -341,11 +347,12 @@ def run_bench(opens, closes, which, start=START):
 
 
 def count_runs(holds: np.ndarray) -> int:
-    """Number of ON runs (round trips), summed over sleeves."""
+    """Number of COMPLETED ON runs (round trips), summed over sleeves: the exit was executed inside the sample. A
+    position still open at the last row is not a completed round trip and is not counted."""
     n = 0
     for k in range(holds.shape[1]):
         h = holds[:, k].astype(int)
-        n += int(((np.diff(np.concatenate(([0], h))) == 1)).sum())
+        n += int((np.diff(h) == -1).sum())
     return n
 
 
@@ -412,7 +419,34 @@ def sc_random_day_test(opens, closes, entry_offset, exit_day, start=START, draws
 
 
 # ------------------------------------------------------------------ trial counting (section 7)
-def trial_counts(db, pending_sharpes: dict) -> dict:
+def trial_inventory(db) -> dict:
+    """Everything the count is made of, for a manual check against what was actually attempted."""
+    con = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
+    try:
+        logged = [{"id": r[0], "strategy": r[1], "symbol": r[2], "created_at": r[3], "oos_sharpe": r[4]}
+                  for r in con.execute("SELECT id, strategy, symbol, created_at, oos_sharpe FROM research_trials ORDER BY id")]
+        try:
+            back = [{"family": r[0], "count": r[1], "note": r[2]}
+                    for r in con.execute("SELECT family, count, note FROM untracked_trials ORDER BY id")]
+        except sqlite3.OperationalError:
+            back = []
+    finally:
+        con.close()
+    return {"logged": logged, "backfilled": back}
+
+
+def read_inventory(path=INVENTORY_FILE) -> int:
+    """N_inventory from the committed manual inventory. A missing file or line refuses the run."""
+    p = Path(path)
+    if not p.exists():
+        raise Refused(f"trial inventory {p.name} is missing: commit it before any run")
+    m = re.search(r"^N_inventory:\s*(\d+)\s*$", p.read_text(), re.M)
+    if not m:
+        raise Refused(f"{p.name} has no 'N_inventory: <int>' line")
+    return int(m.group(1))
+
+
+def trial_counts(db, pending_sharpes: dict, inventory=None) -> dict:
     """N = research_trials rows + untracked_trials count + candidates not yet logged, floor 31. The variance is the
     variance of per-period trial Sharpes, as dsr_report.py computes it, including the new candidates."""
     if not Path(db).exists():
@@ -433,8 +467,11 @@ def trial_counts(db, pending_sharpes: dict) -> dict:
     sharpes = [r[1] for r in rows if r[1] is not None] + list(pending.values())
     per = [x / math.sqrt(rg.PERIODS) for x in sharpes]
     var = statistics.variance(per) if len(per) >= 2 else (0.5 / math.sqrt(rg.PERIODS)) ** 2
-    n = max(N_FLOOR, len(rows) + n_back + len(pending))
-    return {"n_total": n, "n_logged": len(rows), "n_backfilled": n_back, "n_pending": len(pending),
+    # N_inventory lists every attempt OTHER than the three candidates (by definition), so the candidates are added
+    # as a constant: logging them moves them from `pending` into `rows` and can never change N.
+    n = max(N_FLOOR, len(rows) + n_back + len(pending),
+            (inventory + len(NAMES)) if inventory is not None else 0)
+    return {"n_total": n, "n_inventory": inventory, "n_logged": len(rows), "n_backfilled": n_back, "n_pending": len(pending),
             "var_per_period": var}
 
 
@@ -447,11 +484,17 @@ def crit(passed, detail, sufficient=True, value=None):
     return {"result": PASS if passed else FAIL, "detail": detail, "value": value}
 
 
+REQUIRED_CRITERIA = ("1", "2", "3", "4", "5")   # criterion 5 (09:45 ET fills) is mandatory, amendment 1
+
+
 def verdict(criteria: dict) -> str:
-    res = [c["result"] for c in criteria.values()]
+    """Fails closed. A FAIL is final. WORTH PAPER-TESTING needs all five criteria present and every result equal to
+    PASS: INSUFFICIENT, an unknown status, a missing result or an absent criterion is never a pass."""
+    res = [c.get("result") for c in criteria.values()]
     if FAIL in res:
         return "UNSUPPORTED"
-    if INSUFFICIENT in res:
+    have = {k.split()[0] for k in criteria}
+    if not set(REQUIRED_CRITERIA) <= have or any(r != PASS for r in res):
         return "INCONCLUSIVE"
     return "WORTH PAPER-TESTING"
 
@@ -517,7 +560,8 @@ def evaluate_candidate(name, opens, closes, n_info, start=START, mc_draws=MC_DRA
             "verdict": verdict(c), "returns": r, "benchmarks": {"P": bp, "SPY": bs, "EW6": be}, **extra}
 
 
-def evaluate_all(opens, closes, db, names=NAMES, start=START, mc_draws=MC_DRAWS, rand_draws=RANDOM_DRAWS):
+def evaluate_all(opens, closes, db, names=NAMES, start=START, mc_draws=MC_DRAWS, rand_draws=RANDOM_DRAWS,
+                 inventory=None):
     """Print N first, then evaluate. N is computed from the database plus the candidates' own Sharpes."""
     quick = {}
     for n in names:
@@ -525,7 +569,7 @@ def evaluate_all(opens, closes, db, names=NAMES, start=START, mc_draws=MC_DRAWS,
                "S-B": lambda: run_sb(opens, closes, **BASE["S-B"], start=start),
                "S-C": lambda: run_sc(opens, closes, **BASE["S-C"], start=start)}[n]()
         quick[n] = perf(run["sim"]["net"])["sharpe"]
-    n_info = trial_counts(db, quick)
+    n_info = trial_counts(db, quick, inventory)
     out = {"n_info": n_info, "candidates": {}}
     for n in names:
         out["candidates"][n] = evaluate_candidate(n, opens, closes, n_info, start, mc_draws, rand_draws)
@@ -582,14 +626,18 @@ def main(argv=None):
     try:
         if a.cmd == "holdout":
             raise Refused("the holdout stays closed: it needs the soak to be complete and a docs/holdout.lock entry")
+        if a.cmd == "run" and RUN_LOCKED:
+            raise Refused("run is locked: the 09:45 ET execution-price amendment and the trial inventory review are "
+                          "pending. Nothing has been run on the real history.")
         commit = registration_commit()
         if a.cmd == "count":
-            print(json.dumps(trial_counts(str(TRIAL_DB), {}), indent=2))
+            print(json.dumps({"counts": trial_counts(str(TRIAL_DB), {}), "inventory": trial_inventory(str(TRIAL_DB))},
+                             indent=2, default=str))
             return 0
         require_clean()
         data_sha = check_data()
         opens, closes = load_data()
-        res = evaluate_all(opens, closes, a.db)
+        res = evaluate_all(opens, closes, a.db, inventory=read_inventory())
         print(render(res))
         RESULTS.mkdir(exist_ok=True)
         stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")

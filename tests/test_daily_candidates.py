@@ -195,6 +195,17 @@ def test_registration_guards(tmp_path):
         dc.registration_commit(repo)                                  # tag not an ancestor of HEAD
 
 
+def test_run_is_locked_until_the_amendment(capsys):
+    assert dc.RUN_LOCKED is True
+    assert dc.main(["run"]) == 2
+    assert "locked" in capsys.readouterr().err
+
+
+def test_inventory_lists_every_logged_and_backfilled_attempt(tmp_path):
+    inv = dc.trial_inventory(_db(tmp_path))
+    assert len(inv["logged"]) == 4 and sum(b["count"] for b in inv["backfilled"]) == 24
+
+
 def test_holdout_is_always_refused(capsys):
     assert dc.main(["holdout"]) == 2
     assert "stays closed" in capsys.readouterr().err
@@ -241,11 +252,67 @@ def test_insufficient_is_not_pass_or_fail():
 
 def test_verdict_rules():
     P, F, I = dc.PASS, dc.FAIL, dc.INSUFFICIENT
-    mk = lambda *r: {str(i): {"result": x} for i, x in enumerate(r)}
+    mk = lambda *r: {f"{i + 1} c": {"result": x} for i, x in enumerate(r)}
     assert dc.verdict(mk(P, P, P, P, P)) == "WORTH PAPER-TESTING"
-    assert dc.verdict(mk(P, I, P, P)) == "INCONCLUSIVE"
-    assert dc.verdict(mk(P, F, P, P)) == "UNSUPPORTED"
-    assert dc.verdict(mk(I, F, P, P)) == "UNSUPPORTED"                 # a FAIL is never rescued by INSUFFICIENT
+    assert dc.verdict(mk(P, I, P, P, P)) == "INCONCLUSIVE"
+    assert dc.verdict(mk(P, P, P, P, I)) == "INCONCLUSIVE"            # criterion 5 insufficient: never a pass
+    assert dc.verdict(mk(P, F, P, P, P)) == "UNSUPPORTED"
+    assert dc.verdict(mk(I, F, P, P, P)) == "UNSUPPORTED"             # a FAIL is never rescued by INSUFFICIENT
+
+
+def test_unknown_or_missing_status_fails_closed():
+    ok = {f"{i} c": {"result": dc.PASS} for i in (1, 2, 3, 4, 5)}
+    assert dc.verdict(ok) == "WORTH PAPER-TESTING"
+    assert dc.verdict({**ok, "2 c": {"result": "MAYBE"}}) == "INCONCLUSIVE"
+    assert dc.verdict({**ok, "2 c": {"result": None}}) == "INCONCLUSIVE"
+    assert dc.verdict({**ok, "2 c": {}}) == "INCONCLUSIVE"
+    assert dc.verdict({**ok, "F-A x": {"result": "pass"}}) == "INCONCLUSIVE"      # lower case is not PASS
+
+
+def test_open_position_at_the_end_is_not_a_completed_round_trip():
+    h = np.array([[0], [1], [1], [0], [1], [1]], bool)       # one completed run, one still open at the end
+    assert dc.count_runs(h) == 1
+    assert dc.count_runs(np.array([[1], [1], [1]], bool)) == 0
+    assert dc.count_runs(np.array([[1, 0], [0, 1], [1, 1], [0, 0]], bool)) == 3   # sleeves counted separately
+
+
+def test_inventory_is_enforced_in_the_count(tmp_path):
+    f = tmp_path / "inv.md"
+    with pytest.raises(dc.Refused):
+        dc.read_inventory(f)                                  # file missing
+    f.write_text("no number here")
+    with pytest.raises(dc.Refused):
+        dc.read_inventory(f)                                  # line missing
+    f.write_text("# inventory\nN_inventory: 40\n")
+    assert dc.read_inventory(f) == 40
+    db = _db(tmp_path)
+    assert dc.trial_counts(db, {"S-A": .5, "S-B": .4, "S-C": .3})["n_total"] == 31
+    n = dc.trial_counts(db, {"S-A": .5, "S-B": .4, "S-C": .3}, inventory=40)
+    assert n["n_total"] == 43 and n["n_inventory"] == 40       # inventory + the three candidates
+    assert dc.trial_counts(db, {}, inventory=10)["n_total"] == 31   # a small inventory never lowers N
+
+
+def test_logging_the_candidates_never_changes_n(tmp_path):
+    """Regression: with N_inventory = 40, N was 43 before the candidates were logged and 40 after."""
+    db = _db(tmp_path)
+    pend = {"S-A": .5, "S-B": .4, "S-C": .3}
+    before = dc.trial_counts(db, pend, inventory=40)["n_total"]
+    for k, n in enumerate(dc.NAMES):
+        trials.log_trial(f"daily_v1_{n}", "X", "bt", {}, "a", "b", "c", {"sharpe": .5},
+                         {"sharpe": .5, "days": 500, "daily_skew": 0.0, "daily_kurtosis": 3.0}, db=db)
+        mid = dc.trial_counts(db, {m: pend[m] for m in dc.NAMES[k + 1:]}, inventory=40)["n_total"]
+        assert mid == before == 43                              # one, two, three candidates logged: unchanged
+    assert dc.trial_counts(db, {}, inventory=40)["n_total"] == 43
+    for inv in (0, 10, 28, 40, 60):                             # same invariant without the inventory term
+        a = dc.trial_counts(db, {}, inventory=inv)["n_total"]
+        assert a == max(31, 4 + 24 + 3, inv + 3)
+
+
+def test_missing_criterion_five_can_never_be_worth_paper_testing():
+    P = dc.PASS
+    four = {f"{i} c": {"result": P} for i in (1, 2, 3, 4)}
+    assert dc.verdict(four) == "INCONCLUSIVE"
+    assert dc.verdict({**four, "F-A falsifier": {"result": P}}) == "INCONCLUSIVE"
 
 
 # ------------------------------------------------------------------ S-C random-day test
