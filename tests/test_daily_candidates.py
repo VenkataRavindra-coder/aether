@@ -292,6 +292,63 @@ def test_inventory_is_enforced_in_the_count(tmp_path):
     assert dc.trial_counts(db, {}, inventory=10)["n_total"] == 31   # a small inventory never lowers N
 
 
+def test_trial_variance_is_never_below_the_registered_history(tmp_path):
+    """Amendment 2: the database that held the old Sharpes is gone; the stage-1 variance is the floor."""
+    empty = str(tmp_path / "e.sqlite")
+    trials._connect(empty).close()
+    assert dc.trial_counts(empty, {})["var_per_period"] == dc.HIST_VAR_PER_PERIOD      # no rows: not the 0.5 default
+    tight = dc.trial_counts(empty, {"S-A": 0.50, "S-B": 0.50, "S-C": 0.50})["var_per_period"]
+    assert tight == dc.HIST_VAR_PER_PERIOD                                              # a tight cluster cannot lower it
+    wide = dc.trial_counts(empty, {"S-A": -1.0, "S-B": 0.5, "S-C": 2.0})["var_per_period"]
+    assert wide > dc.HIST_VAR_PER_PERIOD                                                # a wide spread can raise it
+    assert abs(math.sqrt(dc.HIST_VAR_PER_PERIOD) * math.sqrt(252) - 0.286) < 0.001      # annual SD 0.29, as recorded
+
+
+def test_stored_variance_reproduces_the_recorded_s2_threshold():
+    """Provenance check against the committed stage-1 evidence: V_hist with N=28 gives the recorded luck threshold and
+    DSR; the old 0.5 default does not (it is much harsher)."""
+    import json
+    ev = json.loads((ROOT / "aether-research/us_momentum/results/strategy_truth_yf_20261007_074638.json").read_text())
+    assert ev["trials"]["var_per_period"] == dc.HIST_VAR_PER_PERIOD and ev["trials"]["n_total"] == 28
+    b = ev["baseline"]
+    sr = b["sharpe"] / math.sqrt(252)
+    sr0 = dc.rg.expected_max_sr(28, dc.HIST_VAR_PER_PERIOD)
+    assert sr0 * math.sqrt(252) == pytest.approx(ev["items"]["S2"]["sr0"], abs=1e-6)     # recorded threshold is annualised
+    dsr = dc.rg.prob_sr_above(sr, sr0, b["days"], b["daily_skew"], b["daily_kurtosis"])
+    assert dsr == pytest.approx(ev["items"]["S2"]["dsr"], abs=2e-3)
+    sr0_default = dc.rg.expected_max_sr(28, dc.DEFAULT_VAR_PER_PERIOD)
+    assert dc.rg.prob_sr_above(sr, sr0_default, b["days"], b["daily_skew"], b["daily_kurtosis"]) < 0.3
+
+
+def _full(c1=dc.PASS, others=dc.PASS):
+    d = {f"{i} c": {"result": others} for i in (2, 3, 4, 5)}
+    return {"1 DSR >= 0.95": {"result": c1}, **d, "F x": {"result": others}}
+
+
+def test_sensitivity_flags_a_pass_that_a_stress_scenario_would_fail():
+    crit = _full(dc.PASS)
+    f = dc.sensitivity_flags(crit, {"old": 0.40, "n_doubled": 0.97})
+    assert dc.verdict(crit) == "WORTH PAPER-TESTING"
+    assert f["old"]["sensitive"] and f["old"]["criterion_1"] == dc.FAIL and f["old"]["verdict"] == "UNSUPPORTED"
+    assert f["old"]["criterion_1_changes"] and f["old"]["verdict_changes"]
+    assert not f["n_doubled"]["sensitive"]                      # still passes under the stress scenario
+
+
+def test_sensitivity_flags_a_fail_that_would_pass_and_keeps_insufficient():
+    f = dc.sensitivity_flags(_full(dc.FAIL), {"old": 0.99})
+    assert f["old"]["criterion_1"] == dc.PASS and f["old"]["criterion_1_changes"] and f["old"]["verdict_changes"]
+    g = dc.sensitivity_flags(_full(dc.INSUFFICIENT), {"old": 0.99, "bad": float("nan")})
+    assert g["old"]["criterion_1"] == dc.INSUFFICIENT and not g["old"]["sensitive"]
+    h = dc.sensitivity_flags(_full(dc.PASS), {"nan": float("nan")})
+    assert h["nan"]["criterion_1"] == dc.INSUFFICIENT and h["nan"]["sensitive"]
+
+
+def test_flag_shows_even_while_criterion_5_is_missing():
+    four = {f"{i} c": {"result": dc.PASS} for i in (1, 2, 3, 4)}
+    f = dc.sensitivity_flags(four, {"old": 0.2})
+    assert f["old"]["criterion_1_changes"] and f["old"]["sensitive"]      # criterion 1 flips even though the verdict cannot
+
+
 def test_logging_the_candidates_never_changes_n(tmp_path):
     """Regression: with N_inventory = 40, N was 43 before the candidates were logged and 40 after."""
     db = _db(tmp_path)
@@ -342,6 +399,10 @@ def test_evaluate_all_structure_and_logging(data, tmp_path):
         assert all(v["result"] in (dc.PASS, dc.FAIL, dc.INSUFFICIENT) for v in cand["criteria"].values())
         assert cand["verdict"] in ("WORTH PAPER-TESTING", "UNSUPPORTED", "INCONCLUSIVE")
         assert math.isfinite(cand["metrics"]["sharpe"])
+        sens = cand["dsr_sensitivity"]
+        assert set(sens) == {"old_default_variance_0.5_annual_sd", "n_doubled"}
+        assert cand["criteria"]["1 DSR >= 0.95"]["detail"].count("reported only") == 1    # shown, never gating
+        assert set(cand["sensitivity_flags"]) == set(sens) and isinstance(cand["verdict_sensitive"], bool)
     out1 = dc.log_candidates(res, db, "abc")
     out2 = dc.log_candidates(res, db, "abc")
     assert all(t is not None for _, t, _ in out1) and all(t is None for _, t, _ in out2)   # never logged twice
