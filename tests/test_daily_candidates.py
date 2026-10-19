@@ -288,8 +288,24 @@ def test_inventory_is_enforced_in_the_count(tmp_path):
     db = _db(tmp_path)
     assert dc.trial_counts(db, {"S-A": .5, "S-B": .4, "S-C": .3})["n_total"] == 31
     n = dc.trial_counts(db, {"S-A": .5, "S-B": .4, "S-C": .3}, inventory=40)
-    assert n["n_total"] == 43 and n["n_inventory"] == 40       # inventory + the three not yet counted
+    assert n["n_total"] == 43 and n["n_inventory"] == 40       # inventory + the three candidates
     assert dc.trial_counts(db, {}, inventory=10)["n_total"] == 31   # a small inventory never lowers N
+
+
+def test_logging_the_candidates_never_changes_n(tmp_path):
+    """Regression: with N_inventory = 40, N was 43 before the candidates were logged and 40 after."""
+    db = _db(tmp_path)
+    pend = {"S-A": .5, "S-B": .4, "S-C": .3}
+    before = dc.trial_counts(db, pend, inventory=40)["n_total"]
+    for k, n in enumerate(dc.NAMES):
+        trials.log_trial(f"daily_v1_{n}", "X", "bt", {}, "a", "b", "c", {"sharpe": .5},
+                         {"sharpe": .5, "days": 500, "daily_skew": 0.0, "daily_kurtosis": 3.0}, db=db)
+        mid = dc.trial_counts(db, {m: pend[m] for m in dc.NAMES[k + 1:]}, inventory=40)["n_total"]
+        assert mid == before == 43                              # one, two, three candidates logged: unchanged
+    assert dc.trial_counts(db, {}, inventory=40)["n_total"] == 43
+    for inv in (0, 10, 28, 40, 60):                             # same invariant without the inventory term
+        a = dc.trial_counts(db, {}, inventory=inv)["n_total"]
+        assert a == max(31, 4 + 24 + 3, inv + 3)
 
 
 def test_missing_criterion_five_can_never_be_worth_paper_testing():

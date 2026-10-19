@@ -467,8 +467,10 @@ def trial_counts(db, pending_sharpes: dict, inventory=None) -> dict:
     sharpes = [r[1] for r in rows if r[1] is not None] + list(pending.values())
     per = [x / math.sqrt(rg.PERIODS) for x in sharpes]
     var = statistics.variance(per) if len(per) >= 2 else (0.5 / math.sqrt(rg.PERIODS)) ** 2
+    # N_inventory lists every attempt OTHER than the three candidates (by definition), so the candidates are added
+    # as a constant: logging them moves them from `pending` into `rows` and can never change N.
     n = max(N_FLOOR, len(rows) + n_back + len(pending),
-            (inventory + len(pending)) if inventory is not None else 0)
+            (inventory + len(NAMES)) if inventory is not None else 0)
     return {"n_total": n, "n_inventory": inventory, "n_logged": len(rows), "n_backfilled": n_back, "n_pending": len(pending),
             "var_per_period": var}
 
