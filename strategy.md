@@ -476,6 +476,10 @@ once at import instead of lazily on the first log() call during live trading.
       every candidate; the open-proxy run stays for the long history but can never pass alone. It
       also fixes a separate holdout execution path and a manual trial inventory. The runner's `run`
       stays locked until the five steps in its section 5 are done.
+    - **Amendment 2, 2026-10-19 (before any result):** `docs/PREREG_daily_v1_amendment2.md`, tag
+      `prereg-daily-v1.2`. The server's trial database holds 0 logged trials and one restored row of 28, so the
+      trial-Sharpe variance for the deflated Sharpe is now `max(0.000324276, variance of logged trials incl. the
+      candidates)`: the new trials can raise the bar, never lower it below the stage-1 record.
   - **Incidents on record (no trades resulted from either):**
     - 2026-10-13 18:42 UTC: the `/us` dashboard "Pause new trades" wrote
       `~/ratelark/AETHER_HALT` (old breaker path). The engine read `~/AETHER_HALT` and never saw

@@ -46,6 +46,10 @@ SEED = 20261007
 SLIP, FEE = 5e-4, 0.3e-4                       # 5 bp per side on traded notional; 0.3 bp sell fee
 DSR_MIN, PBO_MAX, DD_LIMIT, RANDOM_P = 0.95, 0.05, 0.27, 0.05
 MIN_ROUND_TRIPS, MIN_DAYS, MIN_MONTHS, MIN_PBO_DAYS, MIN_WINDOWS = 30, 756, 60, 320, 60
+# Per-period variance of the trial Sharpes recorded in the stage-1 evidence (tag evidence-s1-stage1,
+# results/strategy_truth_yf_20261007_074638.json, "trials.var_per_period"; annual SD 0.286). The database that held the
+# individual Sharpes was lost with the Azure VM, so this number is the surviving record. Amendment 2.
+HIST_VAR_PER_PERIOD = 0.0003242764550264549
 N_FLOOR = 31                                    # 28 recorded for S2 + the three candidates
 MC_DRAWS, RANDOM_DRAWS, PBO_BLOCKS, PBO_COMBOS = 10000, 10000, 16, 20000
 SA_UNIVERSE = ["SPY", "QQQ", "IWM", "EFA", "TLT", "GLD"]
@@ -466,7 +470,8 @@ def trial_counts(db, pending_sharpes: dict, inventory=None) -> dict:
     pending = {k: v for k, v in pending_sharpes.items() if f"daily_v1_{k}" not in logged}
     sharpes = [r[1] for r in rows if r[1] is not None] + list(pending.values())
     per = [x / math.sqrt(rg.PERIODS) for x in sharpes]
-    var = statistics.variance(per) if len(per) >= 2 else (0.5 / math.sqrt(rg.PERIODS)) ** 2
+    # Amendment 2: never below the registered history; the logged trials (incl. the candidates) can only raise it.
+    var = max(HIST_VAR_PER_PERIOD, statistics.variance(per)) if len(per) >= 2 else HIST_VAR_PER_PERIOD
     # N_inventory lists every attempt OTHER than the three candidates (by definition), so the candidates are added
     # as a constant: logging them moves them from `pending` into `rows` and can never change N.
     n = max(N_FLOOR, len(rows) + n_back + len(pending),

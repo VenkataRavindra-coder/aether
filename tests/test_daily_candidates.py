@@ -292,6 +292,18 @@ def test_inventory_is_enforced_in_the_count(tmp_path):
     assert dc.trial_counts(db, {}, inventory=10)["n_total"] == 31   # a small inventory never lowers N
 
 
+def test_trial_variance_is_never_below_the_registered_history(tmp_path):
+    """Amendment 2: the database that held the old Sharpes is gone; the stage-1 variance is the floor."""
+    empty = str(tmp_path / "e.sqlite")
+    trials._connect(empty).close()
+    assert dc.trial_counts(empty, {})["var_per_period"] == dc.HIST_VAR_PER_PERIOD      # no rows: not the 0.5 default
+    tight = dc.trial_counts(empty, {"S-A": 0.50, "S-B": 0.50, "S-C": 0.50})["var_per_period"]
+    assert tight == dc.HIST_VAR_PER_PERIOD                                              # a tight cluster cannot lower it
+    wide = dc.trial_counts(empty, {"S-A": -1.0, "S-B": 0.5, "S-C": 2.0})["var_per_period"]
+    assert wide > dc.HIST_VAR_PER_PERIOD                                                # a wide spread can raise it
+    assert abs(math.sqrt(dc.HIST_VAR_PER_PERIOD) * math.sqrt(252) - 0.286) < 0.001      # annual SD 0.29, as recorded
+
+
 def test_logging_the_candidates_never_changes_n(tmp_path):
     """Regression: with N_inventory = 40, N was 43 before the candidates were logged and 40 after."""
     db = _db(tmp_path)
