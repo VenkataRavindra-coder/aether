@@ -320,6 +320,35 @@ def test_stored_variance_reproduces_the_recorded_s2_threshold():
     assert dc.rg.prob_sr_above(sr, sr0_default, b["days"], b["daily_skew"], b["daily_kurtosis"]) < 0.3
 
 
+def _full(c1=dc.PASS, others=dc.PASS):
+    d = {f"{i} c": {"result": others} for i in (2, 3, 4, 5)}
+    return {"1 DSR >= 0.95": {"result": c1}, **d, "F x": {"result": others}}
+
+
+def test_sensitivity_flags_a_pass_that_a_stress_scenario_would_fail():
+    crit = _full(dc.PASS)
+    f = dc.sensitivity_flags(crit, {"old": 0.40, "n_doubled": 0.97})
+    assert dc.verdict(crit) == "WORTH PAPER-TESTING"
+    assert f["old"]["sensitive"] and f["old"]["criterion_1"] == dc.FAIL and f["old"]["verdict"] == "UNSUPPORTED"
+    assert f["old"]["criterion_1_changes"] and f["old"]["verdict_changes"]
+    assert not f["n_doubled"]["sensitive"]                      # still passes under the stress scenario
+
+
+def test_sensitivity_flags_a_fail_that_would_pass_and_keeps_insufficient():
+    f = dc.sensitivity_flags(_full(dc.FAIL), {"old": 0.99})
+    assert f["old"]["criterion_1"] == dc.PASS and f["old"]["criterion_1_changes"] and f["old"]["verdict_changes"]
+    g = dc.sensitivity_flags(_full(dc.INSUFFICIENT), {"old": 0.99, "bad": float("nan")})
+    assert g["old"]["criterion_1"] == dc.INSUFFICIENT and not g["old"]["sensitive"]
+    h = dc.sensitivity_flags(_full(dc.PASS), {"nan": float("nan")})
+    assert h["nan"]["criterion_1"] == dc.INSUFFICIENT and h["nan"]["sensitive"]
+
+
+def test_flag_shows_even_while_criterion_5_is_missing():
+    four = {f"{i} c": {"result": dc.PASS} for i in (1, 2, 3, 4)}
+    f = dc.sensitivity_flags(four, {"old": 0.2})
+    assert f["old"]["criterion_1_changes"] and f["old"]["sensitive"]      # criterion 1 flips even though the verdict cannot
+
+
 def test_logging_the_candidates_never_changes_n(tmp_path):
     """Regression: with N_inventory = 40, N was 43 before the candidates were logged and 40 after."""
     db = _db(tmp_path)
@@ -373,6 +402,7 @@ def test_evaluate_all_structure_and_logging(data, tmp_path):
         sens = cand["dsr_sensitivity"]
         assert set(sens) == {"old_default_variance_0.5_annual_sd", "n_doubled"}
         assert cand["criteria"]["1 DSR >= 0.95"]["detail"].count("reported only") == 1    # shown, never gating
+        assert set(cand["sensitivity_flags"]) == set(sens) and isinstance(cand["verdict_sensitive"], bool)
     out1 = dc.log_candidates(res, db, "abc")
     out2 = dc.log_candidates(res, db, "abc")
     assert all(t is not None for _, t, _ in out1) and all(t is None for _, t, _ in out2)   # never logged twice

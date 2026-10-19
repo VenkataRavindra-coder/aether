@@ -505,6 +505,23 @@ def verdict(criteria: dict) -> str:
     return "WORTH PAPER-TESTING"
 
 
+def sensitivity_flags(criteria: dict, sens: dict) -> dict:
+    """For each reported sensitivity, what criterion 1 and the verdict would be if its DSR were used instead of the
+    registered one. Reported only, never gating. `sensitive` is True if criterion 1 or the verdict would change."""
+    base = verdict(criteria)
+    k1 = next(k for k in criteria if k.split()[0] == "1")
+    out = {}
+    for name, dsr in sens.items():
+        alt = {k: dict(v) for k, v in criteria.items()}
+        if alt[k1]["result"] in (PASS, FAIL):                 # an INSUFFICIENT criterion 1 stays INSUFFICIENT
+            alt[k1]["result"] = (INSUFFICIENT if not math.isfinite(dsr) else PASS if dsr >= DSR_MIN else FAIL)
+        v = verdict(alt)
+        c1 = alt[k1]["result"] != criteria[k1]["result"]
+        out[name] = {"dsr": dsr, "criterion_1": alt[k1]["result"], "verdict": v, "criterion_1_changes": c1,
+                     "verdict_changes": v != base, "sensitive": c1 or v != base}
+    return out
+
+
 def evaluate_candidate(name, opens, closes, n_info, start=START, mc_draws=MC_DRAWS, rand_draws=RANDOM_DRAWS):
     runner = {"S-A": lambda p: run_sa(opens, closes, p["sma"], p["confirm"], start),
               "S-B": lambda p: run_sb(opens, closes, p["rsi_below"], p["exit_sma"], start),
@@ -514,13 +531,14 @@ def evaluate_candidate(name, opens, closes, n_info, start=START, mc_draws=MC_DRA
     m, trips = perf(r), base["round_trips"]
     enough_trips = trips >= MIN_ROUND_TRIPS
     d = rg.deflated_sharpe(r.to_numpy(), n_info["n_total"], n_info["var_per_period"])
-    # Reported only, never gating (Amendment 2): how much the DSR depends on the registered variance and on N being complete.
+    # Reported only, never gating (Amendment 2): how much the DSR depends on the registered variance (old default) and
+    # under a stress scenario in which N is doubled. Doubling N is a stress test, not a guarantee that N is complete.
     sens = {"old_default_variance_0.5_annual_sd": rg.deflated_sharpe(r.to_numpy(), n_info["n_total"], DEFAULT_VAR_PER_PERIOD)["dsr"],
             "n_doubled": rg.deflated_sharpe(r.to_numpy(), 2 * n_info["n_total"], n_info["var_per_period"])["dsr"]}
     c = {}
     c["1 DSR >= 0.95"] = crit(d["dsr"] >= DSR_MIN, f"DSR {d['dsr']:.3f} (N={n_info['n_total']}, SR {m['sharpe']:.2f}, "
                               f"luck threshold {d['sr0_annual']:.2f}; reported only: DSR {sens['old_default_variance_0.5_annual_sd']:.3f} "
-                              f"with the old 0.5 default variance, {sens['n_doubled']:.3f} with N doubled); {trips} round trips",
+                              f"with the old 0.5 default variance, {sens['n_doubled']:.3f} in the N-doubled stress scenario); {trips} round trips",
                               len(r) >= MIN_DAYS and enough_trips, float(d["dsr"]))
     fam = pd.DataFrame({i: runner(p)["sim"]["net"] for i, p in enumerate(FAMILY[name])})
     try:
@@ -566,8 +584,10 @@ def evaluate_candidate(name, opens, closes, n_info, start=START, mc_draws=MC_DRA
             t["p"] <= RANDOM_P, f"p {t['p']:.4f} over {t['draws']} draws, {t['n_windows']} windows; real mean excess "
                                 f"{t['real']:.3%}", t["n_windows"] >= MIN_WINDOWS and enough_trips, float(t["p"]))
         extra["random_day"] = t
+    flags = sensitivity_flags(c, sens)
     return {"name": name, "params": BASE[name], "metrics": m, "round_trips": trips, "criteria": c,
-            "verdict": verdict(c), "dsr_sensitivity": sens, "returns": r, "benchmarks": {"P": bp, "SPY": bs, "EW6": be}, **extra}
+            "verdict": verdict(c), "dsr_sensitivity": sens, "sensitivity_flags": flags,
+            "verdict_sensitive": any(f["sensitive"] for f in flags.values()), "returns": r, "benchmarks": {"P": bp, "SPY": bs, "EW6": be}, **extra}
 
 
 def evaluate_all(opens, closes, db, names=NAMES, start=START, mc_draws=MC_DRAWS, rand_draws=RANDOM_DRAWS,
@@ -621,6 +641,10 @@ def render(res) -> str:
                      f"maxDD {c['metrics']['max_dd']:.1%}  round trips {c['round_trips']}")
         for k, v in c["criteria"].items():
             lines.append(f"   {v['result']:12s} {k}: {v['detail']}")
+        for sn, f in c["sensitivity_flags"].items():
+            if f["sensitive"]:
+                lines.append(f"   SENSITIVE    criterion 1 under '{sn}': DSR {f['dsr']:.3f} -> {f['criterion_1']}, "
+                             f"verdict would be {f['verdict']}")
     return "\n".join(lines)
 
 

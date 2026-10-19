@@ -46,9 +46,12 @@ backfilled attempts carried no Sharpes.
   are partly unknown (section 3).
 
 ### Reported sensitivities (never gating)
-Every result shows the criterion-1 DSR, and next to it the DSR recomputed (a) with the old 0.5 default variance and
-(b) with N doubled. A candidate whose verdict depends on the registered variance or on N being complete is flagged as
-such in the report, so the reader can weigh it.
+Every result shows the criterion-1 DSR and next to it the DSR recomputed (a) with the old 0.5 default variance and (b) in a
+**stress scenario with N doubled**. Doubling N is a stress test of how fragile the result is, not a guarantee that N is
+complete: unknown attempts could exceed it. For each sensitivity the runner computes what criterion 1 and the verdict
+would be if that DSR were used, and marks the candidate **SENSITIVE** if criterion 1 or the verdict would change
+(`sensitivity_flags`, `verdict_sensitive` in the result and a SENSITIVE line in the printed report). A candidate that
+passes only under the registered variance and N is therefore visibly fragile. The gating figure is unchanged.
 
 ## 3. Composition of the 28 and the inventory
 
@@ -61,8 +64,8 @@ Amendment 1, to be stated in `docs/TRIAL_INVENTORY_daily_v1.md`:
 - `zone_reversal` (crypto): count and logging status unknown. Recorded as UNKNOWN and unquantified, not as zero.
 - Nightly LLM hypothesis lab: no code exists in the repository. That is weak evidence it never ran, not proof. Recorded
   as UNKNOWN.
-- Unknown items are listed, never silently counted as zero. The N-doubled sensitivity above is the guard against an
-  understated N.
+- Unknown items are listed, never silently counted as zero. The N-doubled stress scenario above shows how fragile a
+  result is to an understated N; it does not bound it.
 
 The runner still refuses `run` without the inventory file.
 
@@ -70,4 +73,5 @@ The runner still refuses `run` without the inventory file.
 
 `daily_candidates.py` implements the rule (`HIST_VAR_PER_PERIOD`, `trial_counts`) and the two reported sensitivities, with
 tests: the variance is never below `V_hist`, a tight cluster cannot lower it, a wide spread can raise it, the stored
-variance reproduces the recorded S2 threshold, and the sensitivities are present and shown as "reported only".
+variance reproduces the recorded S2 threshold, the sensitivities are shown as "reported only", and the flags mark a pass
+that a sensitivity would turn into a fail (and the reverse) and keep an INSUFFICIENT criterion INSUFFICIENT.
