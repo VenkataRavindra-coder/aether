@@ -21,22 +21,53 @@ The variance `V` of per-period trial Sharpes used in the deflated Sharpe is
 
 - `V_hist = 0.0003242764550264549` per period (annual SD 0.286), the figure stored in the stage-1 evidence
   (`aether-research/us_momentum/results/strategy_truth_yf_20261007_074638.json`, key `trials.var_per_period`, tag
-  `evidence-s1-stage1`). The individual Sharpes were not stored, so this is the surviving record of the 28 earlier trials.
+  `evidence-s1-stage1`).
 - `V_logged` is the variance of the per-period Sharpes of every logged trial, including S-A, S-B and S-C (logged or not yet
   logged), when there are at least two; otherwise it does not apply.
+- The 0.5-annual-SD default of `dsr_report.py` no longer applies to the gating figure.
 
-The maximum is deliberate: a larger variance raises the luck threshold and makes the deflated Sharpe harder to pass, so
-the new trials can raise the bar but never lower it below the registered history. The 0.5 default no longer applies.
-The S2 record in `strategy.md` is unchanged.
+### Provenance (verified, with a test)
+The stored variance is the one the S2 result used. With `V_hist` and N = 28, `expected_max_sr` reproduces the recorded
+luck threshold (0.5845 annualised) and the recorded deflated Sharpe (0.802, recomputed 0.802 from the recorded Sharpe,
+skew, kurtosis and 4,931 days). With the old 0.5 default the same inputs give a DSR of about 0.14. The test
+`test_stored_variance_reproduces_the_recorded_s2_threshold` checks this against the committed file. The same file shows
+`n_total` 28 = `n_logged` 4 + `n_backfilled` 24, written by the same run (data SHA `e9524a2a`, code SHA `c879622e`).
+By the construction of `trial_stats`, `V_hist` is the variance of the Sharpes of the **4 logged** trials only; the 24
+backfilled attempts carried no Sharpes.
+
+### Limitations, stated plainly
+- `max(V_hist, V_logged)` is a registered approximation. It is **not** a reconstruction of the combined variance of all 28
+  attempts, which cannot be recovered.
+- It is **not uniformly more conservative** than the previous behavior. It lowers the no-history default from 0.5 to
+  0.286 annual SD, which raises the deflated Sharpe the candidates would get (for S2's own numbers, 0.14 becomes 0.80). It
+  was chosen because it is the measured spread of real trials and holds the candidates to the same standard S2 was held
+  to; the 0.5 figure was an arbitrary placeholder for "fewer than two trials".
+- The deflated Sharpe is conditional on N being complete, and the composition of the 28 and the other sources of attempts
+  are partly unknown (section 3).
+
+### Reported sensitivities (never gating)
+Every result shows the criterion-1 DSR, and next to it the DSR recomputed (a) with the old 0.5 default variance and
+(b) with N doubled. A candidate whose verdict depends on the registered variance or on N being complete is flagged as
+such in the report, so the reader can weigh it.
 
 ## 3. Composition of the 28 and the inventory
 
 The 28 are kept as recorded; their composition (how many were logged, how many estimated, whether the three
-`daily_edges_backtest.py` experiments are among them) cannot be recovered. The trial inventory required by Amendment 1
-therefore counts anything not provably inside the 28 as additional (conservative), and records what the owner states
-about each source of attempts. The runner still refuses `run` without the inventory file.
+`daily_edges_backtest.py` experiments are among them) cannot be recovered. Assumptions for the inventory required by
+Amendment 1, to be stated in `docs/TRIAL_INVENTORY_daily_v1.md`:
+
+- `daily_edges_backtest.py`: unknown whether it ever ran. **Documented assumption: its 3 experiments (MR on SPY, MR on
+  QQQ, TOM on SPY) count as additional**, giving `N_inventory` of at least 31 (28 + 3) and N of at least 34.
+- `zone_reversal` (crypto): count and logging status unknown. Recorded as UNKNOWN and unquantified, not as zero.
+- Nightly LLM hypothesis lab: no code exists in the repository. That is weak evidence it never ran, not proof. Recorded
+  as UNKNOWN.
+- Unknown items are listed, never silently counted as zero. The N-doubled sensitivity above is the guard against an
+  understated N.
+
+The runner still refuses `run` without the inventory file.
 
 ## 4. Implementation
 
-`daily_candidates.py` implements the rule (`HIST_VAR_PER_PERIOD`, `trial_counts`) with a test that the variance is never
-below `V_hist`, that a tight cluster cannot lower it and that a wide spread can raise it.
+`daily_candidates.py` implements the rule (`HIST_VAR_PER_PERIOD`, `trial_counts`) and the two reported sensitivities, with
+tests: the variance is never below `V_hist`, a tight cluster cannot lower it, a wide spread can raise it, the stored
+variance reproduces the recorded S2 threshold, and the sensitivities are present and shown as "reported only".

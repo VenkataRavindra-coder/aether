@@ -50,6 +50,7 @@ MIN_ROUND_TRIPS, MIN_DAYS, MIN_MONTHS, MIN_PBO_DAYS, MIN_WINDOWS = 30, 756, 60, 
 # results/strategy_truth_yf_20261007_074638.json, "trials.var_per_period"; annual SD 0.286). The database that held the
 # individual Sharpes was lost with the Azure VM, so this number is the surviving record. Amendment 2.
 HIST_VAR_PER_PERIOD = 0.0003242764550264549
+DEFAULT_VAR_PER_PERIOD = (0.5 / math.sqrt(252)) ** 2   # the old placeholder (0.5 annual SD), reported as a sensitivity
 N_FLOOR = 31                                    # 28 recorded for S2 + the three candidates
 MC_DRAWS, RANDOM_DRAWS, PBO_BLOCKS, PBO_COMBOS = 10000, 10000, 16, 20000
 SA_UNIVERSE = ["SPY", "QQQ", "IWM", "EFA", "TLT", "GLD"]
@@ -513,9 +514,13 @@ def evaluate_candidate(name, opens, closes, n_info, start=START, mc_draws=MC_DRA
     m, trips = perf(r), base["round_trips"]
     enough_trips = trips >= MIN_ROUND_TRIPS
     d = rg.deflated_sharpe(r.to_numpy(), n_info["n_total"], n_info["var_per_period"])
+    # Reported only, never gating (Amendment 2): how much the DSR depends on the registered variance and on N being complete.
+    sens = {"old_default_variance_0.5_annual_sd": rg.deflated_sharpe(r.to_numpy(), n_info["n_total"], DEFAULT_VAR_PER_PERIOD)["dsr"],
+            "n_doubled": rg.deflated_sharpe(r.to_numpy(), 2 * n_info["n_total"], n_info["var_per_period"])["dsr"]}
     c = {}
     c["1 DSR >= 0.95"] = crit(d["dsr"] >= DSR_MIN, f"DSR {d['dsr']:.3f} (N={n_info['n_total']}, SR {m['sharpe']:.2f}, "
-                              f"luck threshold {d['sr0_annual']:.2f}); {trips} round trips",
+                              f"luck threshold {d['sr0_annual']:.2f}; reported only: DSR {sens['old_default_variance_0.5_annual_sd']:.3f} "
+                              f"with the old 0.5 default variance, {sens['n_doubled']:.3f} with N doubled); {trips} round trips",
                               len(r) >= MIN_DAYS and enough_trips, float(d["dsr"]))
     fam = pd.DataFrame({i: runner(p)["sim"]["net"] for i, p in enumerate(FAMILY[name])})
     try:
@@ -562,7 +567,7 @@ def evaluate_candidate(name, opens, closes, n_info, start=START, mc_draws=MC_DRA
                                 f"{t['real']:.3%}", t["n_windows"] >= MIN_WINDOWS and enough_trips, float(t["p"]))
         extra["random_day"] = t
     return {"name": name, "params": BASE[name], "metrics": m, "round_trips": trips, "criteria": c,
-            "verdict": verdict(c), "returns": r, "benchmarks": {"P": bp, "SPY": bs, "EW6": be}, **extra}
+            "verdict": verdict(c), "dsr_sensitivity": sens, "returns": r, "benchmarks": {"P": bp, "SPY": bs, "EW6": be}, **extra}
 
 
 def evaluate_all(opens, closes, db, names=NAMES, start=START, mc_draws=MC_DRAWS, rand_draws=RANDOM_DRAWS,

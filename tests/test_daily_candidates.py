@@ -304,6 +304,22 @@ def test_trial_variance_is_never_below_the_registered_history(tmp_path):
     assert abs(math.sqrt(dc.HIST_VAR_PER_PERIOD) * math.sqrt(252) - 0.286) < 0.001      # annual SD 0.29, as recorded
 
 
+def test_stored_variance_reproduces_the_recorded_s2_threshold():
+    """Provenance check against the committed stage-1 evidence: V_hist with N=28 gives the recorded luck threshold and
+    DSR; the old 0.5 default does not (it is much harsher)."""
+    import json
+    ev = json.loads((ROOT / "aether-research/us_momentum/results/strategy_truth_yf_20261007_074638.json").read_text())
+    assert ev["trials"]["var_per_period"] == dc.HIST_VAR_PER_PERIOD and ev["trials"]["n_total"] == 28
+    b = ev["baseline"]
+    sr = b["sharpe"] / math.sqrt(252)
+    sr0 = dc.rg.expected_max_sr(28, dc.HIST_VAR_PER_PERIOD)
+    assert sr0 * math.sqrt(252) == pytest.approx(ev["items"]["S2"]["sr0"], abs=1e-6)     # recorded threshold is annualised
+    dsr = dc.rg.prob_sr_above(sr, sr0, b["days"], b["daily_skew"], b["daily_kurtosis"])
+    assert dsr == pytest.approx(ev["items"]["S2"]["dsr"], abs=2e-3)
+    sr0_default = dc.rg.expected_max_sr(28, dc.DEFAULT_VAR_PER_PERIOD)
+    assert dc.rg.prob_sr_above(sr, sr0_default, b["days"], b["daily_skew"], b["daily_kurtosis"]) < 0.3
+
+
 def test_logging_the_candidates_never_changes_n(tmp_path):
     """Regression: with N_inventory = 40, N was 43 before the candidates were logged and 40 after."""
     db = _db(tmp_path)
@@ -354,6 +370,9 @@ def test_evaluate_all_structure_and_logging(data, tmp_path):
         assert all(v["result"] in (dc.PASS, dc.FAIL, dc.INSUFFICIENT) for v in cand["criteria"].values())
         assert cand["verdict"] in ("WORTH PAPER-TESTING", "UNSUPPORTED", "INCONCLUSIVE")
         assert math.isfinite(cand["metrics"]["sharpe"])
+        sens = cand["dsr_sensitivity"]
+        assert set(sens) == {"old_default_variance_0.5_annual_sd", "n_doubled"}
+        assert cand["criteria"]["1 DSR >= 0.95"]["detail"].count("reported only") == 1    # shown, never gating
     out1 = dc.log_candidates(res, db, "abc")
     out2 = dc.log_candidates(res, db, "abc")
     assert all(t is not None for _, t, _ in out1) and all(t is None for _, t, _ in out2)   # never logged twice
