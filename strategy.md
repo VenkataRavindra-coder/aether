@@ -470,6 +470,12 @@ once at import instead of lazily on the first log() call during live trading.
     the 28). The S2 record is unchanged. Changes no code, no threshold, no live setting; the
     canary and `US_LIVE=false` are untouched, and no result authorizes live orders. The holdout
     stays closed.
+    - **Amendment 1, 2026-10-19 (before any result):** `docs/PREREG_daily_v1_amendment1.md`, tag
+      `prereg-daily-v1.1`. The session open is not the 09:45 ET price the rules specify, so a fifth
+      criterion (execution-price robustness on real 09:45 fills over the intraday window) now gates
+      every candidate; the open-proxy run stays for the long history but can never pass alone. It
+      also fixes a separate holdout execution path and a manual trial inventory. The runner's `run`
+      stays locked until the five steps in its section 5 are done.
   - **Incidents on record (no trades resulted from either):**
     - 2026-10-13 18:42 UTC: the `/us` dashboard "Pause new trades" wrote
       `~/ratelark/AETHER_HALT` (old breaker path). The engine read `~/AETHER_HALT` and never saw
