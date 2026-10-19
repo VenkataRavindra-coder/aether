@@ -195,6 +195,17 @@ def test_registration_guards(tmp_path):
         dc.registration_commit(repo)                                  # tag not an ancestor of HEAD
 
 
+def test_run_is_locked_until_the_amendment(capsys):
+    assert dc.RUN_LOCKED is True
+    assert dc.main(["run"]) == 2
+    assert "locked" in capsys.readouterr().err
+
+
+def test_inventory_lists_every_logged_and_backfilled_attempt(tmp_path):
+    inv = dc.trial_inventory(_db(tmp_path))
+    assert len(inv["logged"]) == 4 and sum(b["count"] for b in inv["backfilled"]) == 24
+
+
 def test_holdout_is_always_refused(capsys):
     assert dc.main(["holdout"]) == 2
     assert "stays closed" in capsys.readouterr().err

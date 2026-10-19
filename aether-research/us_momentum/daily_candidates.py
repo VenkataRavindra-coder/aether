@@ -55,6 +55,10 @@ FAMILY = {"S-A": [{"sma": s, "confirm": c} for s in (150, 200, 250) for c in (1,
           "S-B": [{"rsi_below": t, "exit_sma": e} for t in (5, 10, 15) for e in (3, 5, 10)],
           "S-C": [{"entry_offset": o, "exit_day": j} for o in (-1, 0, 1) for j in (3, 4, 5)]}
 PASS, FAIL, INSUFFICIENT = "PASS", "FAIL", "INSUFFICIENT"
+# `run` is locked until (1) the execution-price question is settled by a registered amendment (the open is not the
+# 09:45 ET price the rules specify) and (2) the trial inventory has been reviewed by hand. Lifting the lock is a
+# reviewed change to this constant, after the amendment is tagged.
+RUN_LOCKED = True
 
 
 class Refused(Exception):
@@ -412,6 +416,22 @@ def sc_random_day_test(opens, closes, entry_offset, exit_day, start=START, draws
 
 
 # ------------------------------------------------------------------ trial counting (section 7)
+def trial_inventory(db) -> dict:
+    """Everything the count is made of, for a manual check against what was actually attempted."""
+    con = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
+    try:
+        logged = [{"id": r[0], "strategy": r[1], "symbol": r[2], "created_at": r[3], "oos_sharpe": r[4]}
+                  for r in con.execute("SELECT id, strategy, symbol, created_at, oos_sharpe FROM research_trials ORDER BY id")]
+        try:
+            back = [{"family": r[0], "count": r[1], "note": r[2]}
+                    for r in con.execute("SELECT family, count, note FROM untracked_trials ORDER BY id")]
+        except sqlite3.OperationalError:
+            back = []
+    finally:
+        con.close()
+    return {"logged": logged, "backfilled": back}
+
+
 def trial_counts(db, pending_sharpes: dict) -> dict:
     """N = research_trials rows + untracked_trials count + candidates not yet logged, floor 31. The variance is the
     variance of per-period trial Sharpes, as dsr_report.py computes it, including the new candidates."""
@@ -582,9 +602,13 @@ def main(argv=None):
     try:
         if a.cmd == "holdout":
             raise Refused("the holdout stays closed: it needs the soak to be complete and a docs/holdout.lock entry")
+        if a.cmd == "run" and RUN_LOCKED:
+            raise Refused("run is locked: the 09:45 ET execution-price amendment and the trial inventory review are "
+                          "pending. Nothing has been run on the real history.")
         commit = registration_commit()
         if a.cmd == "count":
-            print(json.dumps(trial_counts(str(TRIAL_DB), {}), indent=2))
+            print(json.dumps({"counts": trial_counts(str(TRIAL_DB), {}), "inventory": trial_inventory(str(TRIAL_DB))},
+                             indent=2, default=str))
             return 0
         require_clean()
         data_sha = check_data()
