@@ -252,11 +252,19 @@ def test_insufficient_is_not_pass_or_fail():
 
 def test_verdict_rules():
     P, F, I = dc.PASS, dc.FAIL, dc.INSUFFICIENT
-    mk = lambda *r: {str(i): {"result": x} for i, x in enumerate(r)}
+    mk = lambda *r: {f"{i + 1} c": {"result": x} for i, x in enumerate(r)}
     assert dc.verdict(mk(P, P, P, P, P)) == "WORTH PAPER-TESTING"
-    assert dc.verdict(mk(P, I, P, P)) == "INCONCLUSIVE"
-    assert dc.verdict(mk(P, F, P, P)) == "UNSUPPORTED"
-    assert dc.verdict(mk(I, F, P, P)) == "UNSUPPORTED"                 # a FAIL is never rescued by INSUFFICIENT
+    assert dc.verdict(mk(P, I, P, P, P)) == "INCONCLUSIVE"
+    assert dc.verdict(mk(P, P, P, P, I)) == "INCONCLUSIVE"            # criterion 5 insufficient: never a pass
+    assert dc.verdict(mk(P, F, P, P, P)) == "UNSUPPORTED"
+    assert dc.verdict(mk(I, F, P, P, P)) == "UNSUPPORTED"             # a FAIL is never rescued by INSUFFICIENT
+
+
+def test_missing_criterion_five_can_never_be_worth_paper_testing():
+    P = dc.PASS
+    four = {f"{i} c": {"result": P} for i in (1, 2, 3, 4)}
+    assert dc.verdict(four) == "INCONCLUSIVE"
+    assert dc.verdict({**four, "F-A falsifier": {"result": P}}) == "INCONCLUSIVE"
 
 
 # ------------------------------------------------------------------ S-C random-day test

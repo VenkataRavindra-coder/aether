@@ -467,11 +467,17 @@ def crit(passed, detail, sufficient=True, value=None):
     return {"result": PASS if passed else FAIL, "detail": detail, "value": value}
 
 
+REQUIRED_CRITERIA = ("1", "2", "3", "4", "5")   # criterion 5 (09:45 ET fills) is mandatory, amendment 1
+
+
 def verdict(criteria: dict) -> str:
+    """A FAIL is final. WORTH PAPER-TESTING needs all five criteria present and PASS: a criterion that is absent
+    (not implemented, intraday data missing, fallback budget exceeded) is never a pass."""
     res = [c["result"] for c in criteria.values()]
     if FAIL in res:
         return "UNSUPPORTED"
-    if INSUFFICIENT in res:
+    have = {k.split()[0] for k in criteria}
+    if INSUFFICIENT in res or not set(REQUIRED_CRITERIA) <= have:
         return "INCONCLUSIVE"
     return "WORTH PAPER-TESTING"
 
