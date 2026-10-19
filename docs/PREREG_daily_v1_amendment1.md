@@ -32,6 +32,10 @@ in every result. On its own it can never produce WORTH PAPER-TESTING.
    below. The verdict rules are unchanged, so a FAIL here makes the candidate UNSUPPORTED and an INSUFFICIENT makes it
    INCONCLUSIVE.
 
+**Criterion 5 is mandatory.** WORTH PAPER-TESTING needs all five criteria present and PASS. A run without criterion 5
+(not implemented, intraday data missing, overlap too short, fallback budget exceeded) can only end INCONCLUSIVE or
+UNSUPPORTED, never WORTH PAPER-TESTING; the runner's `verdict` enforces this and has a test for it.
+
 **Fill convention (Basis 2).** The fill price is the adjusted OPEN of the five-minute bar timestamped 09:45 ET (the first
 IEX print from 09:45:00), `Adjustment.ALL`, IEX feed. If that bar is missing, use the open of the 09:50 bar, then the
 09:55 bar; if all three are missing, fall back to that session's daily open and count it as a fallback fill. Costs are
