@@ -461,6 +461,15 @@ once at import instead of lazily on the first log() call during live trading.
   - **What can extend the soak:** only the section 6 conditions not yet being met (days,
     completed rebalances, fewer than 10 qualifying fills, a non-green day, or an engine code
     change restarting the clock). Never the results.
+  - **Registration 2026-10-19: three daily-frequency candidates, research only.** S-A (daily
+    200-day trend filter on six ETFs), S-B (SPY RSI(2) mean reversion) and S-C (TLT turn-of-month,
+    09:45 ET last trading day to 09:45 ET on the 4th trading day of the next month) are fixed in
+    `docs/PREREG_daily_v1.md`, tag `prereg-daily-v1`, before any result exists. This is the
+    "genuinely distinct, pre-registered hypothesis" that unblocks trial 29, and it counts three
+    trials: N is 31 or more for their DSR (more if `daily_edges_backtest.py` logged trials outside
+    the 28). The S2 record is unchanged. Changes no code, no threshold, no live setting; the
+    canary and `US_LIVE=false` are untouched, and no result authorizes live orders. The holdout
+    stays closed.
   - **Incidents on record (no trades resulted from either):**
     - 2026-10-13 18:42 UTC: the `/us` dashboard "Pause new trades" wrote
       `~/ratelark/AETHER_HALT` (old breaker path). The engine read `~/AETHER_HALT` and never saw
