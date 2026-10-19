@@ -530,12 +530,15 @@ minimum size. Not a strategy test: no strategy signal drives any order in this p
    deposit; that would count it twice and the breakers would see a 50% drawdown. `cashflow` is
    only for deposits/withdrawals after the ledger exists. Preflight fails if ledger and broker
    equity disagree.
-3. Account type (cash or margin) confirmed in writing by Alpaca; preflight also prints the
-   broker's own `multiplier`.
+3. Account type confirmed in writing by Alpaca (2026-10-19: Alpaca supports **margin accounts
+   only**; cash accounts are on their roadmap with no date). A `multiplier` of 1 is an unleveraged
+   margin account under $2,000 equity, not a cash account, so the PDT rule applies. Preflight
+   prints the broker's `multiplier`.
 4. `python3 canary.py preflight` reports PASSED.
 
-**Day-trade constraint.** On a margin account under $25k a 4th same-day round trip in 5
-business days can flag the account. `canary.py buy` refuses when the broker's day-trade count
+**Day-trade constraint.** Every Alpaca account is margin, so under $25k a 4th same-day round
+trip in 5 business days can flag the account (multiplier 1 included; fixed 2026-10-19, the
+check had skipped multiplier 1). `canary.py buy` refuses when the broker's day-trade count
 is 3 or more. Prefer holding canary positions overnight (sell next session).
 
 **Schedule.** Run in order; do not advance until the step passes.

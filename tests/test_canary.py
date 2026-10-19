@@ -231,6 +231,18 @@ def test_margin_day_trade_guard(env, monkeypatch):
     assert canary.cmd_buy(live_exec(b), args(usd=8, limit=300)) == 1 and not b.submitted
 
 
+def test_day_trade_guard_applies_at_multiplier_one(env, monkeypatch):
+    """Alpaca is margin-only: multiplier 1 is an unleveraged margin account, so PDT still applies."""
+    monkeypatch.setattr(canary, "_quote", lambda s: None)
+    mark_ledger()
+    b = FakeBroker(multiplier="1", daytrades=3)
+    c = live_exec(b)
+    rows = canary.preflight_checks(c, b.get_account(), canary.snapshot(c))
+    dt = [r for r in rows if r[0].startswith("day trades in last 5 sessions")][0]
+    assert dt[1] is False
+    assert canary.cmd_buy(c, args(usd=8, limit=300)) == 1 and not b.submitted
+
+
 def test_preflight_catches_double_counted_deposit(env):
     mark_ledger(100.0)
     safety_guard.record_cash_flow(100.0)          # the mistake: deposit already in the first mark

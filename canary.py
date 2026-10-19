@@ -134,11 +134,11 @@ def preflight_checks(c, acct, snap) -> list[tuple[str, bool, str]]:
     equity = float(getattr(acct, "equity", 0) or 0)
     out.append(("account funded (wire credited)", equity > 0, f"equity ${equity:,.2f}"))
     mult = str(getattr(acct, "multiplier", "?"))
-    kind = "cash" if mult == "1" else f"margin (multiplier {mult})"
-    out.append(("account type recorded", mult != "?", kind))
-    if mult != "1":
-        dt = int(getattr(acct, "daytrade_count", 0) or 0)
-        out.append(("margin: day trades in last 5 sessions <= 2 (room for one more)", dt <= 2, str(dt)))
+    # Alpaca supports margin accounts only (written confirmation, 2026-10-19). Multiplier 1 is a margin
+    # account with no leverage (equity under $2,000), NOT a cash account, so the PDT rule applies.
+    out.append(("account type recorded", mult != "?", f"margin account (multiplier {mult}; 1 = no leverage)"))
+    dt = int(getattr(acct, "daytrade_count", 0) or 0)
+    out.append(("day trades in last 5 sessions <= 2 (room for one more; PDT applies under $25k)", dt <= 2, str(dt)))
     out.append(("no strategy-universe positions on the live account", not snap["strategy_positions"],
                 json.dumps(snap["strategy_positions"])))
     out.append(("no non-canary open orders on the live account", not snap["foreign_open"],
@@ -168,8 +168,7 @@ def preflight_checks(c, acct, snap) -> list[tuple[str, bool, str]]:
 
 
 def margin_day_trade_room(acct) -> bool:
-    if str(getattr(acct, "multiplier", "1")) == "1":
-        return True
+    """Every Alpaca account is margin, so the day-trade count always applies (even at multiplier 1)."""
     return int(getattr(acct, "daytrade_count", 0) or 0) <= 2
 
 
