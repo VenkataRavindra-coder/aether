@@ -2138,3 +2138,7 @@ app.include_router(_build_map_router(lambda: None, _map_engine_info))
 # GitHub, Alpaca, internet). Same default-deny _dashboard_auth middleware as every other page.
 from connectivity import build_router as _build_connectivity_router  # noqa: E402
 app.include_router(_build_connectivity_router(lambda: None))
+
+# macro_trend: read-only daily SPY 200-session signal; protected by _dashboard_auth middleware.
+from macro_trend.api import build_router as _build_macro_trend_router  # noqa: E402
+app.include_router(_build_macro_trend_router())
