@@ -4,7 +4,7 @@ Mount in the existing FastAPI app (keeps session login + Cloudflare Access):
     from us_dashboard import build_router
     app.include_router(build_router(<your session-login dependency>))
 
-Routes: GET /us (redirects to the console) · GET /api/us/summary (JSON) · POST /api/us/pause
+Routes: GET /us (redirects to the board) · GET /api/us/summary (JSON) · POST /api/us/pause
 There is deliberately NO resume route: resume = ssh aether; rm ~/AETHER_HALT
 """
 from __future__ import annotations
@@ -218,9 +218,9 @@ def build_router(auth_dep: Callable) -> APIRouter:
 
     @r.get("/us")
     def page():
-        """Retired 2026-10-18: the US view is now the console's "US strategy" and "Safety" sections."""
+        """Retired: old bookmarks land on the board (2026-10-21)."""
         from fastapi.responses import RedirectResponse
-        return RedirectResponse("/console#us", status_code=307)
+        return RedirectResponse("/", status_code=307)
 
     @r.get("/api/us/summary")
     def summary():

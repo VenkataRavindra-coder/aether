@@ -9,7 +9,8 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&family=JetBrains+Mono:wght@400;600;700&display=swap">
 <style>
-/* AETHER board (2026-10-21). One screen, every value read from the engine's read-only APIs.
+/* AETHER board (2026-10-21), the only dashboard page. Every value is read from the engine's read-only APIs;
+   the one write is the two-click "Pause entries" button.
    Every value comes from a real check: a value that cannot be read shows "no data". */
 :root {
   --bg: #12100e; --panel: #1b1815; --panel2: #231f1b; --line: #3a322a; --ink: #f4ede5; --muted: #a59b8f; --dim: #6f665c;
@@ -127,6 +128,12 @@ h1 span { color: var(--orange); }
 .legend .note { margin-left: auto; letter-spacing: .04em; text-transform: none; font-weight: 400; }
 @media (max-width: 640px) { .legend { padding: 10px 16px 18px; } .legend .note { margin-left: 0; } }
 
+.pause { margin-top: 10px; display: grid; gap: 6px; }
+.pause button { font: 800 11px/1 var(--mono); letter-spacing: .1em; text-transform: uppercase; padding: 9px 10px; border-radius: 8px; border: 1px solid var(--bad); background: rgba(255,90,95,.12); color: #ffb3b5; cursor: pointer; }
+.pause button:hover:not(:disabled) { background: rgba(255,90,95,.22); }
+.pause button.armed { background: var(--bad); color: #fff; }
+.pause button:disabled { cursor: default; border-color: var(--line); background: none; color: var(--muted); }
+.pause span { font: 400 9.5px/1.3 var(--mono); color: var(--muted); }
 @keyframes flow { to { stroke-dashoffset: -24; } }
 #wires path.anim { animation: flow 1.2s linear infinite; }
 @media (prefers-reduced-motion: reduce) { #wires path.anim { animation: none; } }
@@ -148,20 +155,21 @@ h1 span { color: var(--orange); }
       <div class="ph"><span class="no">01</span><h2>Signals</h2><span class="run idle" id="r-signals">no data</span></div>
       <p class="sub">where every price and signal comes from</p>
       <div class="tiles" id="t-signals"></div>
-      <div class="pf"><span id="f-signals"></span><a href="/console#market">details →</a></div>
+      <div class="pf"><span id="f-signals"></span></div>
     </section>
     <section class="panel" id="p-record" data-p="record">
       <div class="ph"><span class="no">02</span><h2>System of record</h2><span class="run idle" id="r-record">no data</span></div>
       <p class="sub">every decision and file kept, checked and backed up</p>
       <div class="tiles" id="t-record"></div>
-      <div class="pf"><span id="f-record"></span><a href="/console#health">details →</a></div>
+      <div class="pf"><span id="f-record"></span></div>
     </section>
     <section class="panel" id="p-owner" data-p="owner">
       <div class="ph"><span class="no">03</span><h2>Owner input</h2><span class="run idle" id="r-owner">no data</span></div>
       <p class="sub">what only you decide</p>
       <div class="tiles" id="t-owner"></div>
       <div class="bar"><span id="b-owner" style="width:0"></span></div>
-      <div class="pf"><span id="f-owner"></span><a href="/console#safety">details →</a></div>
+      <div class="pf"><span id="f-owner"></span></div>
+      <div class="pause"><button type="button" id="pauseBtn" disabled>Pause entries</button><span id="pauseMsg">Blocks every new entry. Resume on the server: rm ~/AETHER_HALT</span></div>
     </section>
   </div>
 
@@ -171,13 +179,13 @@ h1 span { color: var(--orange); }
       <p class="sub">every order passes the gate first, nothing skips a step</p>
       <div class="steps" id="t-engine"></div>
       <div class="engline" id="e-chips"></div>
-      <div class="pf"><span id="f-engine"></span><a href="/console#map">details →</a></div>
+      <div class="pf"><span id="f-engine"></span></div>
     </section>
     <section class="panel" id="p-research" data-p="research">
       <div class="ph"><span class="no">05</span><h2>Strategy &amp; research</h2><span class="run idle" id="r-research">no data</span></div>
       <p class="sub">the proof a strategy needs before real money</p>
       <div class="tiles" id="t-research"></div>
-      <div class="pf"><span id="f-research"></span><a href="/console#us">details →</a></div>
+      <div class="pf"><span id="f-research"></span></div>
     </section>
   </div>
 
@@ -186,7 +194,7 @@ h1 span { color: var(--orange); }
       <div class="ph"><span class="no">06</span><h2>Accounts &amp; desks</h2><span class="run idle" id="r-desks">no data</span></div>
       <p class="sub">where the money sits and what each desk did</p>
       <div class="desks" id="t-desks"></div>
-      <div class="pf"><span id="f-desks"></span><a href="/console#holdings">details →</a></div>
+      <div class="pf"><span id="f-desks"></span></div>
     </section>
   </div>
 
@@ -195,13 +203,13 @@ h1 span { color: var(--orange); }
       <div class="ph"><span class="no">07</span><h2>Scheduled jobs</h2><span class="run idle" id="r-jobs">no data</span></div>
       <p class="sub">what runs on its own, day and night</p>
       <div class="tiles" id="t-jobs"></div>
-      <div class="pf"><span id="f-jobs"></span><a href="/console#health">details →</a></div>
+      <div class="pf"><span id="f-jobs"></span></div>
     </section>
     <section class="panel" id="p-links" data-p="links">
       <div class="ph"><span class="no">08</span><h2>Connections</h2><span class="run idle" id="r-links">no data</span></div>
       <p class="sub">every outside service the server needs</p>
       <div class="tiles" id="t-links"></div>
-      <div class="pf"><span id="f-links"></span><a href="/console#conn">details →</a></div>
+      <div class="pf"><span id="f-links"></span></div>
     </section>
   </div>
 
@@ -522,8 +530,26 @@ h1 span { color: var(--orange); }
 
   function renderAll() {
     renderSignals(); renderRecord(); renderOwner(); renderEngine(); renderResearch(); renderDesks();
-    const j = renderJobs(), l = renderLinks(); renderFocus(); renderStats(j, l); renderTop(); drawWires();
+    const j = renderJobs(), l = renderLinks(); renderFocus(); renderStats(j, l); renderPause(); renderTop(); drawWires();
   }
+
+  // ---------- the board's only write: pause new entries (creates the halt file), two clicks
+  const CSRF = "__CSRF__";
+  let pauseArmed = false, pauseTimer = null;
+  function renderPause() {
+    const g = D.status && ok(D.status.gate), b = $("pauseBtn");
+    b.disabled = !g || g.halt; b.classList.toggle("armed", pauseArmed && !b.disabled);
+    b.textContent = !g ? "Pause unavailable (no gate data)" : g.halt ? "Entries are paused" : pauseArmed ? "Click again to confirm" : "Pause entries";
+  }
+  $("pauseBtn").addEventListener("click", async () => {
+    if (!pauseArmed) { pauseArmed = true; renderPause(); clearTimeout(pauseTimer); pauseTimer = setTimeout(() => { pauseArmed = false; renderPause(); }, 5000); return; }
+    pauseArmed = false; clearTimeout(pauseTimer); $("pauseMsg").textContent = "Pausing…";
+    try {
+      const r = await fetch("/api/us/pause", { method: "POST", credentials: "same-origin", headers: { "x-aether-csrf": CSRF } });
+      $("pauseMsg").textContent = r.ok ? "Paused. New entries are blocked everywhere. Resume on the server: rm ~/AETHER_HALT" : "Pause failed (HTTP " + r.status + "). On the server: touch ~/AETHER_HALT";
+    } catch (e) { $("pauseMsg").textContent = "Pause failed: " + e.message + ". On the server: touch ~/AETHER_HALT"; }
+    await Promise.all(["status", "safety", "summary"].map(load)); renderAll();
+  });
 
   // ---------- refresh loop
   let tick = 0;

@@ -118,20 +118,14 @@ def test_every_section_fails_soft_and_no_secrets(monkeypatch):
     assert "should-never-appear" not in text
 
 
-def test_routes_serve_page_and_status(monkeypatch):
+def test_status_route_and_map_redirect(monkeypatch):
     monkeypatch.setattr(ms, "accounts_view", lambda: {})
     app = FastAPI()
     app.include_router(ms.build_router(lambda: None))
     c = TestClient(app)
-    r = c.get("/map")
-    assert r.status_code == 200 and "AETHER Live Map" in r.text and r.headers["cache-control"] == "no-store"
+    r = c.get("/map", follow_redirects=False)
+    assert r.status_code == 307 and r.headers["location"] == "/"
     assert c.get("/api/map/status").json()["engine"]["ok"] is True
-
-
-def test_page_never_injects_server_text_as_html():
-    page = (ms.REPO / "map_view.html").read_text()
-    assert "innerHTML" not in page and "insertAdjacentHTML" not in page
-    assert re.search(r'fetch\("/api/map/status"', page)
 
 
 def test_engine_registers_map_routes():

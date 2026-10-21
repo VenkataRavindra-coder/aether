@@ -1,6 +1,6 @@
-"""Live system map: GET /map (page) and GET /api/map/status (JSON).
+"""System status: GET /api/map/status (JSON) for the board; GET /map redirects to the board.
 
-One read-only snapshot of the whole setup for the animated map page (map_view.html): engine threads,
+One read-only snapshot of the whole setup (the map page was retired 2026-10-21): engine threads,
 heartbeat, order gate (halt file, kill switches, live budgets, breakers), systemd jobs (last and next
 run, result), accounts, backups, daily-check evidence, stress result and recent decisions.
 
@@ -26,10 +26,9 @@ from pathlib import Path
 from typing import Callable
 
 from fastapi import APIRouter, Depends
-from fastapi.responses import HTMLResponse
+from fastapi.responses import RedirectResponse
 
 REPO = Path(__file__).resolve().parent
-PAGE = REPO / "map_view.html"
 CACHE_TTL = 5
 ACCOUNT_TTL = 30
 _STARTED = time.time()
@@ -279,9 +278,10 @@ def build_status(info: Callable[[], dict]) -> dict:
 def build_router(auth_dep: Callable, engine_info: Callable[[], dict] = lambda: {}) -> APIRouter:
     r = APIRouter(dependencies=[Depends(auth_dep)])
 
-    @r.get("/map", response_class=HTMLResponse)
+    @r.get("/map")
     def map_page():
-        return HTMLResponse(PAGE.read_text(), headers={"Cache-Control": "no-store"})
+        """Retired 2026-10-21: the board at / shows everything the map did."""
+        return RedirectResponse("/", status_code=307)
 
     @r.get("/api/map/status")
     def map_status():
