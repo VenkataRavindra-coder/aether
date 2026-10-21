@@ -1,0 +1,10 @@
+[Unit]
+Description=Automated canary round trip on weekdays at 10:05 New York time (inside the pre-registered 10:00-15:45 buy window)
+
+[Timer]
+OnCalendar=Mon..Fri *-*-* 10:05:00 America/New_York
+# No catch-up after downtime: a late run would land outside the window or too close to the close.
+Persistent=false
+
+[Install]
+WantedBy=timers.target

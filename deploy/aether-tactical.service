@@ -1,0 +1,11 @@
+[Unit]
+Description=AETHER tactical paper tests: score today's SPY session for ORB and engulfing (no orders)
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=ratelark
+WorkingDirectory=/home/ratelark/ratelark
+EnvironmentFile=/home/ratelark/ratelark/.env
+ExecStart=/home/ratelark/ratelark/.venv/bin/python3 -m aether_tactical.run_day
+TimeoutStartSec=300
