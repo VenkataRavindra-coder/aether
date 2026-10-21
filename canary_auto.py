@@ -26,6 +26,7 @@ import re
 import sys
 import time
 from contextlib import redirect_stdout
+from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -218,10 +219,38 @@ def _buy(c) -> tuple[bool, str]:
     return False, f"buy not sent after {BUY_RETRIES} tries ({last[:200]})"
 
 
+# ---------- status file for the dashboard -------------------------------------------------------
+STATUS_FILE = canary.EVIDENCE_DIR / "auto-status.json"
+
+
+def write_status(snap, report, action: str, why: str, extra: dict | None = None) -> None:
+    """Snapshot for the dashboard's Auto test page. The engine only READS this file: it never
+    imports the canary code or touches the live account (tests/test_canary.py isolation)."""
+    import json
+    try:
+        canary.EVIDENCE_DIR.mkdir(parents=True, exist_ok=True)
+        body = {"generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                "enabled": enabled(), "action": action, "reason": why,
+                "position": snap.get("canary_position") if snap else None,
+                "open_orders": len(snap.get("canary_open") or []) if snap else None,
+                "completed_round_trips": report.get("completed_round_trips") if report else None,
+                "target_round_trips": report.get("target_round_trips") if report else None,
+                "verdict": report.get("verdict") if report else None,
+                "failures": (report or {}).get("failures", []),
+                "legs": (report or {}).get("legs", []), "round_trips": (report or {}).get("round_trips", []),
+                "sessions": (report or {}).get("sessions", {}), **(extra or {})}
+        tmp = STATUS_FILE.with_suffix(".tmp")
+        tmp.write_text(json.dumps(body, indent=1, default=str))
+        tmp.replace(STATUS_FILE)
+    except Exception:
+        pass   # the dashboard copy must never break a run
+
+
 # ---------- commands --------------------------------------------------------------------------
 def cmd_plan(c) -> int:
     snap, report, buy_day = gather(c)
     action, why = decide(snap, report, buy_day, today_et(), safety_guard.halt_file().exists())
+    write_status(snap, report, action, why, {"source": "plan"})
     print(f"enabled: {enabled()}  market open: {market_open(c)}  "
           f"round trips: {report['completed_round_trips']} of {report['target_round_trips']}")
     print(f"next action: {action.upper()}  ({why})")
@@ -230,6 +259,7 @@ def cmd_plan(c) -> int:
 
 def cmd_run(c) -> int:
     if not enabled():
+        write_status(None, None, "off", "CANARY_AUTO is not 1", {"source": "run"})
         print("CANARY_AUTO is not 1: doing nothing.")
         return 0
     if not market_open(c):
@@ -242,6 +272,7 @@ def cmd_run(c) -> int:
         action, why = decide(snap, report, buy_day, today_et(), safety_guard.halt_file().exists())
         _log("decide", decision=action, reason=why)
         if action == "stop":
+            write_status(snap, report, action, why, {"source": "run"})
             _notify(f"STOPPED, nothing sent. {why}\nInvestigate, then fix or set CANARY_AUTO=0.")
             print("STOP: " + why)
             return 2
@@ -258,8 +289,9 @@ def cmd_run(c) -> int:
         done.append(msg)
         if not ok:
             break
-    _, report, _ = gather(c)
+    snap, report, _ = gather(c)
     summary = " · ".join(done) + f" · round trips {report['completed_round_trips']} of {report['target_round_trips']}"
+    write_status(snap, report, "ran", summary, {"source": "run", "steps": done})
     _notify(summary)
     print(summary)
     return 0
@@ -277,6 +309,11 @@ def cmd_close(c) -> int:
     cp = canary.snapshot(c)["canary_position"]
     msg = f"close: holding {cp['qty']} {cp['symbol']} overnight" if cp else "close: flat"
     _log("close", decision="holding" if cp else "flat", reason=msg)
+    try:
+        snap2, report, _ = gather(c)
+        write_status(snap2, report, "closed", msg, {"source": "close"})
+    except Exception:
+        pass
     print(msg)
     return 0
 
