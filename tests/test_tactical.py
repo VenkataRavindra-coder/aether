@@ -63,13 +63,14 @@ def test_stop_fills_at_worse_of_open_and_stop_and_stop_beats_target_in_one_bar()
 
 
 # ---------- engulfing -------------------------------------------------------------------------
-def engulf_day(vol_ok=True):
-    # 15-min bars: 0..1 flat, bar 1 (09:45-09:59) red, bar 2 (10:00-10:14) green engulfing -> ends 10:15
-    p = [500.0] * 15
+def engulf_day(vol_ok=True, mult=None, base=1000.0):
+    # 15-min bars: 0..4 flat (09:30-10:45), bar 5 (10:45-10:59) red, bar 6 (11:00-11:14) green engulfing
+    # -> ends 11:15. The engulfing bar's volume is 2x the median of the five bars before it (ok) or 1.4x.
+    p = [500.0] * 75
     red = [(501.0, 501.05, 500.0, 500.9)] + [500.5] * 13 + [(500.3, 500.35, 500.1, 500.2)]
     green = [(500.1, 500.2, 499.8, 500.3)] + [500.8] * 13 + [(501.0, 501.3, 500.9, 501.2)]
-    rest = [501.2] * (390 - 45)
-    vols = [1000.0] * 15 + [1000.0] * 15 + [2000.0 if vol_ok else 500.0] * 15 + [1000.0] * len(rest)
+    rest = [501.2] * (390 - 105)
+    vols = [base] * 90 + [(mult if mult is not None else (2.0 if vol_ok else 1.4)) * base] * 15 + [base] * len(rest)
     return day(p + red + green + rest, vols=vols)
 
 
@@ -77,12 +78,25 @@ def test_engulfing_signal_entry_and_target():
     r = eng.evaluate(engulf_day(), S)
     assert r["state"] == "traded", r
     t = r["trade"]
-    assert t["entry_time"] == "10:15" and t["stop"] == 499.8
+    assert t["entry_time"] == "11:15" and t["stop"] == 499.8
     assert t["target"] == round(t["entry_px"] + 1.5 * (t["entry_px"] - 499.8), 4)
 
 
-def test_engulfing_needs_higher_volume():
-    assert eng.evaluate(engulf_day(vol_ok=False), S)["state"] == "no_trade"
+def test_engulfing_needs_1_5x_median_of_previous_five_bars():
+    assert eng.evaluate(engulf_day(vol_ok=False), S)["state"] == "no_trade"      # 1.4x: too weak
+    assert eng.evaluate(engulf_day(mult=1.5), S)["state"] == "traded"           # exactly 1.5x passes
+    assert eng.evaluate(engulf_day(mult=1.49), S)["state"] == "no_trade"
+
+
+def test_engulfing_ignores_signals_before_five_prior_bars():
+    # same pattern one bar earlier (bar k = 4, only four bars before it): never a signal
+    p = [500.0] * 45
+    red = [(501.0, 501.05, 500.0, 500.9)] + [500.5] * 13 + [(500.3, 500.35, 500.1, 500.2)]
+    green = [(500.1, 500.2, 499.8, 500.3)] + [500.8] * 13 + [(501.0, 501.3, 500.9, 501.2)]
+    rest = [501.2] * (390 - 75)
+    vols = [1000.0] * 60 + [5000.0] * 15 + [1000.0] * len(rest)
+    r = eng.evaluate(day(p + red + green + rest, vols=vols), S)
+    assert r["state"] == "no_trade" and r["signal"] == "NO_SIGNAL"
 
 
 # ---------- bars ------------------------------------------------------------------------------
