@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AETHER Auto Test</title>
+<meta name="color-scheme" content="dark">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&family=JetBrains+Mono:wght@400;600;700&display=swap">
+<style>
+/* AETHER Auto test page (2026-10-21). Every value comes from GET /api/autotest, which reads the test job's
+   own status file and log; when something cannot be read the page says so instead of showing a number. */
+:root {
+  --bg: #12100e; --panel: #1b1815; --panel2: #231f1b; --line: #3a322a; --ink: #f4ede5; --muted: #a59b8f; --dim: #6f665c;
+  --orange: #f08a3c; --glow: 0 0 0 1px rgba(240,138,60,.55), 0 0 18px rgba(240,138,60,.16);
+  --good: #3fd17f; --warn: #f5b83d; --bad: #ff5a5f;
+  --display: "Archivo", "Arial Narrow", Arial, sans-serif; --mono: "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: radial-gradient(1200px 600px at 70% -10%, #2a1d12 0%, var(--bg) 60%) fixed, var(--bg); color: var(--ink); font: 13px/1.45 var(--display); min-height: 100vh; }
+.wrap { max-width: 1280px; margin: 0 auto; padding: 18px 22px 28px; }
+.pages { display: flex; gap: 6px; }
+.pages a { font: 700 10px/1 var(--mono); letter-spacing: .14em; text-transform: uppercase; text-decoration: none; color: var(--muted); border: 1px solid var(--line); border-radius: 6px; padding: 7px 10px; }
+.pages a:hover { color: var(--ink); border-color: var(--orange); }
+.pages a[aria-current=page] { color: #1b0f05; background: var(--orange); border-color: var(--orange); }
+.top { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+.upd { font: 400 10.5px/1 var(--mono); color: var(--muted); }
+h1 { margin: 14px 0 18px; font: 900 clamp(26px, 4.2vw, 54px)/.95 var(--display); font-stretch: 72%; text-transform: uppercase; text-align: right; }
+h1 span { color: var(--orange); }
+.grid { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1.9fr); gap: 22px; align-items: start; }
+@media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
+@media (max-width: 640px) { .wrap { padding: 14px 16px 22px; } }
+.panel { background: linear-gradient(180deg, var(--panel2), var(--panel)); border-radius: 14px; box-shadow: var(--glow); padding: 14px; min-width: 0; }
+.ph { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.no { font: 700 10px/1 var(--mono); color: var(--orange); }
+.ph h2 { margin: 0; font: 900 15px/1 var(--display); font-stretch: 80%; text-transform: uppercase; letter-spacing: .02em; }
+.tag { margin-left: auto; font: 700 9px/1 var(--mono); letter-spacing: .1em; text-transform: uppercase; padding: 4px 7px; border-radius: 5px; background: var(--line); color: var(--muted); }
+.tag.warn { background: var(--warn); color: #1b0f05; }
+.hero { border-radius: 12px; padding: 16px; border: 1px solid var(--line); background: rgba(0,0,0,.25); }
+.hero.on { border-color: var(--good); background: linear-gradient(180deg, rgba(63,209,127,.16), rgba(0,0,0,.2)); }
+.hero.off { border-color: var(--bad); background: linear-gradient(180deg, rgba(255,90,95,.16), rgba(0,0,0,.2)); }
+.hero .st { font: 900 clamp(30px, 4vw, 46px)/1 var(--display); font-stretch: 72%; text-transform: uppercase; }
+.hero.on .st { color: var(--good); } .hero.off .st { color: var(--bad); } .hero.none .st { color: var(--muted); }
+.hero .act { margin-top: 6px; font: 700 14px/1.2 var(--mono); }
+.hero p { margin: 10px 0 0; color: var(--ink); font-size: 13.5px; }
+.stats { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 12px; }
+.stat { border: 1px solid var(--line); border-radius: 10px; padding: 9px 10px; background: rgba(0,0,0,.2); min-width: 0; }
+.stat span { display: block; font: 700 9px/1.2 var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+.stat b { display: block; font: 700 18px/1.15 var(--mono); margin-top: 4px; overflow-wrap: anywhere; }
+.pos { color: var(--good); } .neg { color: var(--bad); }
+.note { margin-top: 10px; font: 400 10.5px/1.4 var(--mono); color: var(--muted); }
+.chart { width: 100%; height: auto; display: block; }
+.chart text { font: 400 10px var(--mono); fill: var(--muted); }
+.legend { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 8px; font: 700 9.5px/1 var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+.legend i { display: inline-block; width: 22px; height: 0; border-top: 2px solid; vertical-align: middle; margin-right: 6px; }
+.legend .box { width: 12px; height: 10px; border: 0; background: rgba(255,90,95,.18); }
+.rules { margin-top: 22px; }
+.rules ol { margin: 0; padding-left: 18px; display: grid; gap: 6px; font-size: 13px; }
+.empty { color: var(--muted); font-style: italic; padding: 30px 0; text-align: center; }
+
+.paper { margin: -6px 0 16px; padding: 9px 12px; border-radius: 8px; border: 1px dashed var(--orange); color: var(--ink); font-weight: 600; }
+.mkt { font: 700 10.5px/1 var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); margin-bottom: 12px; }
+.cards { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; }
+@media (max-width: 900px) { .cards { grid-template-columns: 1fr; } }
+.sig { font: 900 clamp(22px, 2.6vw, 32px)/1 var(--display); font-stretch: 72%; text-transform: uppercase; margin: 4px 0 6px; color: var(--muted); }
+.sig.go { color: var(--good); } .sig.wait { color: var(--warn); } .sig.info { color: var(--bad); }
+.why { font-size: 13px; margin: 0 0 10px; }
+.kv { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; font: 400 11.5px/1.4 var(--mono); }
+.kv dt { color: var(--muted); } .kv dd { margin: 0; }
+.wide { margin-top: 22px; }
+table { width: 100%; border-collapse: collapse; font: 400 11.5px/1.4 var(--mono); }
+th { text-align: left; color: var(--muted); font-weight: 700; font-size: 9.5px; letter-spacing: .1em; text-transform: uppercase; padding: 6px 8px; border-bottom: 1px solid var(--line); }
+td { padding: 7px 8px; border-bottom: 1px solid rgba(58,50,42,.6); vertical-align: top; }
+td.r, th.r { text-align: right; }
+.scroll { overflow-x: auto; }
+
+.state { font: 900 clamp(26px, 3.4vw, 40px)/1 var(--display); font-stretch: 72%; text-transform: uppercase; color: var(--muted); }
+.state.on { color: var(--good); } .state.off { color: var(--muted); } .state.paused { color: var(--warn); } .state.bad { color: var(--bad); }
+.prog { height: 10px; border-radius: 6px; background: var(--line); overflow: hidden; margin: 10px 0 6px; }
+.prog span { display: block; height: 100%; background: var(--orange); }
+.fails { margin: 8px 0 0; padding-left: 18px; color: var(--bad); font: 400 11.5px/1.5 var(--mono); }
+.real { margin: -6px 0 16px; padding: 9px 12px; border-radius: 8px; border: 1px solid var(--bad); background: rgba(255,90,95,.08); font-weight: 600; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <nav class="pages" aria-label="Pages"><a href="/">Board</a><a href="/trend">Trend Gate</a><a href="/tactical">Tactical</a><a href="/autotest" aria-current="page">Auto test</a></nav>
+    <span class="upd" id="upd">Loading…</span>
+  </div>
+  <h1>AETHER <span>Auto test</span></h1>
+  <div class="real">Real money, tiny size: each trading day this test buys about $8 of VTI on your live account and sells it the same day, to prove orders, fills and cash all reconcile. It never trades your strategies.</div>
+
+  <div class="cards">
+    <section class="panel">
+      <div class="ph"><span class="no">01</span><h2>Status</h2><span class="tag" id="src">…</span></div>
+      <div id="status"><div class="empty">Loading…</div></div>
+    </section>
+    <section class="panel">
+      <div class="ph"><span class="no">02</span><h2>Progress to 10 round trips</h2></div>
+      <div id="progress"><div class="empty">Loading…</div></div>
+    </section>
+  </div>
+
+  <section class="panel wide">
+    <div class="ph"><span class="no">03</span><h2>Every filled order · measured from Alpaca's records</h2></div>
+    <div class="scroll" id="legs"><div class="empty">Loading…</div></div>
+    <div class="note">Shortfall = fill price vs the mid-price when the order was sent (+ is a cost). Pre-registered limits: shortfall ≤ 10 bp, spread ≤ 10 bp, fill within 900 s.</div>
+  </section>
+
+  <section class="panel wide">
+    <div class="ph"><span class="no">04</span><h2>Daily cash check</h2></div>
+    <div class="scroll" id="cash"><div class="empty">Loading…</div></div>
+    <div class="note">The account's cash change each day must equal the test's fills within $0.05; anything else is flagged.</div>
+  </section>
+
+  <section class="panel wide">
+    <div class="ph"><span class="no">05</span><h2>Activity log</h2></div>
+    <div class="scroll" id="log"><div class="empty">Loading…</div></div>
+  </section>
+</div>
+
+<script>
+(() => {
+  "use strict";
+  const $ = id => document.getElementById(id);
+  const esc = s => String(s == null ? "" : s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const num = x => typeof x === "number" && isFinite(x);
+  const usd = x => num(x) ? "$" + x.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 4 }) : "—";
+  const loc = iso => { const t = Date.parse(iso); return isNaN(t) ? "—" : new Date(t).toLocaleString("en-GB", { weekday: "short", hour: "2-digit", minute: "2-digit" }); };
+  const ago = iso => { const s = (Date.now() - Date.parse(iso)) / 1000; return isNaN(s) ? "?" : s < 90 ? Math.round(s) + " s ago" : s < 5400 ? Math.round(s / 60) + " min ago" : s < 172800 ? Math.round(s / 3600) + " h ago" : Math.round(s / 86400) + " d ago"; };
+  const f1 = x => num(x) ? (x >= 0 ? "+" : "−") + Math.abs(x).toFixed(1) : "—";
+
+  function render(d) {
+    const st = d.status, t = d.timers || {}, run = t["canary-run"], close = t["canary-close"];
+    let cls = "off", word = "Off", line = "The switch (CANARY_AUTO) is off in .env. Nothing will be bought.";
+    if (d.switch_on) {
+      if (d.halt) { cls = "paused"; word = "Paused"; line = "The halt file is present, so no new buys. Remove it (rm ~/AETHER_HALT) to resume."; }
+      else if (st && st.action === "stop") { cls = "bad"; word = "Stopped"; line = "The test stopped itself: " + st.reason; }
+      else if (st && st.action === "done") { cls = "on"; word = "Complete"; line = st.reason; }
+      else { cls = "on"; word = "On"; line = run && run.timer_active ? "Next round trip " + loc(run.next_run) + " (your time)." : "Switch is on, but the run timer is not active."; }
+    } else if (d.switch_on == null) { cls = "bad"; word = "Unknown"; line = "Can't read .env on the server."; }
+    const timerTxt = j => !j ? "unknown" : !j.timer_loaded ? "not installed" : !j.timer_active ? "installed but off" : (j.last_run ? "last " + ago(j.last_run) + (j.result && j.result !== "success" ? " (FAILED)" : "") + " · " : "") + "next " + loc(j.next_run);
+    $("status").innerHTML = `<div class="state ${cls}">${word}</div><p class="why">${esc(line)}</p><dl class="kv">` +
+      `<dt>Next action</dt><dd>${st ? esc(String(st.action).toUpperCase()) + " · " + esc(st.reason) : "no run recorded yet"}</dd>` +
+      `<dt>Position now</dt><dd>${st ? (st.position ? esc(st.position.qty) + " " + esc(st.position.symbol) + " (" + esc(st.position.class) + ")" : "none (flat)") : "—"}</dd>` +
+      `<dt>Open test orders</dt><dd>${st && num(st.open_orders) ? st.open_orders : "—"}</dd>` +
+      `<dt>Daily run</dt><dd>${esc(timerTxt(run))}</dd><dt>Close-of-day record</dt><dd>${esc(timerTxt(close))}</dd>` +
+      `<dt>Halt file</dt><dd>${d.halt == null ? "unknown" : d.halt ? "PRESENT (buys blocked)" : "clear"}</dd></dl>` +
+      (d.errors ? `<div class="note">Couldn't read: ${esc(d.errors.join(" · "))}</div>` : "");
+    $("src").textContent = st ? "updated " + ago(st.generated_at) + " · " + (st.source || "") : "no status yet";
+
+    if (!st || !num(st.completed_round_trips)) {
+      $("progress").innerHTML = '<div class="empty">No round trips measured yet. The first one runs at the next scheduled time on a trading day.</div>';
+    } else {
+      const n = st.completed_round_trips, tgt = st.target_round_trips || 10;
+      $("progress").innerHTML = `<div class="state ${n >= tgt ? "on" : ""}" style="font-size:34px">${n} / ${tgt}</div><div class="prog"><span style="width:${Math.min(100, 100 * n / tgt).toFixed(0)}%"></span></div>` +
+        `<dl class="kv"><dt>Measurement verdict</dt><dd>${esc(st.verdict || "—")}</dd><dt>Round-trip P/L</dt><dd>${(st.round_trips || []).length ? (st.round_trips || []).map(r => usd(r.pnl_usd)).join(", ") : "—"}</dd></dl>` +
+        ((st.failures || []).length ? `<ul class="fails">${st.failures.map(f => `<li>${esc(f)}</li>`).join("")}</ul>` : '<div class="note">No measurement failures.</div>');
+    }
+
+    const legs = (st && st.legs) || [];
+    $("legs").innerHTML = legs.length ? `<table><thead><tr><th>Side</th><th>Submitted</th><th class="r">Qty</th><th class="r">Fill</th><th class="r">Shortfall bp</th><th class="r">Spread bp</th><th class="r">Fill time</th><th>Check</th></tr></thead><tbody>` +
+      legs.map(l => `<tr><td>${esc(String(l.side).toUpperCase())}</td><td>${loc(l.submitted_at)}</td><td class="r">${num(l.qty) ? l.qty.toFixed(6) : "—"}</td><td class="r">${usd(l.fill_price)}</td><td class="r">${f1(l.shortfall_bp)}</td><td class="r">${num(l.spread_bp) ? l.spread_bp.toFixed(1) : "—"}</td><td class="r">${num(l.time_to_fill_s) ? Math.round(l.time_to_fill_s) + " s" : "—"}</td><td class="${l.pass ? "pos" : "neg"}">${l.pass ? "ok" : "FAIL: " + esc((l.problems || []).join("; "))}</td></tr>`).join("") + "</tbody></table>"
+      : '<div class="empty">No filled test orders yet.</div>';
+
+    const ses = (st && st.sessions) || {}, days = Object.keys(ses);
+    $("cash").innerHTML = days.length ? `<table><thead><tr><th>Day</th><th class="r">Cash before</th><th class="r">Cash after</th><th class="r">Fills</th><th class="r">Difference</th><th>Check</th></tr></thead><tbody>` +
+      days.map(k => { const s = ses[k]; return `<tr><td>${esc(k)}</td><td class="r">${usd(s.start)}</td><td class="r">${usd(s.end)}</td><td class="r">${usd(s.fills_flow)}</td><td class="r">${num(s.residual_usd) ? usd(s.residual_usd) : "—"}</td><td class="${s.pass ? "pos" : "neg"}">${s.pass ? "ok" : esc(s.problem || "FAIL")}</td></tr>`; }).join("") + "</tbody></table>"
+      : '<div class="empty">No trading days recorded yet.</div>';
+
+    const log = d.log || [];
+    $("log").innerHTML = log.length ? `<table><thead><tr><th>When</th><th>Step</th><th>Result</th><th>Detail</th></tr></thead><tbody>` +
+      log.map(r => `<tr><td>${loc(r.ts)}</td><td>${esc(r.engine === "canary_auto" ? "auto · " + r.event : "order · " + r.event)}</td><td>${esc(r.decision || "")}</td><td>${esc(r.reason || "")}</td></tr>`).join("") + "</tbody></table>"
+      : '<div class="empty">Nothing logged yet.</div>';
+  }
+
+  async function refresh() {
+    try {
+      const r = await fetch("/api/autotest", { credentials: "same-origin", cache: "no-store" });
+      if (r.status === 401 || r.status === 403) throw new Error("signed out: reload to sign in");
+      if (!(r.headers.get("content-type") || "").includes("json")) throw new Error("HTTP " + r.status);
+      render(await r.json());
+    } catch (e) { const m = `<div class="empty">${esc("Can't read the auto test status: " + (e.message || e))}</div>`; ["status", "progress", "legs", "cash", "log"].forEach(id => $(id).innerHTML = m); }
+    $("upd").textContent = "checked " + new Date().toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }) + " · refreshes every minute";
+  }
+  refresh(); setInterval(refresh, 60000);
+})();
+</script>
+</body>
+</html>

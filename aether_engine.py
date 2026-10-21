@@ -2147,3 +2147,8 @@ app.include_router(_build_trend_gate_router())
 # ORB and engulfing PAPER tests (strategy.md "Tactical paper tests"). Read-only; same login middleware.
 from aether_tactical.api_tactical import build_router as _build_tactical_router  # noqa: E402
 app.include_router(_build_tactical_router())
+
+# autotest_view (2026-10-21): GET /autotest page + /api/autotest. Reads the automatic live test's
+# status FILE and decision-log rows only; no broker calls and no import of the test-trading code.
+from autotest_view import build_router as _build_autotest_router  # noqa: E402
+app.include_router(_build_autotest_router())

@@ -12,6 +12,26 @@ import canary  # noqa: E402
 import canary_auto as ca  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
+
+
+import pytest  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def _status_to_tmp(tmp_path, monkeypatch):
+    """Never let a test run overwrite the real dashboard status file (no test data on the dashboard)."""
+    monkeypatch.setattr(ca, "STATUS_FILE", tmp_path / "auto-status.json")
+
+
+def test_status_file_written_for_the_dashboard(env, monkeypatch, tmp_path):
+    mark_ledger()
+    monkeypatch.setenv("CANARY_AUTO", "1")
+    b = FakeBroker(open_orders=[order("canary-buy-9", filled=0)])
+    c = _wire(monkeypatch, b)
+    ca.cmd_run(c)
+    import json
+    body = json.loads(ca.STATUS_FILE.read_text())
+    assert body["action"] == "stop" and body["source"] == "run" and body["open_orders"] == 1
 TODAY, YDAY = "2026-10-22", "2026-10-21"
 
 
