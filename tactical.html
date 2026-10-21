@@ -52,7 +52,10 @@ h1 span { color: var(--orange); }
 .pos { color: var(--good); } .neg { color: var(--bad); }
 .note { margin-top: 10px; font: 400 10.5px/1.4 var(--mono); color: var(--muted); }
 .chart { width: 100%; height: auto; display: block; }
-.chart text { font: 400 10px var(--mono); fill: var(--muted); }
+.chart { max-width: 100%; }
+.chart text { font: 400 11px var(--mono); fill: var(--muted); }
+.chart text.mk { font: 700 10.5px var(--mono); fill: var(--ink); }
+.sigsub { font: 700 10.5px/1.3 var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); margin: -2px 0 8px; }
 .legend { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 8px; font: 700 9.5px/1 var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
 .legend i { display: inline-block; width: 22px; height: 0; border-top: 2px solid; vertical-align: middle; margin-right: 6px; }
 .legend .box { width: 12px; height: 10px; border: 0; background: rgba(255,90,95,.18); }
@@ -101,7 +104,8 @@ td.r, th.r { text-align: right; }
   <section class="panel wide">
     <div class="ph"><span class="no">01</span><h2>SPY today · 1-minute closes</h2></div>
     <div id="chart"><div class="empty">Loading today's prices…</div></div>
-    <div class="legend"><span><i style="border-color:var(--ink)"></i>SPY close (IEX)</span><span><i style="border-color:var(--good);border-top-style:dashed"></i>Opening range high</span><span><i style="border-color:var(--bad);border-top-style:dashed"></i>Opening range low</span></div>
+    <div class="legend"><span><i style="border-color:var(--ink)"></i>SPY close (IEX)</span><span><i style="border-color:var(--good);border-top-style:dashed"></i>Opening range high</span><span><i style="border-color:var(--bad);border-top-style:dashed"></i>Opening range low</span><span style="color:var(--good)">▲ <b style="color:var(--muted)">paper entry</b></span><span style="color:var(--bad)">✕ <b style="color:var(--muted)">paper exit</b></span></div>
+    <div class="note">All times New York. Prices are IEX only (a slice of SPY volume), so a breakout of a few cents may not show on the full tape.</div>
   </section>
 
   <section class="panel wide">
@@ -145,31 +149,74 @@ td.r, th.r { text-align: right; }
       `<div class="note">${t.exit_reason === "flat_before_close" || t.exit_reason === "stop" || t.exit_reason === "target" ? "" : "Exit so far uses the latest bar; the day is scored after the close."}</div>`;
   }
 
-  function card(r) {
+  // Headline = where the paper test stands NOW, derived only from the engine's own trade record.
+  // The original signal stays visible underneath, so a stopped-out breakout never reads as a live long.
+  function headline(r, marketOpen) {
+    const s = r.signal || "NO_SIGNAL", t = r.trade;
+    if (!t) return { text: PLAIN[s] || s, cls: SIGCLS[s] || "", sub: "" };
+    const sub = `Signal: ${PLAIN[s] || s}`;
+    switch (t.exit_reason) {
+      case "stop": return { text: "Stopped out", cls: "info", sub: `${sub} · stopped ${t.exit_time} · done for today` };
+      case "target": return { text: "Target hit", cls: "go", sub: `${sub} · target ${t.exit_time} · done for today` };
+      case "flat_before_close": return { text: "Closed before the bell", cls: "", sub: `${sub} · closed ${t.exit_time} · done for today` };
+      default: return marketOpen ? { text: "In paper trade", cls: "go", sub: `${sub} · entered ${t.entry_time}, still open` }
+                                 : { text: "Closed at last bar", cls: "", sub: `${sub} · scored after the close` };
+    }
+  }
+
+  function card(r, marketOpen) {
     if (!r) return '<div class="empty">No state yet today.</div>';
-    const s = r.signal || "NO_SIGNAL";
+    const s = r.signal || "NO_SIGNAL", h = headline(r, marketOpen);
     let extra = "";
     if (r.range_high != null) extra = `<dl class="kv" style="margin-bottom:8px"><dt>Range high</dt><dd>${usd(r.range_high)}</dd><dt>Range low</dt><dd>${usd(r.range_low)}</dd></dl>`;
     const note = s === "SHORT_BREAKOUT" ? '<div class="note">Shown for information: this test is long only (the account cannot short fractional shares).</div>' : "";
-    return `<div class="sig ${SIGCLS[s] || ""}">${esc(PLAIN[s] || s)}</div><p class="why">${esc(r.reason || "")}</p>${extra}${tradeKV(r.trade)}${note}`;
+    return `<div class="sig ${h.cls}">${esc(h.text)}</div>${h.sub ? `<div class="sigsub">${esc(h.sub)}</div>` : ""}<p class="why">${esc(r.reason || "")}</p>${extra}${tradeKV(r.trade)}${note}`;
   }
 
-  function chart(prices, orb) {
+  const hm = s => { const m = /^(\d\d):(\d\d)/.exec(String(s || "")); return m ? +m[1] * 60 + +m[2] : null; };
+  const nyHM = iso => { const m = /T(\d\d:\d\d)/.exec(String(iso || "")); return m ? m[1] : null; };
+  let last = null;   // last data drawn, so a resize redraws real data (never a placeholder)
+
+  function chart(prices, orb, trades, session) {
     const box = $("chart");
     if (!prices || prices.length < 2) { box.innerHTML = '<div class="empty">No regular-hours bars yet today.</div>'; return; }
-    const W = 1000, H = 260, L = 54, R = 10, T = 10, B = 24;
+    last = [prices, orb, trades, session];
+    // Drawn at the box's real pixel width so axis text stays readable on a phone.
+    const W = Math.max(320, Math.round(box.clientWidth || 1000)), narrow = W < 600;
+    const H = narrow ? 230 : 270, L = narrow ? 50 : 58, R = 12, T = 12, B = 26;
+    const t0 = hm(nyHM(session && session.open)) ?? hm(prices[0][0]), t1 = hm(nyHM(session && session.close)) ?? t0 + 390;
     const vals = prices.map(p => p[1]).concat(orb && orb.range_high != null ? [orb.range_high, orb.range_low] : []);
+    trades.forEach(x => vals.push(x.t.entry_px, x.t.exit_px));
     const lo = Math.min(...vals), hi = Math.max(...vals), pad = (hi - lo) * .08 || .5, y0 = lo - pad, y1 = hi + pad;
-    const X = i => L + i * (W - L - R) / 389, Y = v => T + (H - T - B) * (1 - (v - y0) / (y1 - y0));   // x spans a full 390-minute session
-    const path = prices.map((p, i) => (i ? "L" : "M") + X(i).toFixed(1) + "," + Y(p[1]).toFixed(1)).join("");
+    // x is the bar's real clock time, so a missing IEX minute leaves a gap instead of shifting the line.
+    const X = m => L + (m - t0) * (W - L - R) / Math.max(1, t1 - t0), Y = v => T + (H - T - B) * (1 - (v - y0) / (y1 - y0));
+    let path = "", prev = null;
+    prices.forEach(p => { const m = hm(p[0]); if (m == null) return; path += (prev != null && m - prev <= 5 ? "L" : "M") + X(m).toFixed(1) + "," + Y(p[1]).toFixed(1); prev = m; });
     let lines = "";
     if (orb && orb.range_high != null) lines = `<line x1="${L}" x2="${W - R}" y1="${Y(orb.range_high)}" y2="${Y(orb.range_high)}" stroke="#3fd17f" stroke-dasharray="6 4"/><line x1="${L}" x2="${W - R}" y1="${Y(orb.range_low)}" y2="${Y(orb.range_low)}" stroke="#ff5a5f" stroke-dasharray="6 4"/>`;
     let grid = "";
-    for (let k = 0; k <= 4; k++) { const v = y0 + (y1 - y0) * k / 4; grid += `<line x1="${L}" x2="${W - R}" y1="${Y(v)}" y2="${Y(v)}" stroke="#3a322a"/><text x="${L - 6}" y="${Y(v) + 3}" text-anchor="end">${v.toFixed(2)}</text>`; }
-    const last = prices[prices.length - 1];
-    box.innerHTML = `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="SPY 1-minute closes today">${grid}${lines}<path d="${path}" fill="none" stroke="#f4ede5" stroke-width="1.5"/>` +
-      `<circle cx="${X(prices.length - 1)}" cy="${Y(last[1])}" r="3.5" fill="#f4ede5"/><text x="${L}" y="${H - 6}">${esc(prices[0][0])}</text><text x="${W - R}" y="${H - 6}" text-anchor="end">16:00</text></svg>`;
+    for (let k = 0; k <= 4; k++) { const v = y0 + (y1 - y0) * k / 4; grid += `<line x1="${L}" x2="${W - R}" y1="${Y(v)}" y2="${Y(v)}" stroke="#3a322a"/><text x="${L - 6}" y="${Y(v) + 4}" text-anchor="end">${v.toFixed(2)}</text>`; }
+    const step = narrow ? 120 : 60;
+    for (let m = Math.ceil(t0 / step) * step; m <= t1; m += step) {
+      const lab = String(Math.floor(m / 60)).padStart(2, "0") + ":" + String(m % 60).padStart(2, "0");
+      const anc = X(m) > W - R - 24 ? "end" : X(m) < L + 24 ? "start" : "middle";
+      grid += `<text x="${X(m)}" y="${H - 7}" text-anchor="${anc}">${lab}</text>`;
+    }
+    let marks = "";
+    trades.forEach(({ id, t }) => {
+      const ex = hm(t.entry_time), xx = hm(t.exit_time);
+      if (ex != null) marks += `<path d="M${X(ex)},${Y(t.entry_px) - 9}l-6,10h12z" fill="#3fd17f"/><text x="${X(ex)}" y="${Y(t.entry_px) - 13}" text-anchor="middle" class="mk">${id} in</text>`;
+      if (xx != null && ["stop", "target", "flat_before_close"].includes(t.exit_reason)) {
+        const c = t.exit_reason === "stop" ? "#ff5a5f" : "#f5b83d", x = X(xx), y = Y(t.exit_px);
+        marks += `<path d="M${x - 5},${y - 5}l10,10M${x + 5},${y - 5}l-10,10" stroke="${c}" stroke-width="2.5"/><text x="${x + 9}" y="${y + 18}" text-anchor="start" class="mk">${id} out</text>`;
+      }
+    });
+    const lp = prices[prices.length - 1], lm = hm(lp[0]);
+    box.innerHTML = `<svg class="chart" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="SPY 1-minute closes today">${grid}${lines}<path d="${path}" fill="none" stroke="#f4ede5" stroke-width="1.5"/>${marks}` +
+      (lm != null ? `<circle cx="${X(lm)}" cy="${Y(lp[1])}" r="3.5" fill="#f4ede5"/>` : "") + `</svg>`;
   }
+  let rz = null;
+  window.addEventListener("resize", () => { clearTimeout(rz); rz = setTimeout(() => last && chart(...last), 150); });
 
   async function loadSignal() {
     try {
@@ -177,9 +224,11 @@ td.r, th.r { text-align: right; }
       if (!s.ok) throw new Error(s.error || "unavailable");
       $("mkt").textContent = `Market: ${s.market}` + (s.last_bar ? ` · last closed bar ${s.last_bar} New York · ${s.bars} bars` : "");
       const by = {}; (s.strategies || []).forEach(r => by[r.strategy] = r);
-      $("cardA").innerHTML = s.strategies && s.strategies.length ? card(by.orb15) : `<div class="empty">${esc(s.market === "open" ? "Waiting for the first bars." : "No session data yet today.")}</div>`;
-      $("cardB").innerHTML = s.strategies && s.strategies.length ? card(by.engulf15) : `<div class="empty">${esc(s.market === "open" ? "Waiting for the first bars." : "No session data yet today.")}</div>`;
-      chart(s.prices, by.orb15);
+      const open = s.market === "open";
+      $("cardA").innerHTML = s.strategies && s.strategies.length ? card(by.orb15, open) : `<div class="empty">${esc(s.market === "open" ? "Waiting for the first bars." : "No session data yet today.")}</div>`;
+      $("cardB").innerHTML = s.strategies && s.strategies.length ? card(by.engulf15, open) : `<div class="empty">${esc(s.market === "open" ? "Waiting for the first bars." : "No session data yet today.")}</div>`;
+      const trades = [["A", by.orb15], ["B", by.engulf15]].filter(([, r]) => r && r.trade).map(([id, r]) => ({ id, t: r.trade }));
+      chart(s.prices, by.orb15, trades, s.session);
     } catch (e) {
       const m = esc("Can't read today's signals: " + (e.message || e));
       $("mkt").textContent = "Market state unknown"; $("cardA").innerHTML = $("cardB").innerHTML = `<div class="empty">${m}</div>`; $("chart").innerHTML = `<div class="empty">${m}</div>`;
@@ -201,7 +250,10 @@ td.r, th.r { text-align: right; }
     } catch (e) { $("score").innerHTML = $("recent").innerHTML = `<div class="empty">${esc("Can't read the ledger: " + (e.message || e))}</div>`; }
   }
 
-  async function tick(all) { await Promise.all([loadSignal(), all ? loadLedger() : null]); $("upd").textContent = "checked " + new Date().toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }) + " · signals every 30 s"; }
+  async function tick(all) { await Promise.all([loadSignal(), all ? loadLedger() : null]); const d = new Date(), f = tz => d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: tz });
+    let here = ""; try { here = Intl.DateTimeFormat().resolvedOptions().timeZone; } catch (e) { here = ""; }
+    // Every time on this page is New York time; the viewer's own clock is shown alongside, labelled.
+    $("upd").textContent = "checked " + f("America/New_York") + " New York" + (here && here !== "America/New_York" ? " (" + f(undefined) + " your time)" : "") + " · signals every 30 s"; }
   let n = 0; tick(true); setInterval(() => { n += 1; tick(n % 10 === 0); }, 30000);
 })();
 </script>
