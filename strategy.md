@@ -749,7 +749,7 @@ these tests decide whether it is worth doing.
   range high from 09:45 to 11:30 (or close - 60 min); entry next bar open; stop = range low; no target;
   flat 5 min before the close; one trade a day; long only.
 - **Strategy B, `engulf15`:** 15-minute bars from the open (a bar needs >= 12 of its minutes); bullish
-  engulfing (red then green, body engulfs body, higher volume) ending 10:00-14:30 (or close - 60
+  engulfing (red then green, body engulfs body, volume >= 1.5 x the median of the five 15-minute bars before it) ending 10:00-14:30 (or close - 60
   min); entry next 1-minute open; stop = engulfing bar low; target = entry + 1.5 x risk; flat 5 min
   before the close; one trade a day; long only. Prior evidence is weak (S&P 500 daily engulfing
   patterns, 1962-2010: effect fades after day 1, judged not exploitable net of costs).
