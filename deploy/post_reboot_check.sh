@@ -17,7 +17,7 @@ for u in "$SVC" cloudflared.service; do
   chk "$u restarts itself"  "[ \"\$(systemctl show $u -p Restart --value)\" = always ]"
 done
 echo "Timers"
-for t in health watchdog backup daily stress riskmark; do
+for t in health watchdog backup daily stress riskmark canary-run canary-close; do
   chk "aether-$t.timer active" "systemctl is-active aether-$t.timer"
 done
 echo "Dashboard"

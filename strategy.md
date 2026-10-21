@@ -316,9 +316,9 @@ once at import instead of lazily on the first log() call during live trading.
   `deploy/*.service|timer` to systemd, restore `.env` from the password manager, restore backup.
 - **Secrets** (values only in `.env` / `.env.live` + password manager): `APCA_API_KEY_ID/SECRET`
   (paper), `APCA_LIVE_API_KEY_ID/SECRET` (in `.env.live`, mode 600: loaded only by
-  `aether.service`, `canary.py`, `live_check.py`, `risk_mark.py` and `risk_admin.py`, so the
-  backup/daily/health/stress/watchdog timers never hold real-money keys; keys still in `.env` keep
-  working), `WEBHOOK_SECRET` (rotated 2026-10-03),
+  `aether.service`, `canary.py`, `canary_auto.py` (the canary timers, amendment 2026-10-21),
+  `live_check.py`, `risk_mark.py` and `risk_admin.py`, so the backup/daily/health/stress/watchdog
+  timers never hold real-money keys; keys still in `.env` keep working), `WEBHOOK_SECRET` (rotated 2026-10-03),
   `DASHBOARD_PASSWORD`, `TELEGRAM_BOT_TOKEN`, `BACKUP_SAS_URL` (expires 2027-10-01,
   renew by 2027-09-01).
 
@@ -582,7 +582,34 @@ is 3 or more. Prefer holding canary positions overnight (sell next session).
    needs whole-share orders and this section is amended before continuing.
 
 **End of every session:** `python3 canary.py assert-flat` must print FLAT (exit 0). A session
-that cannot get flat is an incident: halt, cancel, sell, then investigate.
+that cannot get flat is an incident: halt, cancel, sell, then investigate. *Clarified 2026-10-21:*
+on this margin account the canary position is held overnight (Day-trade constraint above), so a
+buy session legitimately ends holding it. The rule is: no canary **order** may be left open at the
+close, `assert-flat` is still run at the close (it records the session's ending cash for the cash
+check), and it must print FLAT after every completed sell.
+
+**Automated round trips (amendment 2026-10-21, owner decision, recorded before any automatic
+order).** The owner chose to automate the repeated round trips of steps 1 and 3 so they cannot be
+forgotten. Steps 2, 4, 5 and 6 stay manual. This deliberately relaxes two earlier rules for the
+canary only: (a) the live Alpaca keys are also loaded by `canary_auto.py`, run by the
+`aether-canary-run` / `aether-canary-close` timers, and (b) these canary orders go out without a
+per-order human yes. Strategy (engine) orders are unaffected: `US_LIVE` stays false and every
+engine order still needs a Telegram approval. The limits that stay in force:
+- Off unless `CANARY_AUTO=1` in `.env`; `CANARY_AUTO=0` (or the halt file for entries) stops it.
+- Every order goes through `canary.py buy` / `sell`, so the preflight, the 10:00-15:45 ET buy
+  window, the 1% price band, the 10 bp spread line, the canary risk caps ($15 per order, $30 per
+  day), the live ledger and breakers and the halt file all apply unchanged. Size: `--usd 8`.
+- `aether-canary-run` (Mon-Fri 10:05 ET): sells a canary position only if it was bought in an
+  earlier session (never a day trade), then buys at the ask if flat. A limit order not filled
+  within the pre-registered 900 s is cancelled. A buy refused for spread or quote is retried every
+  5 min, at most 8 times; any other refusal ends the run for that day.
+- `aether-canary-close` (Mon-Fri 15:52 ET): cancels any canary order still open and runs
+  `assert-flat` to record the session's ending cash.
+- Stops with a Telegram alert and a failing job on: any failure in the pre-registered report other
+  than "not flat" (an overnight hold) and today's unfinished cash line, an open canary order at
+  the start of a run, an unknown position on the canary symbol, or a crash. It stops buying once
+  10 round trips are complete; the owner then runs `canary.py report` and sets `CANARY_AUTO=0`.
+- The pre-registered measurement (`PREREG`) and the "Conclusive when" criteria are unchanged.
 
 **Conclusive when:** every step 1–6 passed at least once; steps 1 and 3 repeated to 10
 completed round trips in total; zero reconciliation mismatches, zero duplicate orders, zero

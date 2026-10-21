@@ -36,7 +36,7 @@ _cache: dict = {"t": 0.0, "v": None}
 _acct_cache: dict = {"t": 0.0, "v": None}
 _lock = threading.Lock()
 
-JOBS = ("health", "watchdog", "backup", "daily", "stress", "riskmark")
+JOBS = ("health", "watchdog", "backup", "daily", "stress", "riskmark", "canary-run", "canary-close")
 THREADS = {"aether-us": "us", "aether-strategy": "crypto", "aether-monitor": "monitor"}
 _ENV = {k: v for k, v in os.environ.items() if k != "NOTIFY_SOCKET"}  # see aether_engine._SUBPROCESS_ENV
 
