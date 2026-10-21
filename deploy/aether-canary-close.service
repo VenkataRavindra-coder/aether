@@ -1,0 +1,11 @@
+[Unit]
+Description=AETHER canary end of session (cancel leftover canary orders, record end-of-day cash)
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=ratelark
+WorkingDirectory=/home/ratelark/ratelark
+EnvironmentFile=/home/ratelark/ratelark/.env
+ExecStart=/home/ratelark/ratelark/.venv/bin/python3 /home/ratelark/ratelark/canary_auto.py close
+TimeoutStartSec=300

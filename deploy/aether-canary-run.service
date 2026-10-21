@@ -1,0 +1,14 @@
+[Unit]
+Description=AETHER automated canary round trip (live account, $8 VTI; strategy.md 10 amendment 2026-10-21)
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=ratelark
+WorkingDirectory=/home/ratelark/ratelark
+EnvironmentFile=/home/ratelark/ratelark/.env
+# Does nothing unless CANARY_AUTO=1 in .env. Like canary.py, canary_auto.py loads the live keys itself
+# (strategy.md 10 amendment 2026-10-21); this unit does not pass them in.
+ExecStart=/home/ratelark/ratelark/.venv/bin/python3 /home/ratelark/ratelark/canary_auto.py run
+# buy retries (8 x 5 min) + fill waits (2 x 15 min) fit well inside this
+TimeoutStartSec=5400

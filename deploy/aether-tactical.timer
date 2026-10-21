@@ -1,0 +1,9 @@
+[Unit]
+Description=Score the tactical paper tests on weekdays at 16:20 New York time (after the close)
+
+[Timer]
+OnCalendar=Mon..Fri *-*-* 16:20:00 America/New_York
+Persistent=true
+
+[Install]
+WantedBy=timers.target

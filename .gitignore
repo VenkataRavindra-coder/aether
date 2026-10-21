@@ -29,3 +29,12 @@
 !deploy/mac-icloud-backup/pull_backups.sh
 !deploy/mac-icloud-backup/com.aether.icloud-backup.plist
 !deploy/mac-icloud-backup/README.md
+# 2026-10-21: Trend Gate and tactical paper tests (packages) and the canary/tactical timers
+!trend_gate/
+!aether_tactical/
+!deploy/aether-canary-run.service
+!deploy/aether-canary-run.timer
+!deploy/aether-canary-close.service
+!deploy/aether-canary-close.timer
+!deploy/aether-tactical.service
+!deploy/aether-tactical.timer

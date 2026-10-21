@@ -1,0 +1,9 @@
+[Unit]
+Description=Canary end-of-session record on weekdays at 15:52 New York time
+
+[Timer]
+OnCalendar=Mon..Fri *-*-* 15:52:00 America/New_York
+Persistent=false
+
+[Install]
+WantedBy=timers.target
