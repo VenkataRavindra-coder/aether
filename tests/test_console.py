@@ -1,4 +1,4 @@
-"""The single console at / (2026-10-18): replaces dashboard_v2, dashboard_classic and /us."""
+"""The detailed console at /console (2026-10-18, moved from / on 2026-10-21 when the board took /)."""
 import re
 from pathlib import Path
 
@@ -32,7 +32,7 @@ def test_every_api_the_console_calls_exists():
 def test_old_pages_redirect_and_files_are_gone():
     import dashboard_v2
     r = dashboard_v2.classic_page()
-    assert r.status_code == 307 and r.headers["location"] == "/#holdings"
+    assert r.status_code == 307 and r.headers["location"] == "/console#holdings"
     for f in ("dashboard_v2.html", "dashboard_classic.html", "us_dashboard.html"):
         assert not (ROOT / f).exists(), f
 

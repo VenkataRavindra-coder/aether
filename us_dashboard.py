@@ -220,7 +220,7 @@ def build_router(auth_dep: Callable) -> APIRouter:
     def page():
         """Retired 2026-10-18: the US view is now the console's "US strategy" and "Safety" sections."""
         from fastapi.responses import RedirectResponse
-        return RedirectResponse("/#us", status_code=307)
+        return RedirectResponse("/console#us", status_code=307)
 
     @r.get("/api/us/summary")
     def summary():
