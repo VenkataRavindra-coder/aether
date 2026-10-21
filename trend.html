@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AETHER Trend Gate</title>
+<meta name="color-scheme" content="dark">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&family=JetBrains+Mono:wght@400;600;700&display=swap">
+<style>
+/* AETHER Trend Gate page (2026-10-21). Every value comes from GET /signal/SPY and its history;
+   when they cannot be read the page says so instead of showing a number. */
+:root {
+  --bg: #12100e; --panel: #1b1815; --panel2: #231f1b; --line: #3a322a; --ink: #f4ede5; --muted: #a59b8f; --dim: #6f665c;
+  --orange: #f08a3c; --glow: 0 0 0 1px rgba(240,138,60,.55), 0 0 18px rgba(240,138,60,.16);
+  --good: #3fd17f; --warn: #f5b83d; --bad: #ff5a5f;
+  --display: "Archivo", "Arial Narrow", Arial, sans-serif; --mono: "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: radial-gradient(1200px 600px at 70% -10%, #2a1d12 0%, var(--bg) 60%) fixed, var(--bg); color: var(--ink); font: 13px/1.45 var(--display); min-height: 100vh; }
+.wrap { max-width: 1280px; margin: 0 auto; padding: 18px 22px 28px; }
+.pages { display: flex; gap: 6px; }
+.pages a { font: 700 10px/1 var(--mono); letter-spacing: .14em; text-transform: uppercase; text-decoration: none; color: var(--muted); border: 1px solid var(--line); border-radius: 6px; padding: 7px 10px; }
+.pages a:hover { color: var(--ink); border-color: var(--orange); }
+.pages a[aria-current=page] { color: #1b0f05; background: var(--orange); border-color: var(--orange); }
+.top { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+.upd { font: 400 10.5px/1 var(--mono); color: var(--muted); }
+h1 { margin: 14px 0 18px; font: 900 clamp(26px, 4.2vw, 54px)/.95 var(--display); font-stretch: 72%; text-transform: uppercase; text-align: right; }
+h1 span { color: var(--orange); }
+.grid { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1.9fr); gap: 22px; align-items: start; }
+@media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
+@media (max-width: 640px) { .wrap { padding: 14px 16px 22px; } }
+.panel { background: linear-gradient(180deg, var(--panel2), var(--panel)); border-radius: 14px; box-shadow: var(--glow); padding: 14px; min-width: 0; }
+.ph { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.no { font: 700 10px/1 var(--mono); color: var(--orange); }
+.ph h2 { margin: 0; font: 900 15px/1 var(--display); font-stretch: 80%; text-transform: uppercase; letter-spacing: .02em; }
+.tag { margin-left: auto; font: 700 9px/1 var(--mono); letter-spacing: .1em; text-transform: uppercase; padding: 4px 7px; border-radius: 5px; background: var(--line); color: var(--muted); }
+.tag.warn { background: var(--warn); color: #1b0f05; }
+.hero { border-radius: 12px; padding: 16px; border: 1px solid var(--line); background: rgba(0,0,0,.25); }
+.hero.on { border-color: var(--good); background: linear-gradient(180deg, rgba(63,209,127,.16), rgba(0,0,0,.2)); }
+.hero.off { border-color: var(--bad); background: linear-gradient(180deg, rgba(255,90,95,.16), rgba(0,0,0,.2)); }
+.hero .st { font: 900 clamp(30px, 4vw, 46px)/1 var(--display); font-stretch: 72%; text-transform: uppercase; }
+.hero.on .st { color: var(--good); } .hero.off .st { color: var(--bad); } .hero.none .st { color: var(--muted); }
+.hero .act { margin-top: 6px; font: 700 14px/1.2 var(--mono); }
+.hero p { margin: 10px 0 0; color: var(--ink); font-size: 13.5px; }
+.stats { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 12px; }
+.stat { border: 1px solid var(--line); border-radius: 10px; padding: 9px 10px; background: rgba(0,0,0,.2); min-width: 0; }
+.stat span { display: block; font: 700 9px/1.2 var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+.stat b { display: block; font: 700 18px/1.15 var(--mono); margin-top: 4px; overflow-wrap: anywhere; }
+.pos { color: var(--good); } .neg { color: var(--bad); }
+.note { margin-top: 10px; font: 400 10.5px/1.4 var(--mono); color: var(--muted); }
+.chart { width: 100%; height: auto; display: block; }
+.chart text { font: 400 10px var(--mono); fill: var(--muted); }
+.legend { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 8px; font: 700 9.5px/1 var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+.legend i { display: inline-block; width: 22px; height: 0; border-top: 2px solid; vertical-align: middle; margin-right: 6px; }
+.legend .box { width: 12px; height: 10px; border: 0; background: rgba(255,90,95,.18); }
+.rules { margin-top: 22px; }
+.rules ol { margin: 0; padding-left: 18px; display: grid; gap: 6px; font-size: 13px; }
+.empty { color: var(--muted); font-style: italic; padding: 30px 0; text-align: center; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <nav class="pages" aria-label="Pages"><a href="/">Board</a><a href="/trend" aria-current="page">Trend Gate</a></nav>
+    <span class="upd" id="upd">Loading…</span>
+  </div>
+  <h1>AETHER <span>Trend gate</span></h1>
+
+  <div class="grid">
+    <section class="panel">
+      <div class="ph"><span class="no">01</span><h2>Today's signal · SPY</h2><span class="tag" id="tag">…</span></div>
+      <div class="hero none" id="hero"><div class="st">Loading</div></div>
+      <div class="stats" id="stats"></div>
+      <div class="note" id="meta"></div>
+    </section>
+
+    <section class="panel">
+      <div class="ph"><span class="no">02</span><h2>SPY vs its 200-day average · last year</h2></div>
+      <div id="chart"><div class="empty">Loading price history…</div></div>
+      <div class="legend"><span><i style="border-color:var(--ink)"></i>SPY close</span><span><i style="border-color:var(--orange)"></i>200-day average</span><span><i class="box"></i>Defensive days (close at or below average)</span></div>
+    </section>
+  </div>
+
+  <section class="panel rules">
+    <div class="ph"><span class="no">03</span><h2>The rule, in plain English</h2></div>
+    <ol>
+      <li>Each trading day, take SPY's last <b>200</b> daily closing prices and average them.</li>
+      <li>If the latest close is <b>above</b> that average, the market's long-term trend is up: <b>BUY / HOLD_LONG</b>.</li>
+      <li>If it is <b>at or below</b> the average, the trend has broken: <b>DEFENSIVE_CASH / EXIT</b>, to protect against big drawdowns.</li>
+      <li>The rule is advisory. It places no orders; any trade still goes through your approval and risk limits.</li>
+    </ol>
+  </section>
+</div>
+
+<script>
+(() => {
+  "use strict";
+  const $ = id => document.getElementById(id);
+  const esc = s => String(s == null ? "" : s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const num = x => typeof x === "number" && isFinite(x);
+  const usd = x => num(x) ? "$" + x.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "—";
+  const pct = x => num(x) ? (x >= 0 ? "+" : "−") + Math.abs(x).toFixed(2) + "%" : "—";
+
+  async function getJSON(url) {
+    const r = await fetch(url, { credentials: "same-origin", cache: "no-store" });
+    if (r.status === 401 || r.status === 403) throw new Error("signed out: reload to sign in");
+    const ct = r.headers.get("content-type") || "";
+    const body = ct.includes("json") ? await r.json() : null;
+    if (!body) throw new Error("HTTP " + r.status);
+    return body;
+  }
+
+  function renderSignal(s, err) {
+    const hero = $("hero"), tag = $("tag");
+    if (err || !s || !s.ok) {
+      hero.className = "hero none";
+      hero.innerHTML = `<div class="st">No signal</div><div class="act">NO_ACTION</div><p>${esc(err || (s && s.error) || "No verified data.")}</p>`;
+      tag.className = "tag warn"; tag.textContent = "unavailable"; $("stats").innerHTML = ""; $("meta").textContent = "";
+      return;
+    }
+    const on = s.status === "RISK_ON";
+    hero.className = "hero " + (on ? "on" : "off");
+    const where = Math.abs(s.distance_pct) < 0.005 ? "exactly at" : (s.distance_pct > 0 ? pct(s.distance_pct).slice(1) + " above" : pct(s.distance_pct).slice(1) + " below");
+    hero.innerHTML = `<div class="st">${on ? "Risk on" : "Risk off"}</div><div class="act">${esc(s.action)}</div>` +
+      `<p>SPY closed at ${usd(s.close)} on ${esc(s.as_of)}, ${where} its ${s.sma_window}-day average (${usd(s.sma)}). ` +
+      (on ? "The long-term trend is up, so the rule says hold stocks." : "The long-term trend is broken, so the rule says stay defensive in cash.") +
+      (s.held_by_band ? " (Kept from the previous signal: the price is inside the no-trade band.)" : "") + `</p>`;
+    tag.className = "tag" + (s.stale ? " warn" : ""); tag.textContent = s.stale ? "stale · " + Math.round((s.stale_age_s || 0) / 60) + " min old" : "verified";
+    $("stats").innerHTML = [["Latest close", usd(s.close), ""], [s.sma_window + "-day average", usd(s.sma), ""],
+      ["Distance from average", pct(s.distance_pct), s.distance_pct > 0 ? "pos" : "neg"], ["Based on close of", esc(s.as_of), ""]]
+      .map(([l, v, c]) => `<div class="stat"><span>${l}</span><b class="${c}">${v}</b></div>`).join("");
+    $("meta").textContent = `Data: Alpaca (${s.data_mode} keys) · computed ${new Date(s.computed_at).toLocaleString("en-GB")}` + (s.stale ? ` · broker error: ${s.error}` : "");
+  }
+
+  function renderChart(h, err) {
+    const box = $("chart");
+    if (err || !h || !h.ok || !h.points || h.points.length < 2) { box.innerHTML = `<div class="empty">${esc(err || (h && h.error) || "No verified price history.")}</div>`; return; }
+    const P = h.points, W = 760, H = 300, L = 54, R = 10, T = 10, B = 26;
+    const vals = P.flatMap(p => [p[1], p[2]]), lo = Math.min(...vals), hi = Math.max(...vals), pad = (hi - lo) * .06 || 1;
+    const y0 = lo - pad, y1 = hi + pad, X = i => L + i * (W - L - R) / (P.length - 1), Y = v => T + (H - T - B) * (1 - (v - y0) / (y1 - y0));
+    const line = k => P.map((p, i) => (i ? "L" : "M") + X(i).toFixed(1) + "," + Y(p[k]).toFixed(1)).join("");
+    let shade = ""; // defensive days: close at or below the average
+    P.forEach((p, i) => { if (p[1] <= p[2]) { const w = (W - L - R) / (P.length - 1); shade += `<rect x="${(X(i) - w / 2).toFixed(1)}" y="${T}" width="${w.toFixed(2)}" height="${H - T - B}" fill="rgba(255,90,95,.14)"/>`; } });
+    let grid = "";
+    for (let k = 0; k <= 4; k++) { const v = y0 + (y1 - y0) * k / 4, y = Y(v).toFixed(1); grid += `<line x1="${L}" x2="${W - R}" y1="${y}" y2="${y}" stroke="#3a322a" stroke-width="1"/><text x="${L - 6}" y="${+y + 3}" text-anchor="end">${Math.round(v)}</text>`; }
+    const lab = [0, Math.floor(P.length / 2), P.length - 1].map(i => `<text x="${X(i)}" y="${H - 8}" text-anchor="${i === 0 ? "start" : i === P.length - 1 ? "end" : "middle"}">${esc(P[i][0])}</text>`).join("");
+    const last = P[P.length - 1];
+    box.innerHTML = `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="SPY close and 200-day average, ${esc(P[0][0])} to ${esc(last[0])}">${shade}${grid}` +
+      `<path d="${line(2)}" fill="none" stroke="#f08a3c" stroke-width="2"/><path d="${line(1)}" fill="none" stroke="#f4ede5" stroke-width="1.6"/>` +
+      `<circle cx="${X(P.length - 1)}" cy="${Y(last[1])}" r="3.5" fill="#f4ede5"/>${lab}</svg>`;
+  }
+
+  async function refresh() {
+    try { renderSignal(await getJSON("/signal/SPY")); } catch (e) { renderSignal(null, String(e.message || e)); }
+    try { renderChart(await getJSON("/signal/SPY/history?days=252")); } catch (e) { renderChart(null, String(e.message || e)); }
+    $("upd").textContent = "checked " + new Date().toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }) + " · refreshes every minute";
+  }
+  refresh(); setInterval(refresh, 60000);
+})();
+</script>
+</body>
+</html>

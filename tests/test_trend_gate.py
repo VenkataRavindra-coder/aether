@@ -96,3 +96,27 @@ def test_mounted_on_the_engine_and_read_only():
     src = "".join(p.read_text() for p in Path(api.__file__).parent.glob("*.py"))
     for bad in ("submit_order", "TradingClient", "cancel_order", "APCA_LIVE_API_KEY_ID\")"):
         assert bad not in src
+
+
+def test_history_series_and_page(monkeypatch):
+    monkeypatch.setattr("trend_gate.service.datetime", type("D", (), {"now": staticmethod(lambda tz=None: NOW)}))
+    monkeypatch.setattr(api, "_service", SignalService(Settings(sma_window=3, cache_ttl_s=0), Fetcher(bars([100, 101, 102, 103, 104]))))
+    c = TestClient(api.create_app())
+    h = c.get("/signal/SPY/history?days=10").json()
+    assert h["ok"] and h["points"] == [[p[0], p[1], p[2]] for p in h["points"]]
+    assert [p[2] for p in h["points"]] == [101.0, 102.0, 103.0]            # rolling 3-day averages
+    page = c.get("/trend")
+    assert page.status_code == 200 and "Trend gate" in page.text and 'fetch(url' in page.text
+    monkeypatch.setattr(api, "_service", SignalService(Settings(sma_window=3), Fetcher(DataError("down"))))
+    assert c.get("/signal/SPY/history").status_code == 503
+
+
+def test_pages_link_each_other_and_show_no_made_up_numbers():
+    from pathlib import Path
+    root = Path(api.__file__).resolve().parent.parent
+    trend, board = (root / "trend.html").read_text(), (root / "board.html").read_text()
+    assert 'href="/trend"' in board and 'href="/"' in trend
+    import re
+    assert not re.search(r"\$\d", trend) and "math.random" not in trend.lower()
+    import aether_engine as eng
+    assert {"/trend", "/signal/{symbol}/history"} <= {getattr(r, "path", None) for r in eng.app.routes}
