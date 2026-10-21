@@ -406,7 +406,7 @@ h1 span { color: var(--orange); }
     $("f-desks").textContent = num(s.total_pl) ? "since start " + signed(s.total_pl) : (ERR.overview || "");
     runBadge("desks", d, !!(o || u));
   }
-  const JOBS = [["health", "Health", "pulse", C.green, "every minute"], ["watchdog", "Watchdog", "eye", C.purple, "every 5 min"], ["backup", "Backup", "box", C.blue, "03:15 UTC"], ["daily", "Daily checks", "check", C.teal, "04:30 UTC"], ["stress", "Stress test", "gauge", C.yellow, "weekdays 16:00 UTC"], ["riskmark", "Risk mark", "shield", C.red, "weekdays 15:50 NY"]];
+  const JOBS = [["health", "Health", "pulse", C.green, "every minute"], ["watchdog", "Watchdog", "eye", C.purple, "every 5 min"], ["backup", "Backup", "box", C.blue, "03:15 UTC"], ["daily", "Daily checks", "check", C.teal, "04:30 UTC"], ["stress", "Stress test", "gauge", C.yellow, "weekdays 16:00 UTC"], ["riskmark", "Risk mark", "shield", C.red, "weekdays 15:50 NY"], ["canary-run", "Auto canary", "target", C.orange, "weekdays 10:05 NY (only if CANARY_AUTO=1)"], ["canary-close", "Canary close", "clock", C.sky, "weekdays 15:52 NY"]];
   function renderJobs() {
     const s = D.status, units = s && ok(s.units), jobs = units ? units.jobs : null, st = s && ok(s.stress);
     const t = JOBS.map(([id, n, i, c, when]) => {
