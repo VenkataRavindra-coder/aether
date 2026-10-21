@@ -374,6 +374,8 @@ def test_watchdog_accepts_either_healthcheck_name(monkeypatch):
 # ---------- K1: live keys can live in .env.live ------------------------------------------------
 def test_ops_loader_reads_env_live(env, monkeypatch):
     import aether_ops
+    # Keep the loader pointed at the isolated fixture, not the checkout's real .env.live.
+    monkeypatch.setattr(aether_ops, "__file__", str(env / "aether_ops.py"))
     (env / ".env").write_text("TELEGRAM_CHAT_ID_X=1\n")
     (env / ".env.live").write_text("APCA_LIVE_API_KEY_ID=AKX\nAPCA_LIVE_API_SECRET_KEY=SX\n")
     monkeypatch.delenv("APCA_LIVE_API_KEY_ID", raising=False)
