@@ -26,6 +26,10 @@ a { color: inherit; }
 
 /* header */
 .top { display: grid; grid-template-columns: 1fr auto; align-items: end; gap: 12px 20px; padding: 18px 22px 8px; }
+.pages { grid-column: 1 / -1; display: flex; gap: 6px; }
+.pages a { font: 700 10px/1 var(--mono); letter-spacing: .14em; text-transform: uppercase; text-decoration: none; color: var(--muted); border: 1px solid var(--line); border-radius: 6px; padding: 7px 10px; }
+.pages a:hover { color: var(--ink); border-color: var(--orange); }
+.pages a[aria-current=page] { color: #1b0f05; background: var(--orange); border-color: var(--orange); }
 .livechip { font: 700 11px/1 var(--mono); letter-spacing: .14em; text-transform: uppercase; display: flex; align-items: center; gap: 8px; color: var(--ink); }
 .livechip .d { width: 8px; height: 8px; border-radius: 50%; background: var(--idle); }
 .livechip.good .d { background: var(--good); box-shadow: 0 0 8px var(--good); }
@@ -141,8 +145,9 @@ h1 span { color: var(--orange); }
 </head>
 <body>
 <header class="top">
-  <div class="livechip" id="liveChip"><span class="d"></span><span id="liveText">Connecting to the engine…</span></div>
-  <div class="clock stale" id="clock"><span class="d"></span><span id="clockText">--:--</span></div>
+  <nav class="pages" aria-label="Pages"><a href="/" aria-current="page">Board</a><a href="/trend">Trend Gate</a></nav>
+  <div class="livechip" id="liveChip" style="grid-row:2"><span class="d"></span><span id="liveText">Connecting to the engine…</span></div>
+  <div class="clock stale" id="clock" style="grid-row:2"><span class="d"></span><span id="clockText">--:--</span></div>
   <h1>AETHER <span>US trading desk</span></h1>
 </header>
 <div class="banner" id="banner" hidden></div>

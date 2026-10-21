@@ -2138,3 +2138,8 @@ app.include_router(_build_map_router(lambda: None, _map_engine_info))
 # GitHub, Alpaca, internet). Same default-deny _dashboard_auth middleware as every other page.
 from connectivity import build_router as _build_connectivity_router  # noqa: E402
 app.include_router(_build_connectivity_router(lambda: None))
+
+# trend_gate (2026-10-21): GET /signal/{symbol}, the SPY 200-day trend gate (advisory, read-only,
+# paper data keys by default). Same default-deny _dashboard_auth middleware as every other page.
+from trend_gate.api import build_router as _build_trend_gate_router  # noqa: E402
+app.include_router(_build_trend_gate_router())
