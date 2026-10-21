@@ -147,3 +147,19 @@ def test_signal_names():
     assert orb.evaluate(flat_day(), S)["signal"] == "NO_SIGNAL"
     assert eng.evaluate(engulf_day(), S)["signal"] == "BULLISH_ENGULFING"
     assert eng.evaluate(flat_day(60), S)["signal"] == "SCANNING"
+
+
+def test_tactical_page_served_and_linked_everywhere():
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from aether_tactical import api_tactical
+    app = FastAPI(); app.include_router(api_tactical.build_router())
+    page = TestClient(app).get("/tactical")
+    assert page.status_code == 200 and "Paper tests only" in page.text
+    root = Path(__file__).resolve().parent.parent
+    for f in ("board.html", "trend.html", "tactical.html"):
+        txt = (root / f).read_text()
+        assert all(h in txt for h in ('href="/"', 'href="/trend"', 'href="/tactical"')), f
+    import re
+    t = (root / "tactical.html").read_text()
+    assert not re.search(r"\$\d", t) and "math.random" not in t.lower() and 'method: "POST"' not in t

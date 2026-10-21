@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AETHER Tactical</title>
+<meta name="color-scheme" content="dark">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&family=JetBrains+Mono:wght@400;600;700&display=swap">
+<style>
+/* AETHER Tactical page (2026-10-21). Every value comes from GET /tactical/signal/SPY and /tactical/ledger;
+   when they cannot be read the page says so instead of showing a number. Paper tests only. */
+:root {
+  --bg: #12100e; --panel: #1b1815; --panel2: #231f1b; --line: #3a322a; --ink: #f4ede5; --muted: #a59b8f; --dim: #6f665c;
+  --orange: #f08a3c; --glow: 0 0 0 1px rgba(240,138,60,.55), 0 0 18px rgba(240,138,60,.16);
+  --good: #3fd17f; --warn: #f5b83d; --bad: #ff5a5f;
+  --display: "Archivo", "Arial Narrow", Arial, sans-serif; --mono: "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: radial-gradient(1200px 600px at 70% -10%, #2a1d12 0%, var(--bg) 60%) fixed, var(--bg); color: var(--ink); font: 13px/1.45 var(--display); min-height: 100vh; }
+.wrap { max-width: 1280px; margin: 0 auto; padding: 18px 22px 28px; }
+.pages { display: flex; gap: 6px; }
+.pages a { font: 700 10px/1 var(--mono); letter-spacing: .14em; text-transform: uppercase; text-decoration: none; color: var(--muted); border: 1px solid var(--line); border-radius: 6px; padding: 7px 10px; }
+.pages a:hover { color: var(--ink); border-color: var(--orange); }
+.pages a[aria-current=page] { color: #1b0f05; background: var(--orange); border-color: var(--orange); }
+.top { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+.upd { font: 400 10.5px/1 var(--mono); color: var(--muted); }
+h1 { margin: 14px 0 18px; font: 900 clamp(26px, 4.2vw, 54px)/.95 var(--display); font-stretch: 72%; text-transform: uppercase; text-align: right; }
+h1 span { color: var(--orange); }
+.grid { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1.9fr); gap: 22px; align-items: start; }
+@media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
+@media (max-width: 640px) { .wrap { padding: 14px 16px 22px; } }
+.panel { background: linear-gradient(180deg, var(--panel2), var(--panel)); border-radius: 14px; box-shadow: var(--glow); padding: 14px; min-width: 0; }
+.ph { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.no { font: 700 10px/1 var(--mono); color: var(--orange); }
+.ph h2 { margin: 0; font: 900 15px/1 var(--display); font-stretch: 80%; text-transform: uppercase; letter-spacing: .02em; }
+.tag { margin-left: auto; font: 700 9px/1 var(--mono); letter-spacing: .1em; text-transform: uppercase; padding: 4px 7px; border-radius: 5px; background: var(--line); color: var(--muted); }
+.tag.warn { background: var(--warn); color: #1b0f05; }
+.hero { border-radius: 12px; padding: 16px; border: 1px solid var(--line); background: rgba(0,0,0,.25); }
+.hero.on { border-color: var(--good); background: linear-gradient(180deg, rgba(63,209,127,.16), rgba(0,0,0,.2)); }
+.hero.off { border-color: var(--bad); background: linear-gradient(180deg, rgba(255,90,95,.16), rgba(0,0,0,.2)); }
+.hero .st { font: 900 clamp(30px, 4vw, 46px)/1 var(--display); font-stretch: 72%; text-transform: uppercase; }
+.hero.on .st { color: var(--good); } .hero.off .st { color: var(--bad); } .hero.none .st { color: var(--muted); }
+.hero .act { margin-top: 6px; font: 700 14px/1.2 var(--mono); }
+.hero p { margin: 10px 0 0; color: var(--ink); font-size: 13.5px; }
+.stats { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 12px; }
+.stat { border: 1px solid var(--line); border-radius: 10px; padding: 9px 10px; background: rgba(0,0,0,.2); min-width: 0; }
+.stat span { display: block; font: 700 9px/1.2 var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+.stat b { display: block; font: 700 18px/1.15 var(--mono); margin-top: 4px; overflow-wrap: anywhere; }
+.pos { color: var(--good); } .neg { color: var(--bad); }
+.note { margin-top: 10px; font: 400 10.5px/1.4 var(--mono); color: var(--muted); }
+.chart { width: 100%; height: auto; display: block; }
+.chart text { font: 400 10px var(--mono); fill: var(--muted); }
+.legend { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 8px; font: 700 9.5px/1 var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+.legend i { display: inline-block; width: 22px; height: 0; border-top: 2px solid; vertical-align: middle; margin-right: 6px; }
+.legend .box { width: 12px; height: 10px; border: 0; background: rgba(255,90,95,.18); }
+.rules { margin-top: 22px; }
+.rules ol { margin: 0; padding-left: 18px; display: grid; gap: 6px; font-size: 13px; }
+.empty { color: var(--muted); font-style: italic; padding: 30px 0; text-align: center; }
+
+.paper { margin: -6px 0 16px; padding: 9px 12px; border-radius: 8px; border: 1px dashed var(--orange); color: var(--ink); font-weight: 600; }
+.mkt { font: 700 10.5px/1 var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); margin-bottom: 12px; }
+.cards { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; }
+@media (max-width: 900px) { .cards { grid-template-columns: 1fr; } }
+.sig { font: 900 clamp(22px, 2.6vw, 32px)/1 var(--display); font-stretch: 72%; text-transform: uppercase; margin: 4px 0 6px; color: var(--muted); }
+.sig.go { color: var(--good); } .sig.wait { color: var(--warn); } .sig.info { color: var(--bad); }
+.why { font-size: 13px; margin: 0 0 10px; }
+.kv { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; font: 400 11.5px/1.4 var(--mono); }
+.kv dt { color: var(--muted); } .kv dd { margin: 0; }
+.wide { margin-top: 22px; }
+table { width: 100%; border-collapse: collapse; font: 400 11.5px/1.4 var(--mono); }
+th { text-align: left; color: var(--muted); font-weight: 700; font-size: 9.5px; letter-spacing: .1em; text-transform: uppercase; padding: 6px 8px; border-bottom: 1px solid var(--line); }
+td { padding: 7px 8px; border-bottom: 1px solid rgba(58,50,42,.6); vertical-align: top; }
+td.r, th.r { text-align: right; }
+.scroll { overflow-x: auto; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <nav class="pages" aria-label="Pages"><a href="/">Board</a><a href="/trend">Trend Gate</a><a href="/tactical" aria-current="page">Tactical</a></nav>
+    <span class="upd" id="upd">Loading…</span>
+  </div>
+  <h1>AETHER <span>Tactical</span></h1>
+  <div class="paper">Paper tests only. These strategies place no orders, real or paper. Each day is scored on real prices so the rules earn trust before any money is involved.</div>
+  <div class="mkt" id="mkt">Checking the market…</div>
+
+  <div class="cards">
+    <section class="panel">
+      <div class="ph"><span class="no">A</span><h2>Opening range breakout · SPY</h2><span class="tag">15-min range</span></div>
+      <div id="cardA"><div class="empty">Loading…</div></div>
+    </section>
+    <section class="panel">
+      <div class="ph"><span class="no">B</span><h2>Bullish engulfing scalp · SPY</h2><span class="tag">15-min bars</span></div>
+      <div id="cardB"><div class="empty">Loading…</div></div>
+    </section>
+  </div>
+
+  <section class="panel wide">
+    <div class="ph"><span class="no">01</span><h2>SPY today · 1-minute closes</h2></div>
+    <div id="chart"><div class="empty">Loading today's prices…</div></div>
+    <div class="legend"><span><i style="border-color:var(--ink)"></i>SPY close (IEX)</span><span><i style="border-color:var(--good);border-top-style:dashed"></i>Opening range high</span><span><i style="border-color:var(--bad);border-top-style:dashed"></i>Opening range low</span></div>
+  </section>
+
+  <section class="panel wide">
+    <div class="ph"><span class="no">02</span><h2>Scorecard · paper results after costs</h2><span class="tag">verdict after 40 sessions</span></div>
+    <div class="scroll" id="score"><div class="empty">Loading…</div></div>
+  </section>
+
+  <section class="panel wide">
+    <div class="ph"><span class="no">03</span><h2>Recent scored days</h2></div>
+    <div class="scroll" id="recent"><div class="empty">Loading…</div></div>
+  </section>
+</div>
+
+<script>
+(() => {
+  "use strict";
+  const $ = id => document.getElementById(id);
+  const esc = s => String(s == null ? "" : s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const num = x => typeof x === "number" && isFinite(x);
+  const usd = x => num(x) ? "$" + x.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "—";
+  const bp = x => num(x) ? (x >= 0 ? "+" : "−") + Math.abs(x).toFixed(1) + " bp" : "—";
+  const NAMES = { orb15: "A · Opening range breakout", engulf15: "B · Bullish engulfing" };
+  const SIGCLS = { LONG_BREAKOUT: "go", BULLISH_ENGULFING: "go", WAITING_FOR_RANGE: "wait", SCANNING: "wait", SHORT_BREAKOUT: "info" };
+  const PLAIN = { LONG_BREAKOUT: "Long breakout", SHORT_BREAKOUT: "Short breakout", WAITING_FOR_RANGE: "Waiting for range", NO_SIGNAL: "No signal",
+                  BULLISH_ENGULFING: "Bullish engulfing", SCANNING: "Scanning" };
+
+  async function getJSON(url) {
+    const r = await fetch(url, { credentials: "same-origin", cache: "no-store" });
+    if (r.status === 401 || r.status === 403) throw new Error("signed out: reload to sign in");
+    const body = (r.headers.get("content-type") || "").includes("json") ? await r.json() : null;
+    if (!body) throw new Error("HTTP " + r.status);
+    return body;
+  }
+
+  function tradeKV(t) {
+    if (!t) return "";
+    return `<dl class="kv"><dt>Paper entry</dt><dd>${esc(t.entry_time)} at ${usd(t.entry_px)}</dd><dt>Stop</dt><dd>${usd(t.stop)}</dd>` +
+      (t.target != null ? `<dt>Target</dt><dd>${usd(t.target)}</dd>` : "") +
+      `<dt>Paper exit</dt><dd>${esc(t.exit_time)} at ${usd(t.exit_px)} (${esc(String(t.exit_reason).replace(/_/g, " "))})</dd>` +
+      `<dt>Result after costs</dt><dd class="${t.net_bp > 0 ? "pos" : "neg"}">${bp(t.net_bp)}</dd></dl>` +
+      `<div class="note">${t.exit_reason === "flat_before_close" || t.exit_reason === "stop" || t.exit_reason === "target" ? "" : "Exit so far uses the latest bar; the day is scored after the close."}</div>`;
+  }
+
+  function card(r) {
+    if (!r) return '<div class="empty">No state yet today.</div>';
+    const s = r.signal || "NO_SIGNAL";
+    let extra = "";
+    if (r.range_high != null) extra = `<dl class="kv" style="margin-bottom:8px"><dt>Range high</dt><dd>${usd(r.range_high)}</dd><dt>Range low</dt><dd>${usd(r.range_low)}</dd></dl>`;
+    const note = s === "SHORT_BREAKOUT" ? '<div class="note">Shown for information: this test is long only (the account cannot short fractional shares).</div>' : "";
+    return `<div class="sig ${SIGCLS[s] || ""}">${esc(PLAIN[s] || s)}</div><p class="why">${esc(r.reason || "")}</p>${extra}${tradeKV(r.trade)}${note}`;
+  }
+
+  function chart(prices, orb) {
+    const box = $("chart");
+    if (!prices || prices.length < 2) { box.innerHTML = '<div class="empty">No regular-hours bars yet today.</div>'; return; }
+    const W = 1000, H = 260, L = 54, R = 10, T = 10, B = 24;
+    const vals = prices.map(p => p[1]).concat(orb && orb.range_high != null ? [orb.range_high, orb.range_low] : []);
+    const lo = Math.min(...vals), hi = Math.max(...vals), pad = (hi - lo) * .08 || .5, y0 = lo - pad, y1 = hi + pad;
+    const X = i => L + i * (W - L - R) / 389, Y = v => T + (H - T - B) * (1 - (v - y0) / (y1 - y0));   // x spans a full 390-minute session
+    const path = prices.map((p, i) => (i ? "L" : "M") + X(i).toFixed(1) + "," + Y(p[1]).toFixed(1)).join("");
+    let lines = "";
+    if (orb && orb.range_high != null) lines = `<line x1="${L}" x2="${W - R}" y1="${Y(orb.range_high)}" y2="${Y(orb.range_high)}" stroke="#3fd17f" stroke-dasharray="6 4"/><line x1="${L}" x2="${W - R}" y1="${Y(orb.range_low)}" y2="${Y(orb.range_low)}" stroke="#ff5a5f" stroke-dasharray="6 4"/>`;
+    let grid = "";
+    for (let k = 0; k <= 4; k++) { const v = y0 + (y1 - y0) * k / 4; grid += `<line x1="${L}" x2="${W - R}" y1="${Y(v)}" y2="${Y(v)}" stroke="#3a322a"/><text x="${L - 6}" y="${Y(v) + 3}" text-anchor="end">${v.toFixed(2)}</text>`; }
+    const last = prices[prices.length - 1];
+    box.innerHTML = `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="SPY 1-minute closes today">${grid}${lines}<path d="${path}" fill="none" stroke="#f4ede5" stroke-width="1.5"/>` +
+      `<circle cx="${X(prices.length - 1)}" cy="${Y(last[1])}" r="3.5" fill="#f4ede5"/><text x="${L}" y="${H - 6}">${esc(prices[0][0])}</text><text x="${W - R}" y="${H - 6}" text-anchor="end">16:00</text></svg>`;
+  }
+
+  async function loadSignal() {
+    try {
+      const s = await getJSON("/tactical/signal/SPY");
+      if (!s.ok) throw new Error(s.error || "unavailable");
+      $("mkt").textContent = `Market: ${s.market}` + (s.last_bar ? ` · last closed bar ${s.last_bar} New York · ${s.bars} bars` : "");
+      const by = {}; (s.strategies || []).forEach(r => by[r.strategy] = r);
+      $("cardA").innerHTML = s.strategies && s.strategies.length ? card(by.orb15) : `<div class="empty">${esc(s.market === "open" ? "Waiting for the first bars." : "No session data yet today.")}</div>`;
+      $("cardB").innerHTML = s.strategies && s.strategies.length ? card(by.engulf15) : `<div class="empty">${esc(s.market === "open" ? "Waiting for the first bars." : "No session data yet today.")}</div>`;
+      chart(s.prices, by.orb15);
+    } catch (e) {
+      const m = esc("Can't read today's signals: " + (e.message || e));
+      $("mkt").textContent = "Market state unknown"; $("cardA").innerHTML = $("cardB").innerHTML = `<div class="empty">${m}</div>`; $("chart").innerHTML = `<div class="empty">${m}</div>`;
+    }
+  }
+
+  async function loadLedger() {
+    try {
+      const l = await getJSON("/tactical/ledger");
+      if (!l.ok) throw new Error(l.error || "unavailable");
+      const names = Object.keys(l.summary || {});
+      $("score").innerHTML = names.length ? `<table><thead><tr><th>Strategy</th><th class="r">Sessions</th><th class="r">Trades</th><th class="r">Wins</th><th class="r">Avg per trade</th><th class="r">t-stat</th><th class="r">Total</th><th>Verdict</th></tr></thead><tbody>` +
+        names.map(n => { const v = l.summary[n]; return `<tr><td>${esc(NAMES[n] || n)}</td><td class="r">${v.sessions} / 40</td><td class="r">${v.trades}</td><td class="r">${v.wins}</td><td class="r ${v.mean_net_bp > 0 ? "pos" : v.mean_net_bp < 0 ? "neg" : ""}">${bp(v.mean_net_bp)}</td><td class="r">${v.t_stat == null ? "—" : v.t_stat}</td><td class="r">${num(v.total_net_pct) ? (v.total_net_pct >= 0 ? "+" : "") + v.total_net_pct.toFixed(2) + "%" : "—"}</td><td>${esc(v.verdict)}</td></tr>`; }).join("") + "</tbody></table>"
+        : '<div class="empty">No days scored yet. The first scoring runs after the US close (16:20 New York, 00:20 Dubai).</div>';
+      const rows = l.recent || [];
+      $("recent").innerHTML = rows.length ? `<table><thead><tr><th>Day</th><th>Strategy</th><th>Signal</th><th>Entry</th><th>Exit</th><th class="r">Net</th><th>Why</th></tr></thead><tbody>` +
+        rows.map(r => { const t = r.trade; return `<tr><td>${esc(r.day)}</td><td>${esc(NAMES[r.strategy] || r.strategy)}</td><td>${esc(PLAIN[r.signal] || r.signal || r.state)}</td><td>${t ? esc(t.entry_time) + " " + usd(t.entry_px) : "—"}</td><td>${t ? esc(t.exit_time) + " " + usd(t.exit_px) : "—"}</td><td class="r ${t && t.net_bp > 0 ? "pos" : t ? "neg" : ""}">${t ? bp(t.net_bp) : "—"}</td><td>${esc(r.reason || "")}</td></tr>`; }).join("") + "</tbody></table>"
+        : '<div class="empty">Nothing scored yet.</div>';
+    } catch (e) { $("score").innerHTML = $("recent").innerHTML = `<div class="empty">${esc("Can't read the ledger: " + (e.message || e))}</div>`; }
+  }
+
+  async function tick(all) { await Promise.all([loadSignal(), all ? loadLedger() : null]); $("upd").textContent = "checked " + new Date().toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }) + " · signals every 30 s"; }
+  let n = 0; tick(true); setInterval(() => { n += 1; tick(n % 10 === 0); }, 30000);
+})();
+</script>
+</body>
+</html>
