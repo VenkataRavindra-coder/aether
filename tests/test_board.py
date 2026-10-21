@@ -11,29 +11,34 @@ def _engine_paths():
     return {getattr(r, "path", None) for r in eng.app.routes}
 
 
-def test_root_serves_board_and_console_moved():
+def test_root_serves_board_with_csrf_and_old_pages_redirect():
     import dashboard_v2
-    assert "US trading desk" in dashboard_v2.board().body.decode()
-    assert 'id="v-overview"' in dashboard_v2.page().body.decode()
+    import us_dashboard
+    html = dashboard_v2.board().body.decode()
+    assert "US trading desk" in html and us_dashboard.CSRF_TOKEN in html and "__CSRF__" not in html
+    r = dashboard_v2.retired_page()
+    assert r.status_code == 307 and r.headers["location"] == "/"
     paths = _engine_paths()
-    assert "/" in paths and "/console" in paths
+    assert {"/", "/console", "/dashboard/classic", "/us", "/map"} <= paths
+    for f in ("console.html", "map_view.html", "dashboard_v2.html", "dashboard_classic.html", "us_dashboard.html"):
+        assert not (ROOT / f).exists(), f
 
 
 def test_every_api_the_board_calls_exists():
     used = set(re.findall(r'"(/api/[a-z/_]+)"', PAGE))
     assert used == {"/api/map/status", "/api/overview", "/api/us", "/api/us/summary", "/api/us/extras",
-                    "/api/safety", "/api/connectivity"}
+                    "/api/safety", "/api/connectivity", "/api/us/pause"}
     assert not used - _engine_paths()
 
 
-def test_board_is_read_only():
-    assert "POST" not in PAGE and "method:" not in PAGE and "__CSRF__" not in PAGE
+def test_only_write_is_pause_and_it_needs_two_clicks():
+    assert len(re.findall(r'method:\s*"POST"', PAGE)) == 1
+    assert 'fetch("/api/us/pause"' in PAGE and '"x-aether-csrf": CSRF' in PAGE
+    assert "Click again to confirm" in PAGE and "/api/settings" not in PAGE
 
 
-def test_every_panel_links_to_a_console_section():
-    console = (ROOT / "console.html").read_text()
-    for sec in set(re.findall(r'href="/console#([a-z]+)"', PAGE)):
-        assert f'id="v-{sec}"' in console, sec
+def test_no_links_to_retired_pages():
+    assert "/console" not in PAGE and 'href="/map"' not in PAGE
 
 
 def test_no_sample_or_fake_data():

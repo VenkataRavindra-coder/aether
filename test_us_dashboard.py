@@ -51,10 +51,10 @@ def test_requires_login():
     assert c.post("/api/us/pause", headers={"x-aether-csrf": ud.CSRF_TOKEN}).status_code == 401
 
 
-def test_us_page_redirects_to_console():
-    # 2026-10-18: /us was merged into the single console at / (sections #us and #safety).
+def test_us_page_redirects_to_board():
+    # 2026-10-21: the console was scrapped; /us lands on the board.
     r = client().get("/us", follow_redirects=False)
-    assert r.status_code == 307 and r.headers["location"] == "/console#us"
+    assert r.status_code == 307 and r.headers["location"] == "/"
 
 
 def test_summary_us_only_and_limits_from_guard():

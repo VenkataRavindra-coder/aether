@@ -344,7 +344,7 @@ def test_settings_route_removed():
     import dashboard_v2 as d
     paths = {getattr(r, "path", "") for r in d.router.routes}
     assert "/api/settings/alpaca" not in paths
-    html = (ROOT / "console.html").read_text()   # dashboard_v2.html merged into the console 2026-10-18
+    html = (ROOT / "board.html").read_text()   # the board is the only dashboard page since 2026-10-21
     assert "/api/settings/alpaca" not in html and "keysDialog" not in html
 
 
