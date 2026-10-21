@@ -135,10 +135,9 @@ def preflight_checks(c, acct, snap) -> list[tuple[str, bool, str]]:
     out.append(("account funded (wire credited)", equity > 0, f"equity ${equity:,.2f}"))
     mult = str(getattr(acct, "multiplier", "?"))
     # Alpaca supports margin accounts only (written confirmation, 2026-10-19). Multiplier 1 is a margin
-    # account with no leverage (equity under $2,000), NOT a cash account, so the PDT rule applies.
+    # account with no leverage (equity under $2,000). The PDT day-trade count check was removed
+    # 2026-10-21: FINRA retired the rule and Alpaca moved to intraday margin on 2026-06-04.
     out.append(("account type recorded", mult != "?", f"margin account (multiplier {mult}; 1 = no leverage)"))
-    dt = int(getattr(acct, "daytrade_count", 0) or 0)
-    out.append(("day trades in last 5 sessions <= 2 (room for one more; PDT applies under $25k)", dt <= 2, str(dt)))
     out.append(("no strategy-universe positions on the live account", not snap["strategy_positions"],
                 json.dumps(snap["strategy_positions"])))
     out.append(("no non-canary open orders on the live account", not snap["foreign_open"],
@@ -165,11 +164,6 @@ def preflight_checks(c, acct, snap) -> list[tuple[str, bool, str]]:
                     drift <= max(1.0, 0.02 * equity), f"ledger ${last['equity']:,.2f} vs broker ${equity:,.2f}"))
         out.append(("no breaker latched", not L.get("latched"), json.dumps(L.get("latched"))))
     return out
-
-
-def margin_day_trade_room(acct) -> bool:
-    """Every Alpaca account is margin, so the day-trade count always applies (even at multiplier 1)."""
-    return int(getattr(acct, "daytrade_count", 0) or 0) <= 2
 
 
 # ---------- commands -------------------------------------------------------------------------
@@ -218,9 +212,6 @@ def cmd_buy(c, args) -> int:
     if snap["canary_position"] or snap["canary_open"]:
         print("refused: one-in-one-out. A canary position or open order already exists; "
               "sell/cancel it first (status shows it).")
-        return 1
-    if not margin_day_trade_room(acct):
-        print("refused: margin account with no day-trade room; wait for the 5-session window to roll.")
         return 1
     window = _session_window_problem(c)
     if window:

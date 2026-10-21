@@ -31,8 +31,9 @@ def test_flat_buys_until_ten_round_trips():
     assert ca.decide(snap(), report(10), YDAY, TODAY, False)[0] == "done"
 
 
-def test_never_sells_a_position_bought_today():
-    assert ca.decide(snap(pos=True), report(), TODAY, TODAY, False)[0] == "hold"
+def test_sells_any_canary_position_same_day_or_older():
+    # PDT rule retired (Alpaca intraday margin since 2026-06-04): same-day round trips are fine.
+    assert ca.decide(snap(pos=True), report(), TODAY, TODAY, False)[0] == "sell"
     assert ca.decide(snap(pos=True), report(), YDAY, TODAY, False)[0] == "sell"
 
 
@@ -193,3 +194,32 @@ def test_one_run_never_buys_twice_even_if_position_read_lags(env, monkeypatch):
 def test_cent_rounding_is_exact():
     assert ca._cents_down(299.9) == 299.9 and ca._cents_down(299.987) == 299.98
     assert ca._cents_up(312.4) == 312.4 and ca._cents_up(312.401) == 312.41
+
+
+
+class FillingBroker(FakeBroker):
+    """Fills every canary order immediately and updates positions, like a liquid market."""
+    def submit_order(self, order_data):
+        r = super().submit_order(order_data)
+        side = str(getattr(order_data.side, "value", order_data.side)).lower()
+        q = float(order_data.qty)
+        self.positions["VTI"] = round(self.positions.get("VTI", 0) + (q if side == "buy" else -q), 6)
+        if not self.positions["VTI"]:
+            del self.positions["VTI"]
+        self.history.append(SimpleNamespace(id=r.id, client_order_id=order_data.client_order_id, symbol="VTI",
+                                            side=side, qty=str(q), limit_price=str(order_data.limit_price),
+                                            status="filled", filled_qty=str(q), filled_avg_price=str(order_data.limit_price),
+                                            submitted_at="2026-10-22T14:05:00Z", filled_at="2026-10-22T14:05:02Z"))
+        return r
+
+
+def test_run_does_one_same_day_round_trip(env, monkeypatch):
+    mark_ledger()
+    monkeypatch.setenv("CANARY_AUTO", "1")
+    b = FillingBroker()
+    c = _wire(monkeypatch, b)
+    monkeypatch.setattr(ca, "wait_fill", lambda c, coid: True)
+    monkeypatch.setattr(ca, "blocking_failures", lambda r, t: [])   # fake broker has no FILL activities
+    assert ca.cmd_run(c) == 0
+    assert [r.client_order_id.split("-")[1] for r in b.submitted] == ["buy", "sell"]
+    assert "VTI" not in b.positions

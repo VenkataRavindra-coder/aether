@@ -6,14 +6,15 @@ through canary.py's own `buy` / `sell` commands, so the same preflight, pre-regi
 1% price band, spread line, risk_controller caps (canary key: $15/order, $30/day), live ledger and
 halt file apply. Steps 2, 4, 5 and 6 (restarts, halt, cancel/replace, fractional check) stay manual.
 
-  python3 canary_auto.py run     # timer, Mon-Fri 10:05 New York: sell a prior-session position, then buy
+  python3 canary_auto.py run     # timer, Mon-Fri 10:05 New York: one same-day round trip (buy, then sell)
   python3 canary_auto.py close   # timer, Mon-Fri 15:52 New York: cancel leftovers, record end-of-day cash
   python3 canary_auto.py plan    # read-only: what `run` would do now, and why
 
 Fails closed. It does nothing unless CANARY_AUTO=1, and it stops (Telegram alert, non-zero exit so
 the job shows as failing) on any measurement failure, protocol violation, unknown position or
-leftover open order. It never sells a position bought in the same session (no day trades on a
-margin account under $25k) and it stops buying once the pre-registered 10 round trips are done.
+leftover open order. It buys at most once per run, and it stops buying once the pre-registered
+10 round trips are done. Same-day round trips are allowed: FINRA retired the PDT rule and Alpaca
+moved to intraday margin on 2026-06-04.
 No local state: every run re-reads the broker, like canary.py.
 """
 from __future__ import annotations
@@ -103,7 +104,8 @@ def blocking_failures(report, today: str) -> list[str]:
 
 
 def decide(snap, report, buy_day, today: str, halted: bool):
-    """Pure. Returns (action, reason); action is one of stop | sell | buy | hold | done."""
+    """Pure. Returns (action, reason); action is one of stop | sell | buy | hold | done.
+    `today` is kept for the report filter (today's unfinished cash line is not a failure)."""
     bad = blocking_failures(report, today)
     if bad:
         return "stop", "measurement/protocol failure: " + "; ".join(bad)[:400]
@@ -115,9 +117,7 @@ def decide(snap, report, buy_day, today: str, halted: bool):
     if cp:
         if buy_day is None:
             return "stop", "canary position held but no filled canary buy found"
-        if buy_day >= today:
-            return "hold", f"position bought today ({buy_day}); selling today would be a day trade"
-        return "sell", f"position bought {buy_day}, sell in this session"
+        return "sell", f"canary position bought {buy_day}: sell it"
     if report["completed_round_trips"] >= report["target_round_trips"]:
         return "done", f"{report['completed_round_trips']} of {report['target_round_trips']} round trips completed"
     if halted:
@@ -236,8 +236,8 @@ def cmd_run(c) -> int:
         _log("run", decision="skip", reason="market closed")
         print("market closed: nothing to do.")
         return 0
-    done = []
-    for _ in range(2):   # at most: sell yesterday's position, then buy today's
+    done, bought = [], False
+    for _ in range(3):   # at most: sell a leftover position, buy, then sell that buy (same day)
         snap, report, buy_day = gather(c)
         action, why = decide(snap, report, buy_day, today_et(), safety_guard.halt_file().exists())
         _log("decide", decision=action, reason=why)
@@ -250,13 +250,14 @@ def cmd_run(c) -> int:
                 _notify(f"target reached ({why}). Run `canary.py report` and set CANARY_AUTO=0.")
             done.append(f"{action}: {why}")
             break
-        if action == "buy" and any(m.startswith("bought") or m.startswith("buy") for m in done):
+        if action == "buy" and bought:
             break   # never a second buy in one run, even if a lagging position read says "flat"
+        bought = bought or action == "buy"
         ok, msg = _sell(c) if action == "sell" else _buy(c)
         _log(action, decision="ok" if ok else "not_done", reason=msg)
         done.append(msg)
-        if not ok or action == "buy":
-            break   # a buy always ends the run; only sell -> buy is allowed in one run
+        if not ok:
+            break
     _, report, _ = gather(c)
     summary = " · ".join(done) + f" · round trips {report['completed_round_trips']} of {report['target_round_trips']}"
     _notify(summary)

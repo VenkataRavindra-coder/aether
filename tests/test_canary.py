@@ -224,23 +224,17 @@ def test_buy_price_band(env, monkeypatch):
     assert b.submitted[0].client_order_id.startswith("canary-buy-")
 
 
-def test_margin_day_trade_guard(env, monkeypatch):
-    monkeypatch.setattr(canary, "_quote", lambda s: None)
+def test_no_pdt_check_after_rule_retirement(env, monkeypatch):
+    """FINRA retired the PDT rule (Alpaca intraday margin since 2026-06-04): a day-trade count no
+    longer blocks the preflight or a buy."""
+    monkeypatch.setattr(canary, "_quote", lambda s: {"bid": 299.9, "ask": 300.0, "t": "x"})
+    monkeypatch.setattr(canary, "_session_window_problem", lambda c: None)
     mark_ledger()
-    b = FakeBroker(multiplier="2", daytrades=3)
-    assert canary.cmd_buy(live_exec(b), args(usd=8, limit=300)) == 1 and not b.submitted
-
-
-def test_day_trade_guard_applies_at_multiplier_one(env, monkeypatch):
-    """Alpaca is margin-only: multiplier 1 is an unleveraged margin account, so PDT still applies."""
-    monkeypatch.setattr(canary, "_quote", lambda s: None)
-    mark_ledger()
-    b = FakeBroker(multiplier="1", daytrades=3)
+    b = FakeBroker(multiplier="1", daytrades=5)
     c = live_exec(b)
-    rows = canary.preflight_checks(c, b.get_account(), canary.snapshot(c))
-    dt = [r for r in rows if r[0].startswith("day trades in last 5 sessions")][0]
-    assert dt[1] is False
-    assert canary.cmd_buy(c, args(usd=8, limit=300)) == 1 and not b.submitted
+    names = [r[0] for r in canary.preflight_checks(c, b.get_account(), canary.snapshot(c))]
+    assert not any("day trade" in n for n in names)
+    assert canary.cmd_buy(c, args(usd=8, limit=300)) == 0 and len(b.submitted) == 1
 
 
 def test_preflight_catches_double_counted_deposit(env):

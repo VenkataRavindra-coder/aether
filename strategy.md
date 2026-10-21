@@ -292,7 +292,7 @@ once at import instead of lazily on the first log() call during live trading.
   Until both are set, `cf_access.verify()` always returns `True` (logged once at startup) and
   nothing changes from today's behavior -- this is additive, not a replacement for the Access
   policy itself, so it was safe to ship before those two values were available.
-- **One board (2026-10-21).** `https://ops.starlark.app/` is the only dashboard: one screen of numbered
+- **One board (2026-10-21).** `https://ops.ratelark.app/` is the only dashboard: one screen of numbered
   panels (`board.html`) fed by the read-only APIs. The 2026-10-18 console (`console.html`) and the map
   page (`map_view.html`) were scrapped; `/console`, `/us`, `/dashboard/classic` and `/map` redirect to
   the board. Its only write is "Pause entries" (two clicks, CSRF-checked, creates the halt file);
@@ -551,18 +551,21 @@ minimum size. Not a strategy test: no strategy signal drives any order in this p
    equity disagree.
 3. Account type confirmed in writing by Alpaca (2026-10-19: Alpaca supports **margin accounts
    only**; cash accounts are on their roadmap with no date). A `multiplier` of 1 is an unleveraged
-   margin account under $2,000 equity, not a cash account, so the PDT rule applies. Preflight
-   prints the broker's `multiplier`.
+   margin account under $2,000 equity, not a cash account (no borrowing). Preflight prints the
+   broker's `multiplier`.
 4. `python3 canary.py preflight` reports PASSED.
 
-**Day-trade constraint.** Every Alpaca account is margin, so under $25k a 4th same-day round
-trip in 5 business days can flag the account (multiplier 1 included; fixed 2026-10-19, the
-check had skipped multiplier 1). `canary.py buy` refuses when the broker's day-trade count
-is 3 or more. Prefer holding canary positions overnight (sell next session).
+**Day trades (updated 2026-10-21).** The Pattern Day Trader rule no longer exists: the SEC
+approved FINRA's Rule 4210 amendments in April 2026 and Alpaca moved to its Intraday Margin
+Framework on 2026-06-04 (no day-trade count, no $25k minimum; Alpaca's pre-trade checks block any
+order that would create a margin deficit, and `daytrade_count` is removed from the API). The
+former day-trade-count preflight check and buy guard were removed, so a canary round trip may buy
+and sell in the same session. Superseded text (kept for the record): "under $25k a 4th same-day
+round trip in 5 business days can flag the account ... prefer holding canary positions overnight".
 
 **Schedule.** Run in order; do not advance until the step passes.
 1. **Baseline round trip (fill quality).** `buy --usd 8 --limit <at/near ask>`, then `sell
-   --limit <at/near bid>` (next session if margin). The output records submit time, ids and the
+   --limit <at/near bid>` (same session is fine; see Day trades). The output records submit time, ids and the
    quote at submit. Pass: both legs fill; `status` matches the broker; no phantom positions.
 2. **Open order across a cold start.** `buy` with a limit far below market; run `status` in a
    new process; restart `ratelark.service` and confirm it does not touch the live account
@@ -582,11 +585,8 @@ is 3 or more. Prefer holding canary positions overnight (sell next session).
    needs whole-share orders and this section is amended before continuing.
 
 **End of every session:** `python3 canary.py assert-flat` must print FLAT (exit 0). A session
-that cannot get flat is an incident: halt, cancel, sell, then investigate. *Clarified 2026-10-21:*
-on this margin account the canary position is held overnight (Day-trade constraint above), so a
-buy session legitimately ends holding it. The rule is: no canary **order** may be left open at the
-close, `assert-flat` is still run at the close (it records the session's ending cash for the cash
-check), and it must print FLAT after every completed sell.
+that cannot get flat is an incident: halt, cancel, sell, then investigate. `assert-flat` also records the
+session's ending cash for the pre-registered cash check.
 
 **Automated round trips (amendment 2026-10-21, owner decision, recorded before any automatic
 order).** The owner chose to automate the repeated round trips of steps 1 and 3 so they cannot be
@@ -599,14 +599,17 @@ engine order still needs a Telegram approval. The limits that stay in force:
 - Every order goes through `canary.py buy` / `sell`, so the preflight, the 10:00-15:45 ET buy
   window, the 1% price band, the 10 bp spread line, the canary risk caps ($15 per order, $30 per
   day), the live ledger and breakers and the halt file all apply unchanged. Size: `--usd 8`.
-- `aether-canary-run` (Mon-Fri 10:05 ET): sells a canary position only if it was bought in an
-  earlier session (never a day trade), then buys at the ask if flat. A limit order not filled
+- `aether-canary-run` (Mon-Fri 10:05 ET): sells any canary position left from an earlier session,
+  then, if flat, buys at the ask and sells the same position at the bid once the buy fills (one
+  round trip per day, at most one buy per run; same-session round trips are allowed since the PDT
+  rule's retirement, see Day trades). A limit order not filled
   within the pre-registered 900 s is cancelled. A buy refused for spread or quote is retried every
   5 min, at most 8 times; any other refusal ends the run for that day.
 - `aether-canary-close` (Mon-Fri 15:52 ET): cancels any canary order still open and runs
-  `assert-flat` to record the session's ending cash.
+  `assert-flat` to record the session's ending cash; the day should end FLAT.
 - Stops with a Telegram alert and a failing job on: any failure in the pre-registered report other
-  than "not flat" (an overnight hold) and today's unfinished cash line, an open canary order at
+  than "not flat" (a position left over, which the next run sells) and today's unfinished cash
+  line, an open canary order at
   the start of a run, an unknown position on the canary symbol, or a crash. It stops buying once
   10 round trips are complete; the owner then runs `canary.py report` and sets `CANARY_AUTO=0`.
 - The pre-registered measurement (`PREREG`) and the "Conclusive when" criteria are unchanged.
