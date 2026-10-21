@@ -732,3 +732,31 @@ keys are never entered through the dashboard: the `/api/settings/alpaca` route w
 2026-10-17; credentials reach the server over SSH only.
 
 - **24/7 operation (2026-10-18).** The engine restarts itself (Restart=always, watchdog 180 s) and starts at boot; timers use Persistent=true. `connectivity.py` checks internet, Cloudflare, the tunnel, the engine, Telegram, GitHub and Alpaca every 60 s; a link that fails two checks in a row raises a Telegram alert ("disconnected", with the fix) and a recovery message ("back after N min"). Telegram cannot announce its own outage, so that one is reported on recovery. Outage history is kept in `connectivity_events.jsonl` and every reply Telegram sends back in `telegram_link.jsonl` (no token, chat id or message text). A dead server cannot report itself: set `HEALTHCHECK_URL` in `.env` (healthchecks.io) so something outside the server alerts you. After any reboot run `bash ~/ratelark/deploy/post_reboot_check.sh`; every line should say OK. `CONNECTIVITY_ALERTS=0` turns the alerts off.
+
+
+## Tactical paper tests (pre-registered 2026-10-21, before any data was looked at)
+
+Owner request 2026-10-21: test two intraday SPY strategies the right way, with no money involved.
+Code: `aether_tactical/` (rules are in the module docstrings and are the binding copy).
+FINRA retired the PDT rule (Alpaca intraday margin since 2026-06-04), so day trading is allowed;
+these tests decide whether it is worth doing.
+
+- **Paper only.** Nothing in `aether_tactical/` places, changes or cancels an order; it uses the
+  paper data keys. Each weekday at 16:20 New York, `aether-tactical.timer` replays the finished
+  session on real IEX 1-minute bars (decisions use only closed bars; entries at the next bar's open)
+  and appends one row per strategy to `tactical_paper.jsonl` (append-only, never rewritten).
+- **Strategy A, `orb15`:** range = first 15 one-minute bars (all 15 required); first close above the
+  range high from 09:45 to 11:30 (or close - 60 min); entry next bar open; stop = range low; no target;
+  flat 5 min before the close; one trade a day; long only.
+- **Strategy B, `engulf15`:** 15-minute bars from the open (a bar needs >= 12 of its minutes); bullish
+  engulfing (red then green, body engulfs body, higher volume) ending 10:00-14:30 (or close - 60
+  min); entry next 1-minute open; stop = engulfing bar low; target = entry + 1.5 x risk; flat 5 min
+  before the close; one trade a day; long only. Prior evidence is weak (S&P 500 daily engulfing
+  patterns, 1962-2010: effect fades after day 1, judged not exploitable net of costs).
+- **Fills and costs:** stop fills at min(bar open, stop), target at max(bar open, target), stop first
+  if both in one bar; 2 bp per side.
+- **Verdict:** collecting until 40 scored sessions; then "unsupported" if mean net bp <= 0 or fewer
+  than 20 trades; "worth a live micro test" only if mean net bp > 0 with t >= 2.0 over >= 20 trades;
+  else "inconclusive". No rule may be changed after data is seen; a changed rule is a new strategy
+  with its own 40 sessions. "Worth a live micro test" is not permission to trade: going live still
+  needs the owner's decision, the risk controller and the canary path.

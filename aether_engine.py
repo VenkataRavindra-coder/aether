@@ -2143,3 +2143,7 @@ app.include_router(_build_connectivity_router(lambda: None))
 # paper data keys by default). Same default-deny _dashboard_auth middleware as every other page.
 from trend_gate.api import build_router as _build_trend_gate_router  # noqa: E402
 app.include_router(_build_trend_gate_router())
+# aether_tactical (2026-10-21): GET /tactical/signal/{symbol} and /tactical/ledger, the pre-registered
+# ORB and engulfing PAPER tests (strategy.md "Tactical paper tests"). Read-only; same login middleware.
+from aether_tactical.api_tactical import build_router as _build_tactical_router  # noqa: E402
+app.include_router(_build_tactical_router())
