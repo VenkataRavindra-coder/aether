@@ -54,7 +54,7 @@ def test_requires_login():
 def test_us_page_redirects_to_console():
     # 2026-10-18: /us was merged into the single console at / (sections #us and #safety).
     r = client().get("/us", follow_redirects=False)
-    assert r.status_code == 307 and r.headers["location"] == "/#us"
+    assert r.status_code == 307 and r.headers["location"] == "/console#us"
 
 
 def test_summary_us_only_and_limits_from_guard():

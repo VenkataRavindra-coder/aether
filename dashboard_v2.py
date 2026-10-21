@@ -1,7 +1,8 @@
 """AETHER dashboard v2.
 
 Adds two routes to the existing FastAPI app:
-  GET /              the single AETHER console (console.html, re-read on every request)
+  GET /              the AETHER board (board.html, 2026-10-21): one screen, every panel live
+  GET /console       the detailed console (console.html, re-read on every request)
   GET /api/overview  one JSON document with money, positions, trades, history and health
 
 Read-only by design: it only sends GET requests to Alpaca and never places,
@@ -27,6 +28,7 @@ import notify
 router = APIRouter()
 
 _PAGE = Path(__file__).with_name("console.html")
+_BOARD = Path(__file__).with_name("board.html")
 _REPO_DIR = Path(__file__).resolve().parent   # engine state file and backup.sh output live here
 _STARTED = time.time()
 _CACHE = {"t": 0.0, "data": None}
@@ -415,8 +417,15 @@ def market(held: str = ""):
 
 
 @router.get("/", response_class=HTMLResponse)
+def board():
+    """The board (2026-10-21): one screen of numbered panels fed by the same read-only APIs as the
+    console. It has no write actions, so no CSRF token; each panel links to its /console section."""
+    return HTMLResponse(_BOARD.read_text(), headers={"Cache-Control": "no-store"})
+
+
+@router.get("/console", response_class=HTMLResponse)
 def page():
-    """The single console (2026-10-18): every former dashboard (v2, classic, /us, /map) as one page
+    """The detailed console (2026-10-18): every former dashboard (v2, classic, /us, /map) as one page
     with a left menu. The CSRF token is the one /api/us/pause checks (the only write on the page)."""
     import us_dashboard
     return HTMLResponse(_PAGE.read_text().replace("__CSRF__", us_dashboard.CSRF_TOKEN),
@@ -427,7 +436,7 @@ def page():
 def classic_page():
     """Retired 2026-10-18: merged into the console."""
     from fastapi.responses import RedirectResponse
-    return RedirectResponse("/#holdings", status_code=307)
+    return RedirectResponse("/console#holdings", status_code=307)
 
 # Alpaca keys are never written from the browser. The former POST /api/settings/alpaca route
 # (password re-entry, then rewrite .env) was removed 2026-10-17: credentials reach the server over

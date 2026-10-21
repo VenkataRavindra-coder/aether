@@ -1,0 +1,540 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AETHER</title>
+<meta name="color-scheme" content="dark">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&family=JetBrains+Mono:wght@400;600;700&display=swap">
+<style>
+/* AETHER board (2026-10-21). One screen, every value read from the engine's read-only APIs.
+   Every value comes from a real check: a value that cannot be read shows "no data". */
+:root {
+  --bg: #12100e; --panel: #1b1815; --panel2: #231f1b; --line: #3a322a; --ink: #f4ede5; --muted: #a59b8f; --dim: #6f665c;
+  --orange: #f08a3c; --orange-soft: rgba(240,138,60,.16); --glow: 0 0 0 1px rgba(240,138,60,.55), 0 0 18px rgba(240,138,60,.16);
+  --good: #3fd17f; --warn: #f5b83d; --bad: #ff5a5f; --idle: #6f665c; --pink: #ff4f8b; --purple: #5b3fd0;
+  --display: "Archivo", "Arial Narrow", Arial, sans-serif; --mono: "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: radial-gradient(1200px 600px at 70% -10%, #2a1d12 0%, var(--bg) 60%) fixed, var(--bg); color: var(--ink); font: 13px/1.45 var(--display); min-height: 100vh; }
+a { color: inherit; }
+.mono { font-family: var(--mono); }
+
+/* header */
+.top { display: grid; grid-template-columns: 1fr auto; align-items: end; gap: 12px 20px; padding: 18px 22px 8px; }
+.livechip { font: 700 11px/1 var(--mono); letter-spacing: .14em; text-transform: uppercase; display: flex; align-items: center; gap: 8px; color: var(--ink); }
+.livechip .d { width: 8px; height: 8px; border-radius: 50%; background: var(--idle); }
+.livechip.good .d { background: var(--good); box-shadow: 0 0 8px var(--good); }
+.livechip.warn .d { background: var(--warn); } .livechip.bad .d { background: var(--bad); box-shadow: 0 0 8px var(--bad); }
+h1 { grid-column: 1 / -1; margin: 6px 0 0; font: 900 clamp(26px, 4.2vw, 54px)/.95 var(--display); font-stretch: 72%; letter-spacing: -.01em; text-transform: uppercase; text-align: right; }
+h1 span { color: var(--orange); }
+.clock { grid-row: 1; grid-column: 2; font: 700 13px/1 var(--mono); letter-spacing: .12em; color: #ff8f8f; border: 1px solid rgba(255,90,95,.6); background: rgba(255,90,95,.08); border-radius: 6px; padding: 7px 10px; display: flex; gap: 8px; align-items: center; }
+.clock .d { width: 7px; height: 7px; border-radius: 50%; background: var(--bad); }
+.clock.stale { color: var(--muted); border-color: var(--line); background: none; } .clock.stale .d { background: var(--idle); }
+.banner { margin: 6px 22px 0; padding: 9px 12px; border-radius: 8px; border: 1px solid var(--bad); background: rgba(255,90,95,.1); font-weight: 600; }
+.banner[hidden] { display: none; }
+
+/* board grid */
+.board { position: relative; display: grid; gap: 34px; padding: 14px 22px 10px; grid-template-columns: repeat(4, minmax(0, 1fr)) minmax(300px, 1.25fr); align-items: start; }
+.col { display: grid; gap: 22px; position: relative; z-index: 1; min-width: 0; }
+#wires { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 0; overflow: visible; }
+@media (max-width: 1500px) { .board { grid-template-columns: repeat(3, minmax(0, 1fr)); } .c4 { grid-column: 1 / 3; grid-template-columns: 1fr 1fr; } .c5 { grid-column: 3; grid-row: 2; } }
+@media (max-width: 1000px) { .board { grid-template-columns: 1fr 1fr; gap: 18px; } .c4, .c5 { grid-column: 1 / -1; grid-row: auto; } }
+@media (max-width: 640px) { .board { grid-template-columns: 1fr; padding: 12px 16px; } .c4 { grid-template-columns: 1fr; } .top { padding: 14px 16px 6px; } .banner { margin: 6px 16px 0; } }
+
+/* panels */
+.panel { background: linear-gradient(180deg, var(--panel2), var(--panel)); border-radius: 14px; box-shadow: var(--glow); padding: 12px 12px 10px; min-width: 0; }
+.panel.bad { box-shadow: 0 0 0 1px rgba(255,90,95,.7), 0 0 18px rgba(255,90,95,.2); }
+.ph { display: flex; align-items: center; gap: 8px; }
+.no { font: 700 10px/1 var(--mono); color: var(--orange); }
+.ph h2 { margin: 0; font: 900 15px/1 var(--display); font-stretch: 80%; text-transform: uppercase; letter-spacing: .02em; }
+.run { margin-left: auto; font: 700 9px/1 var(--mono); letter-spacing: .1em; text-transform: uppercase; padding: 4px 7px; border-radius: 5px; background: var(--orange); color: #1b0f05; white-space: nowrap; }
+.run.warn { background: var(--warn); } .run.bad { background: var(--bad); color: #fff; } .run.idle { background: var(--line); color: var(--muted); }
+.sub { margin: 5px 0 10px; color: var(--muted); font-size: 11.5px; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(64px, 1fr)); gap: 10px 6px; }
+.tile { display: grid; justify-items: center; text-align: center; gap: 4px; position: relative; min-width: 0; }
+.ic { width: 38px; height: 38px; border-radius: 10px; display: grid; place-items: center; background: var(--c, #3a322a); box-shadow: inset 0 -2px 0 rgba(0,0,0,.25); }
+.ic svg { width: 20px; height: 20px; stroke: #fff; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.tile .dot { position: absolute; top: -3px; left: calc(50% + 13px); width: 10px; height: 10px; border-radius: 50%; border: 2px solid var(--panel2); background: var(--idle); }
+.tile.good .dot { background: var(--good); } .tile.warn .dot { background: var(--warn); } .tile.bad .dot { background: var(--bad); }
+.tile.idle .ic { filter: grayscale(.85) brightness(.75); }
+.tile b { font-size: 10.5px; line-height: 1.15; font-weight: 700; }
+.tile i { font: 400 9.5px/1.2 var(--mono); font-style: normal; color: var(--muted); overflow-wrap: anywhere; }
+.pf { margin-top: 10px; font: 400 10px/1.3 var(--mono); color: var(--muted); display: flex; justify-content: space-between; gap: 8px; align-items: center; }
+.pf a { color: var(--orange); text-decoration: none; white-space: nowrap; } .pf a:hover { text-decoration: underline; }
+.bar { height: 3px; border-radius: 3px; background: var(--line); overflow: hidden; margin-top: 8px; }
+.bar span { display: block; height: 100%; background: var(--good); }
+
+/* engine steps (orchestrator) */
+.steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.step { background: rgba(0,0,0,.25); border: 1px solid var(--line); border-radius: 8px; padding: 7px 7px 6px; min-width: 0; }
+.step b { display: flex; align-items: center; gap: 5px; font-size: 11px; }
+.step b .k { width: 7px; height: 7px; border-radius: 50%; background: var(--idle); flex: none; }
+.step.good b .k { background: var(--good); } .step.warn b .k { background: var(--warn); } .step.bad b .k { background: var(--bad); }
+.step i { display: block; font: 400 9.5px/1.25 var(--mono); font-style: normal; color: var(--muted); margin-top: 3px; overflow-wrap: anywhere; }
+.engline { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { font: 600 9.5px/1 var(--mono); letter-spacing: .04em; padding: 5px 7px; border-radius: 5px; border: 1px solid var(--line); color: var(--muted); display: inline-flex; gap: 5px; align-items: center; }
+.chip .d { width: 6px; height: 6px; border-radius: 50%; background: var(--idle); }
+.chip.good .d { background: var(--good); } .chip.warn .d { background: var(--warn); } .chip.bad .d { background: var(--bad); } .chip.live { color: var(--orange); border-color: var(--orange); }
+
+/* desks (departments) */
+.desks { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.desk { border: 1px solid var(--line); border-radius: 10px; padding: 8px; background: rgba(0,0,0,.2); min-width: 0; }
+.desk .dh { display: flex; align-items: center; gap: 5px; font: 800 10.5px/1.1 var(--display); text-transform: uppercase; letter-spacing: .02em; }
+.desk .dh .k { width: 7px; height: 7px; border-radius: 50%; background: var(--idle); flex: none; }
+.desk.good .dh .k { background: var(--good); } .desk.warn .dh .k { background: var(--warn); } .desk.bad .dh .k { background: var(--bad); }
+.desk .v { font: 700 16px/1.1 var(--mono); margin-top: 6px; overflow-wrap: anywhere; }
+.desk i { display: block; font: 400 9.5px/1.25 var(--mono); font-style: normal; color: var(--muted); margin-top: 3px; overflow-wrap: anywhere; }
+.pos { color: var(--good); } .neg { color: var(--bad); }
+
+/* focus panel */
+.focus { background: linear-gradient(180deg, #24201c, #191613); border: 1px solid var(--line); border-radius: 16px; padding: 14px; gap: 10px; align-content: start; }
+.fx { display: flex; justify-content: space-between; gap: 10px; font: 700 10px/1 var(--mono); letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }
+.fx .topic { color: var(--orange); letter-spacing: .06em; text-align: right; }
+.focus h3 { margin: 4px 0 0; font: 900 clamp(20px, 2vw, 28px)/1 var(--display); font-stretch: 70%; text-transform: uppercase; }
+.focus .lede { color: var(--muted); margin: 2px 0 0; }
+.sess { height: 3px; background: var(--line); border-radius: 3px; position: relative; margin: 4px 0 2px; }
+.sess span { position: absolute; left: 0; top: 0; bottom: 0; background: var(--orange); border-radius: 3px; }
+.sess em { position: absolute; right: 0; top: 6px; font: 400 9.5px/1 var(--mono); font-style: normal; color: var(--muted); }
+.voice { margin-top: 10px; background: linear-gradient(90deg, #3d2a8f, var(--purple)); border: 1px solid #7a62ff; border-radius: 10px; padding: 9px 11px; font-weight: 600; }
+.voice.orange { background: linear-gradient(90deg, #5a2f0d, #8a4612); border-color: var(--orange); } .voice.red { background: linear-gradient(90deg, #5a1214, #8a1c20); border-color: var(--bad); }
+.feed { display: grid; gap: 8px; }
+.card { border: 1px solid var(--line); background: rgba(255,255,255,.025); border-radius: 10px; padding: 8px 10px; display: grid; grid-template-columns: 26px minmax(0, 1fr) auto; gap: 2px 8px; }
+.card .ic { width: 26px; height: 26px; border-radius: 7px; grid-row: span 2; } .card .ic svg { width: 14px; height: 14px; }
+.card b { font-size: 12px; } .card b small { font-weight: 400; color: var(--muted); font-size: 11px; }
+.card time { font: 400 10px/1 var(--mono); color: var(--muted); }
+.card p { margin: 0; grid-column: 2 / 4; font-size: 12px; overflow-wrap: anywhere; }
+.card.bad { border-color: rgba(255,90,95,.5); }
+.term { background: #0c0b0a; border: 1px solid var(--line); border-radius: 10px; padding: 9px 11px; font: 400 11px/1.55 var(--mono); max-height: 260px; overflow: auto; }
+.term .h { color: var(--muted); }
+.term .ok { color: var(--good); } .term .no { color: var(--bad); font: inherit; } .term .cmd { color: #ffd479; }
+.empty { color: var(--muted); font-style: italic; font-size: 11.5px; padding: 6px 0; }
+
+/* stats strip + legend */
+.stats { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 0; margin: 10px 22px 0; border: 1px solid var(--line); border-radius: 12px; background: rgba(0,0,0,.3); overflow: hidden; }
+.stat { padding: 10px 12px; border-left: 1px solid var(--line); min-width: 0; }
+.stat:first-child { border-left: 0; }
+.stat b { display: block; font: 800 24px/1 var(--mono); }
+.stat span { font: 700 9px/1.2 var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+.stat.attn b { color: var(--warn); }
+@media (max-width: 1000px) { .stats { grid-template-columns: repeat(4, minmax(0, 1fr)); } .stat:nth-child(5) { border-left: 0; } .stat:nth-child(n+5) { border-top: 1px solid var(--line); } }
+@media (max-width: 640px) { .stats { margin: 10px 16px 0; grid-template-columns: repeat(2, minmax(0, 1fr)); } .stat { border-left: 0; border-top: 1px solid var(--line); } .stat:nth-child(-n+2) { border-top: 0; } .stat:nth-child(even) { border-left: 1px solid var(--line); } }
+.legend { display: flex; flex-wrap: wrap; gap: 8px 22px; padding: 10px 22px 22px; font: 700 9.5px/1 var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--muted); align-items: center; }
+.legend i { display: inline-block; width: 26px; height: 0; border-top: 2px solid; vertical-align: middle; margin-right: 6px; }
+.legend .note { margin-left: auto; letter-spacing: .04em; text-transform: none; font-weight: 400; }
+@media (max-width: 640px) { .legend { padding: 10px 16px 18px; } .legend .note { margin-left: 0; } }
+
+@keyframes flow { to { stroke-dashoffset: -24; } }
+#wires path.anim { animation: flow 1.2s linear infinite; }
+@media (prefers-reduced-motion: reduce) { #wires path.anim { animation: none; } }
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="livechip" id="liveChip"><span class="d"></span><span id="liveText">Connecting to the engine…</span></div>
+  <div class="clock stale" id="clock"><span class="d"></span><span id="clockText">--:--</span></div>
+  <h1>AETHER <span>US trading desk</span></h1>
+</header>
+<div class="banner" id="banner" hidden></div>
+
+<main class="board" id="board">
+  <svg id="wires" aria-hidden="true"></svg>
+
+  <div class="col c1">
+    <section class="panel" id="p-signals" data-p="signals">
+      <div class="ph"><span class="no">01</span><h2>Signals</h2><span class="run idle" id="r-signals">no data</span></div>
+      <p class="sub">where every price and signal comes from</p>
+      <div class="tiles" id="t-signals"></div>
+      <div class="pf"><span id="f-signals"></span><a href="/console#market">details →</a></div>
+    </section>
+    <section class="panel" id="p-record" data-p="record">
+      <div class="ph"><span class="no">02</span><h2>System of record</h2><span class="run idle" id="r-record">no data</span></div>
+      <p class="sub">every decision and file kept, checked and backed up</p>
+      <div class="tiles" id="t-record"></div>
+      <div class="pf"><span id="f-record"></span><a href="/console#health">details →</a></div>
+    </section>
+    <section class="panel" id="p-owner" data-p="owner">
+      <div class="ph"><span class="no">03</span><h2>Owner input</h2><span class="run idle" id="r-owner">no data</span></div>
+      <p class="sub">what only you decide</p>
+      <div class="tiles" id="t-owner"></div>
+      <div class="bar"><span id="b-owner" style="width:0"></span></div>
+      <div class="pf"><span id="f-owner"></span><a href="/console#safety">details →</a></div>
+    </section>
+  </div>
+
+  <div class="col c2">
+    <section class="panel" id="p-engine" data-p="engine">
+      <div class="ph"><span class="no">04</span><h2>Engine</h2><span class="run idle" id="r-engine">no data</span></div>
+      <p class="sub">every order passes the gate first, nothing skips a step</p>
+      <div class="steps" id="t-engine"></div>
+      <div class="engline" id="e-chips"></div>
+      <div class="pf"><span id="f-engine"></span><a href="/console#map">details →</a></div>
+    </section>
+    <section class="panel" id="p-research" data-p="research">
+      <div class="ph"><span class="no">05</span><h2>Strategy &amp; research</h2><span class="run idle" id="r-research">no data</span></div>
+      <p class="sub">the proof a strategy needs before real money</p>
+      <div class="tiles" id="t-research"></div>
+      <div class="pf"><span id="f-research"></span><a href="/console#us">details →</a></div>
+    </section>
+  </div>
+
+  <div class="col c3">
+    <section class="panel" id="p-desks" data-p="desks">
+      <div class="ph"><span class="no">06</span><h2>Accounts &amp; desks</h2><span class="run idle" id="r-desks">no data</span></div>
+      <p class="sub">where the money sits and what each desk did</p>
+      <div class="desks" id="t-desks"></div>
+      <div class="pf"><span id="f-desks"></span><a href="/console#holdings">details →</a></div>
+    </section>
+  </div>
+
+  <div class="col c4">
+    <section class="panel" id="p-jobs" data-p="jobs">
+      <div class="ph"><span class="no">07</span><h2>Scheduled jobs</h2><span class="run idle" id="r-jobs">no data</span></div>
+      <p class="sub">what runs on its own, day and night</p>
+      <div class="tiles" id="t-jobs"></div>
+      <div class="pf"><span id="f-jobs"></span><a href="/console#health">details →</a></div>
+    </section>
+    <section class="panel" id="p-links" data-p="links">
+      <div class="ph"><span class="no">08</span><h2>Connections</h2><span class="run idle" id="r-links">no data</span></div>
+      <p class="sub">every outside service the server needs</p>
+      <div class="tiles" id="t-links"></div>
+      <div class="pf"><span id="f-links"></span><a href="/console#conn">details →</a></div>
+    </section>
+  </div>
+
+  <aside class="col c5 focus" id="p-focus" data-p="focus">
+    <div class="fx"><span>Engine in focus</span><span class="topic" id="topic">mode · ?</span></div>
+    <h3>Signal · Risk gate · Orders</h3>
+    <p class="lede">Every US order is scored, checked by the risk gate and logged by one engine.</p>
+    <div class="sess"><span id="sessBar" style="width:0"></span><em id="sessText"></em></div>
+    <div class="voice" id="voice">Reading today's status…</div>
+    <div class="feed" id="feed"></div>
+    <div class="term" id="term"><div class="h">daily checks · live terminal</div></div>
+  </aside>
+</main>
+
+<footer class="stats" id="stats"></footer>
+<div class="legend">
+  <span><i style="border-color:var(--ink)"></i>Order flow</span>
+  <span><i style="border-color:var(--pink)"></i>Feedback loop</span>
+  <span><i style="border-color:var(--orange);border-top-style:dashed"></i>Human control</span>
+  <span><i style="border-color:var(--dim);border-top-style:dashed"></i>Background data</span>
+  <span class="note" id="legendNote">Lines move only while the engine heartbeat is fresh.</span>
+</div>
+
+<script>
+(() => {
+  "use strict";
+  const $ = id => document.getElementById(id);
+  const esc = s => String(s == null ? "" : s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const num = x => typeof x === "number" && isFinite(x);
+  const money = (x, d = 2) => num(x) ? (x < 0 ? "−$" : "$") + Math.abs(x).toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d }) : "—";
+  const signed = x => num(x) ? (x >= 0 ? "+" : "−") + "$" + Math.abs(x).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "—";
+  const pct = x => num(x) ? (x >= 0 ? "+" : "−") + Math.abs(x).toFixed(2) + "%" : "—";
+  const since = iso => { const t = Date.parse(iso); return isNaN(t) ? null : Math.max(0, (Date.now() - t) / 1000); };
+  const ago = s => s == null ? "?" : s < 90 ? Math.round(s) + "s" : s < 5400 ? Math.round(s / 60) + "m" : s < 172800 ? Math.round(s / 3600) + "h" : Math.round(s / 86400) + "d";
+  const hm = iso => { const t = Date.parse(iso); return isNaN(t) ? "—" : new Date(t).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }); };
+
+  // ---------- icons (generic glyphs, no brand marks)
+  const P = {
+    plug: "M9 2v6M15 2v6M6 8h12v3a6 6 0 0 1-12 0zM12 17v5", chart: "M3 20h18M6 16l4-5 3 3 5-7", clock: "M12 7v5l3 2M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z",
+    list: "M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01", db: "M4 6c0-1.7 3.6-3 8-3s8 1.3 8 3-3.6 3-8 3-8-1.3-8-3zM4 6v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3",
+    shield: "M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z", check: "M4 12l5 5L20 6", bell: "M6 8a6 6 0 1 1 12 0c0 7 3 8 3 8H3s3-1 3-8M10 21h4",
+    user: "M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM4 21c1-4 4-6 8-6s7 2 8 6", cpu: "M7 7h10v10H7zM10 2v3M14 2v3M10 19v3M14 19v3M2 10h3M2 14h3M19 10h3M19 14h3",
+    pulse: "M3 12h4l3-7 4 14 3-7h4", server: "M4 4h16v6H4zM4 14h16v6H4zM8 7h.01M8 17h.01", cloud: "M7 18a5 5 0 1 1 1-9.9A6 6 0 0 1 19 10a4 4 0 0 1-1 8z",
+    globe: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM3 12h18M12 3c3 3.5 3 14.5 0 18M12 3c-3 3.5-3 14.5 0 18", branch: "M6 3v12M18 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM6 21a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM18 9c0 6-12 3-12 9",
+    send: "M22 2L11 13M22 2l-7 20-4-9-9-4z", flask: "M9 3h6M10 3v6l-6 11h16L14 9V3", dollar: "M12 2v20M17 6H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6",
+    pause: "M8 5v14M16 5v14", cal: "M4 6h16v14H4zM4 10h16M8 3v4M16 3v4", lock: "M6 11h12v10H6zM8 11V7a4 4 0 0 1 8 0v4", eye: "M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12zM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z",
+    box: "M3 7l9-4 9 4v10l-9 4-9-4zM3 7l9 4 9-4M12 11v10", gauge: "M12 14l4-4M4 18a9 9 0 1 1 16 0", target: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 16a4 4 0 1 0 0-8 4 4 0 0 0 0 8z"
+  };
+  const icon = (n, c) => `<span class="ic" style="--c:${c}"><svg viewBox="0 0 24 24"><path d="${P[n] || P.box}"/></svg></span>`;
+  const tile = t => `<div class="tile ${t.k || "idle"}" title="${esc(t.title || t.d || "")}">${icon(t.i, t.c)}<span class="dot"></span><b>${esc(t.n)}</b><i>${esc(t.d)}</i></div>`;
+  const C = { blue: "#2f6fe4", green: "#1f9d5a", orange: "#e0731f", red: "#d63c46", purple: "#6a4bd8", teal: "#13968f", yellow: "#c99410", pink: "#d43f7f", slate: "#4b5563", sky: "#0e86c7" };
+
+  // ---------- data (same read-only endpoints the console uses)
+  const SRC = { status: "/api/map/status", overview: "/api/overview", us: "/api/us", summary: "/api/us/summary", extras: "/api/us/extras", safety: "/api/safety", conn: "/api/connectivity" };
+  const EVERY = { status: 5, safety: 10, summary: 15, us: 20, overview: 30, extras: 30, conn: 30 };
+  const D = {}, ERR = {}, AT = {};
+  let signedOut = false;
+  async function load(k) {
+    try {
+      const r = await fetch(SRC[k], { credentials: "same-origin", cache: "no-store" });
+      if (r.status === 401 || r.status === 403) { signedOut = true; return; }
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      if (!(r.headers.get("content-type") || "").includes("json")) throw new Error("not JSON");
+      D[k] = await r.json(); AT[k] = Date.now(); delete ERR[k];
+    } catch (e) { ERR[k] = String(e.message || e); }
+  }
+  const ok = sec => sec && sec.ok ? sec : null;
+  const probe = id => D.conn && D.conn.probes ? D.conn.probes[id] || null : null;
+  const PK = { up: "good", degraded: "warn", down: "bad" };
+  const probeTile = (id, n, i, c) => { const p = probe(id); return { n, i, c, k: p ? PK[p.state] || "idle" : "idle", d: p ? (p.state + (num(p.ms) ? " · " + p.ms + " ms" : "")) : (ERR.conn ? "no data" : "…"), title: p ? p.detail : ERR.conn }; };
+  function runBadge(id, tiles, haveData) {
+    const el = $("r-" + id), panel = $("p-" + id); const ks = tiles.map(t => t.k);
+    let k = "", t = "running";
+    if (!haveData) { k = "idle"; t = "no data"; }
+    else if (ks.includes("bad")) { k = "bad"; t = "attention"; }
+    else if (ks.includes("warn")) { k = "warn"; t = "check"; }
+    else if (!ks.includes("good")) { k = "idle"; t = "idle"; }
+    el.className = "run " + k; el.textContent = t; if (panel) panel.classList.toggle("bad", k === "bad");
+  }
+  const fresh = () => AT.status && Date.now() - AT.status < 20000;
+  const hbAge = () => { const h = D.status && ok(D.status.heartbeat); return h ? h.age_s : null; };
+
+  // ---------- panels
+  function renderSignals() {
+    const u = D.us, sm = D.summary;
+    const mo = sm ? sm.market_open : undefined;
+    const usAge = u && u.last_check ? since(u.last_check) : null;
+    const t = [
+      probeTile("alpaca_paper", "Alpaca paper", "plug", C.green),
+      probeTile("alpaca_live", "Alpaca live", "plug", C.red),
+      { n: "Market clock", i: "clock", c: C.sky, k: mo === true ? "good" : mo === false ? "idle" : "idle", d: mo === true ? "open" : mo === false ? "closed" : (ERR.summary ? "no data" : "…") },
+      { n: "ETF ranks", i: "chart", c: C.orange, k: !u ? "idle" : u.last_error ? "warn" : (u.rows || []).length ? "good" : "idle", d: !u ? (ERR.us ? "no data" : "…") : (u.rows || []).length + " ranked" + (u.signal_date ? " · " + u.signal_date.slice(5) : "") },
+      { n: "US engine", i: "pulse", c: C.purple, k: !u ? "idle" : u.kill_switch ? "bad" : u.last_error ? "warn" : usAge != null && usAge < 900 ? "good" : "warn", d: !u ? "no data" : u.kill_switch ? "KILL SWITCH" : usAge != null ? "checked " + ago(usAge) + " ago" : "no check yet", title: u && (u.last_error || u.note) },
+      probeTile("internet", "Internet", "globe", C.blue)
+    ];
+    $("t-signals").innerHTML = t.map(tile).join("");
+    $("f-signals").textContent = u && u.mode ? "US engine · " + u.mode : (ERR.us || "");
+    runBadge("signals", t, !!(u || D.conn || sm));
+  }
+  function renderRecord() {
+    const s = D.status; const act = s && ok(s.activity), bk = s && ok(s.backups), dl = s && ok(s.daily), st = s && ok(s.stress);
+    const last = act && act.rows[0];
+    const t = [
+      { n: "Decision log", i: "db", c: C.teal, k: !act ? "idle" : act.rows.length ? "good" : "idle", d: !act ? (s ? "unreadable" : "…") : last ? "last " + ago(since(last.ts)) + " ago" : "empty" },
+      { n: "Backup", i: "box", c: C.blue, k: !bk ? "idle" : bk.age_h == null ? "bad" : bk.age_h <= 26 ? "good" : "bad", d: !bk ? "no data" : bk.age_h == null ? "none found" : bk.age_h + " h ago" },
+      { n: "Offsite copy", i: "cloud", c: C.sky, k: !bk ? "idle" : !bk.offsite_target ? "warn" : /behind/.test(bk.offsite_target) ? "warn" : "good", d: !bk ? "no data" : bk.offsite_target || "not set" },
+      { n: "Daily checks", i: "check", c: C.green, k: !dl || !dl.utc ? "idle" : dl.all_green ? "good" : "bad", d: !dl ? "no data" : !dl.utc ? "no evidence" : (dl.all_green ? "all green · " : "failing · ") + ago(since(dl.utc)) + " ago" },
+      { n: "Stress test", i: "gauge", c: C.yellow, k: !st ? "idle" : st.rc === 0 ? "good" : "bad", d: !st ? "not run yet" : (st.rc === 0 ? "passed" : "failed rc " + st.rc) + (st.utc ? " · " + ago(since(st.utc)) + " ago" : "") }
+    ];
+    $("t-record").innerHTML = t.map(tile).join("");
+    $("f-record").textContent = bk && bk.count ? bk.count + " archives kept" + (bk.size_kb ? " · " + bk.size_kb + " KB" : "") : "";
+    runBadge("record", t, !!s);
+  }
+  function etParts(d) { const o = {}; new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false }).formatToParts(d).forEach(p => o[p.type] = p.value); return o; }
+  const etToday = () => { const o = etParts(new Date()); return o.year + "-" + o.month + "-" + o.day; };
+  function renderOwner() {
+    const sf = D.safety, s = D.status, g = s && ok(s.gate), fl = s && s.engine && s.engine.flags;
+    const pr = sf && sf.proposal, st = pr ? String(pr.status || "").toUpperCase() : "";
+    const t = [
+      { n: "Proposal", i: "send", c: C.purple, k: !sf ? "idle" : !pr ? "idle" : st === "PENDING" && pr.date === etToday() ? "warn" : st === "APPROVED" ? "good" : "idle", d: !sf ? (ERR.safety ? "no data" : "…") : pr ? pr.id + " · " + st.toLowerCase() : "none open" },
+      { n: "Halt switch", i: "pause", c: C.red, k: !g ? "idle" : g.halt ? "bad" : "good", d: !g ? "no data" : g.halt ? "PAUSED" : "clear" },
+      { n: "Money mode", i: "dollar", c: C.orange, k: !fl ? "idle" : fl.US_LIVE ? "warn" : "good", d: !fl ? "no data" : fl.US_LIVE ? "LIVE money" : "paper only" },
+      { n: "Approvals", i: "user", c: C.teal, k: !fl ? "idle" : fl.US_REQUIRE_APPROVAL ? "good" : "bad", d: !fl ? "no data" : fl.US_REQUIRE_APPROVAL ? "required" : "OFF" },
+      probeTile("telegram", "Telegram", "bell", C.sky)
+    ];
+    $("t-owner").innerHTML = t.map(tile).join("");
+    if (sf && num(sf.live_spent_today_usd) && num(sf.live_budget_usd) && sf.live_budget_usd > 0) {
+      const f = Math.min(1, sf.live_spent_today_usd / sf.live_budget_usd);
+      $("b-owner").style.width = (100 * f).toFixed(1) + "%"; $("b-owner").style.background = f >= 1 ? "var(--bad)" : f >= .7 ? "var(--warn)" : "var(--good)";
+      $("f-owner").textContent = "live buys today " + money(sf.live_spent_today_usd) + " of " + money(sf.live_budget_usd, 0);
+    } else { $("b-owner").style.width = "0"; $("f-owner").textContent = sf ? "live buys today: unreadable" : ""; }
+    runBadge("owner", t, !!(sf || g));
+  }
+  function renderEngine() {
+    const s = D.status, eng = s && ok(s.engine), g = s && ok(s.gate), u = D.us, act = s && ok(s.activity), ex = D.extras && ok(D.extras.orders);
+    const fl = (eng && eng.flags) || {};
+    const usAge = u && u.last_check ? since(u.last_check) : null;
+    const L = (g && g.ledger) || {}, gateBad = g && (g.halt || L.latched || (g.kill && g.kill.us));
+    const targets = u ? (u.rows || []).filter(r => (r.target || 0) > 0) : [];
+    const lastOrd = ex && ex.orders && ex.orders[0];
+    const steps = [
+      { n: "Signal", k: !u ? "idle" : u.last_error ? "warn" : usAge != null && usAge < 900 ? "good" : "warn", d: !u ? "no data" : u.signal_date ? "signal " + u.signal_date : "no signal yet" },
+      { n: "Risk gate", k: !g ? "idle" : gateBad ? "bad" : "good", d: !g ? "no data" : g.halt ? "paused (halt)" : L.latched ? "breaker latched" : g.kill && g.kill.us ? "kill switch on" : "open" },
+      { n: "Sizing", k: !u ? "idle" : targets.length ? "good" : "idle", d: !u ? "no data" : targets.length + " targets · " + money(u.allocation_usd, 0) },
+      { n: "Approval", k: !eng ? "idle" : fl.US_REQUIRE_APPROVAL ? "good" : "bad", d: !eng ? "no data" : fl.US_REQUIRE_APPROVAL ? "you approve on Telegram" : "approvals OFF" },
+      { n: "Orders", k: !ex ? "idle" : !lastOrd ? "idle" : /cancel|reject|expire/.test(lastOrd.status) ? "warn" : "good", d: !ex ? (D.extras ? "unreadable" : "no data") : lastOrd ? lastOrd.side + " " + lastOrd.symbol + " · " + lastOrd.status : "none yet" },
+      { n: "Logged", k: !act ? "idle" : act.rows.length ? "good" : "idle", d: !act ? "no data" : act.rows.length ? act.rows.length + " recent decisions" : "nothing yet" }
+    ];
+    $("t-engine").innerHTML = steps.map(x => `<div class="step ${x.k}"><b><span class="k"></span>${esc(x.n)}</b><i>${esc(x.d)}</i></div>`).join("");
+    const units = s && ok(s.units); const up = units ? units.engine.active === "active" : !!eng;
+    const hb = hbAge();
+    const chips = [];
+    if (s) {
+      chips.push([up ? "good" : "bad", up ? "engine running" : "engine down"]);
+      chips.push([hb == null ? "warn" : hb < 180 ? "good" : hb < 900 ? "warn" : "bad", "heartbeat " + ago(hb)]);
+      if (eng) Object.entries(eng.threads || {}).filter(([k]) => k !== "crypto").forEach(([k, v]) => chips.push([v ? "good" : "bad", k + " thread " + (v ? "on" : "off")]));
+      chips.push([fl.US_LIVE ? "live" : "good", fl.US_LIVE ? "US LIVE" : "US paper"]);
+    }
+    $("e-chips").innerHTML = chips.map(([k, t]) => `<span class="chip ${k}"><span class="d"></span>${esc(t)}</span>`).join("");
+    $("f-engine").textContent = eng ? "uptime " + ago(eng.uptime_s) : (ERR.status || "");
+    runBadge("engine", steps.concat(s ? [{ k: up ? "good" : "bad" }] : []), !!s);
+  }
+  function renderResearch() {
+    const rs = (D.extras && ok(D.extras.research)) || (D.status && ok(D.status.research));
+    const u = D.us;
+    const pass = rs && num(rs.dsr) ? rs.dsr >= rs.dsr_gate : null;
+    const t = [
+      { n: "Trials logged", i: "flask", c: C.purple, k: rs ? "good" : "idle", d: rs ? String(rs.trials_total) + " total" : "no data" },
+      { n: "Deflated Sharpe", i: "target", c: C.orange, k: pass == null ? "idle" : pass ? "good" : "warn", d: rs && num(rs.dsr) ? rs.dsr.toFixed(3) + " / gate " + rs.dsr_gate : "no evidence" },
+      { n: "Real money", i: "lock", c: C.red, k: pass == null ? "idle" : pass ? "good" : "idle", d: pass == null ? "no evidence" : pass ? "DSR clears gate" : "not cleared" },
+      { n: "Rebalance", i: "cal", c: C.teal, k: !u ? "idle" : u.last_rebalance_month ? "good" : "idle", d: !u ? "no data" : u.last_rebalance_month || "none yet" }
+    ];
+    $("t-research").innerHTML = t.map(tile).join("");
+    $("f-research").textContent = rs ? "gates: DSR ≥ " + rs.dsr_gate + " · PBO ≤ " + rs.pbo_gate : "";
+    runBadge("research", t, !!(rs || u));
+  }
+  function renderDesks() {
+    const o = D.overview, acc = (o && o.accounts) || {}, u = D.us, g = D.status && ok(D.status.gate), ex = D.extras && ok(D.extras.orders);
+    const live = acc.live, paper = acc.paper, pos = (o && o.positions) || [], s = (o && o.summary) || {};
+    const eh = (u && u.equity_history) || [];
+    let vsSpy = "";
+    if (eh.length > 1 && eh[0].spy) { const a = eh[0], b = eh[eh.length - 1]; vsSpy = "sleeve " + pct((b.v / a.v - 1) * 100) + " · SPY " + pct((b.spy / a.spy - 1) * 100); }
+    const lastOrd = ex && ex.orders && ex.orders[0];
+    const cn = g && g.live_canary;
+    const d = [
+      { n: "Live account", k: !o ? "idle" : !live || !live.configured ? "idle" : "good", v: live && live.configured ? money(live.equity) : "—", i: !o ? "no data" : live && live.configured ? signed(live.today_pl) + " since last close" : "live keys not set", cls: live && num(live.today_pl) ? (live.today_pl >= 0 ? "pos" : "neg") : "" },
+      { n: "Paper account", k: !o ? "idle" : paper && paper.configured ? "good" : "idle", v: paper && paper.configured ? money(paper.equity) : "—", i: !o ? "no data" : paper && paper.configured ? signed(paper.today_pl) + " (" + pct(paper.today_pl_pct) + ")" : "not configured" },
+      { n: "US sleeve", k: !u ? "idle" : u.kill_switch ? "bad" : "good", v: u && num(u.equity) ? money(u.equity) : "—", i: !u ? "no data" : vsSpy || money(u.allocation_usd, 0) + " allocation" },
+      { n: "Canary", k: !cn ? "idle" : num(cn.spent) && cn.spent >= cn.cap_day ? "warn" : "good", v: cn ? money(cn.spent) : "—", i: cn ? "of " + money(cn.cap_day, 0) + " today · max " + money(cn.cap_order, 0) + "/order" : "no data" },
+      { n: "Positions", k: !o ? "idle" : pos.length ? "good" : "idle", v: o ? String(pos.length) : "—", i: o ? "unrealised " + signed(s.unrealized) : "no data", cls: num(s.unrealized) ? (s.unrealized >= 0 ? "pos" : "neg") : "" },
+      { n: "Last order", k: !ex ? "idle" : !lastOrd ? "idle" : /cancel|reject|expire/.test(lastOrd.status) ? "warn" : "good", v: lastOrd ? lastOrd.symbol : "—", i: !ex ? "no data" : lastOrd ? lastOrd.side + " · " + lastOrd.status + " · " + hm(lastOrd.submitted_at) : "no orders yet" }
+    ];
+    $("t-desks").innerHTML = d.map(x => `<div class="desk ${x.k}"><div class="dh"><span class="k"></span>${esc(x.n)}</div><div class="v">${esc(x.v)}</div><i class="${x.cls || ""}">${esc(x.i)}</i></div>`).join("");
+    $("f-desks").textContent = num(s.total_pl) ? "since start " + signed(s.total_pl) : (ERR.overview || "");
+    runBadge("desks", d, !!(o || u));
+  }
+  const JOBS = [["health", "Health", "pulse", C.green, "every minute"], ["watchdog", "Watchdog", "eye", C.purple, "every 5 min"], ["backup", "Backup", "box", C.blue, "03:15 UTC"], ["daily", "Daily checks", "check", C.teal, "04:30 UTC"], ["stress", "Stress test", "gauge", C.yellow, "weekdays 16:00 UTC"], ["riskmark", "Risk mark", "shield", C.red, "weekdays 15:50 NY"]];
+  function renderJobs() {
+    const s = D.status, units = s && ok(s.units), jobs = units ? units.jobs : null, st = s && ok(s.stress);
+    const t = JOBS.map(([id, n, i, c, when]) => {
+      const j = jobs && jobs[id];
+      if (!jobs) return { n, i, c, k: "idle", d: s ? "systemd unreadable" : "…" };
+      if (!j || !j.timer_loaded) return { n, i, c, k: "idle", d: "not installed" };
+      const bad = !j.timer_active || (j.result && j.result !== "success") || (id === "stress" && st && st.rc !== 0);
+      return { n, i, c, k: j.running ? "warn" : bad ? "bad" : "good", d: j.running ? "running now" : (bad ? "failing" : "ok") + (j.last_run ? " · " + ago(since(j.last_run)) + " ago" : ""), title: when };
+    });
+    $("t-jobs").innerHTML = t.map(tile).join("");
+    const good = t.filter(x => x.k === "good").length; $("f-jobs").textContent = jobs ? good + " of " + t.length + " healthy" : "";
+    runBadge("jobs", t, !!jobs);
+    return { good, total: t.length, have: !!jobs };
+  }
+  const LINKS = [["cloudflare", "Cloudflare", "cloud", C.orange], ["tunnel", "Tunnel", "lock", C.yellow], ["engine", "Engine", "cpu", C.purple], ["monitor", "Outside monitor", "eye", C.teal], ["github", "GitHub", "branch", C.slate]];
+  function renderLinks() {
+    const t = LINKS.map(([id, n, i, c]) => probeTile(id, n, i, c));
+    $("t-links").innerHTML = t.map(tile).join("");
+    const all = ["cloudflare", "tunnel", "engine", "internet", "telegram", "monitor", "github", "alpaca_paper", "alpaca_live"].map(probe).filter(p => p && p.state !== "off" && p.state !== "unknown");
+    const up = all.filter(p => p.state === "up").length;
+    $("f-links").textContent = D.conn ? up + " of " + all.length + " links up · checked every " + (D.conn.check_every_s || "?") + " s" : (ERR.conn || "");
+    runBadge("links", t, !!D.conn);
+    return { up, total: all.length, have: !!D.conn };
+  }
+
+  // ---------- focus panel
+  const ENG_IC = { us: ["chart", C.orange], canary: ["target", C.yellow], risk: ["shield", C.red], webhook: ["send", C.sky], crypto: ["plug", C.slate] };
+  const decK = d => { d = String(d || "").toLowerCase(); return /block|fail|error|reject|not_flat|incomplete|kill/.test(d) ? "bad" : /allow|^ok$|pass|flat|filled|submitted|complete/.test(d) ? "good" : "idle"; };
+  function needs() {
+    const out = []; const sf = D.safety, s = D.status, g = s && ok(s.gate), units = s && ok(s.units), bk = s && ok(s.backups);
+    let level = "green";
+    if (g && g.halt) { level = "red"; out.push("Entries are PAUSED by the halt file. Resume on the server: rm ~/AETHER_HALT"); }
+    if (g && g.ledger && g.ledger.latched) { level = "red"; out.push("A live breaker is latched"); }
+    const pr = sf && sf.proposal;
+    if (pr && String(pr.status || "").toUpperCase() === "PENDING" && pr.date === etToday()) { if (level === "green") level = "orange"; out.push("Approve proposal " + pr.id + " on Telegram today (/approve_" + pr.id + ")"); }
+    if (units) { const f = Object.entries(units.jobs).filter(([k, j]) => j.timer_loaded && (!j.timer_active || (j.result && j.result !== "success"))).map(([k]) => k); if (f.length) { if (level === "green") level = "orange"; out.push("Failing job: " + f.join(", ")); } }
+    if (bk && (bk.age_h == null || bk.age_h > 26)) { if (level === "green") level = "orange"; out.push("Nightly backup is late"); }
+    if (D.conn && (D.conn.down || []).length) { if (level === "green") level = "orange"; out.push("Disconnected: " + D.conn.down.join(", ")); }
+    return { level, out };
+  }
+  function renderFocus() {
+    const s = D.status, fl = s && s.engine && s.engine.flags;
+    $("topic").textContent = fl ? "mode · " + (fl.US_LIVE ? "live money" : "paper") : "mode · ?";
+    // US session progress (09:30–16:00 New York), from the clock alone.
+    const o = etParts(new Date()); const mins = (+o.hour % 24) * 60 + +o.minute; const open = D.summary && D.summary.market_open;
+    const f = Math.max(0, Math.min(1, (mins - 570) / 390));
+    $("sessBar").style.width = (open ? 100 * f : open === false && mins >= 960 ? 100 : 0).toFixed(1) + "%";
+    $("sessText").textContent = open === true ? "US session " + Math.round(100 * f) + "% done" : open === false ? "US market closed" : "";
+    const v = $("voice");
+    if (!s && !D.safety) { v.className = "voice"; v.textContent = signedOut ? "Signed out." : ERR.status ? "Can't read today's status: " + ERR.status : "Reading today's status…"; }
+    else { const n = needs(); v.className = "voice" + (n.level === "red" ? " red" : n.level === "orange" ? " orange" : "");
+      v.textContent = n.out.length ? "Needs you: " + n.out.join(" · ") + "." : (fl && fl.US_LIVE ? "Live money mode. " : "Practice mode, no real money at risk. ") + "Nothing needs you right now."; }
+    const act = s && ok(s.activity);
+    $("feed").innerHTML = !act ? `<div class="empty">${s ? "Decision log unreadable." : "Waiting for the engine…"}</div>`
+      : !act.rows.length ? '<div class="empty">No decisions logged yet.</div>'
+      : act.rows.slice(0, 6).map(r => { const [ic, c] = ENG_IC[String(r.engine || "").toLowerCase()] || ["cpu", C.purple]; const k = decK(r.decision);
+          return `<div class="card ${k === "bad" ? "bad" : ""}">${icon(ic, c)}<b>${esc(r.engine || "engine")} <small>→ ${esc(r.event || "")}${r.symbol ? " · " + esc(r.symbol) : ""}</small></b><time>${hm(r.ts)}</time><p><span class="${k === "bad" ? "neg" : k === "good" ? "pos" : ""}">${esc(r.decision || "")}</span>${r.reason ? ": " + esc(r.reason) : ""}</p></div>`; }).join("");
+    const dl = s && ok(s.daily);
+    $("term").innerHTML = `<div class="h">daily checks · live terminal</div>` + (!dl ? `<div class="h">${s ? "daily-check evidence unreadable" : "waiting…"}</div>`
+      : !dl.utc ? '<div class="h">no daily-check evidence yet</div>'
+      : `<div><span class="cmd">$ daily_checks</span> <span class="h">${esc(dl.utc.slice(0, 16).replace("T", " "))} UTC</span></div>` +
+        dl.checks.map(c => `<div><span class="${c.ok ? "ok" : "no"}">${c.ok ? "✓" : "✗"}</span> ${esc(c.id)} <span class="h">${esc(c.detail)}</span></div>`).join("") +
+        `<div><span class="${dl.all_green ? "ok" : "no"}">${dl.all_green ? "→ all green" : "→ failing checks above"}</span></div>`);
+  }
+
+  function renderStats(jobs, links) {
+    const o = D.overview, s = (o && o.summary) || {}, act = D.status && ok(D.status.activity), rs = (D.extras && ok(D.extras.research)) || (D.status && ok(D.status.research));
+    const n = (D.status || D.safety) ? needs().out.length : null;
+    const st = [
+      [o ? (o.positions || []).length : "—", "positions held"],
+      [num(s.trade_count) ? s.trade_count : "—", "orders filled"],
+      [act ? act.rows.length : "—", "recent decisions"],
+      [rs ? rs.trials_total : "—", "trials logged"],
+      [jobs.have ? jobs.good + "/" + jobs.total : "—", "jobs healthy"],
+      [links.have ? links.up + "/" + links.total : "—", "links up"],
+      [n == null ? "—" : n, "waiting for you", n ? "attn" : ""]
+    ];
+    $("stats").innerHTML = st.map(([v, l, c]) => `<div class="stat ${c || ""}"><b>${esc(v)}</b><span>${esc(l)}</span></div>`).join("");
+  }
+
+  function renderTop() {
+    const chip = $("liveChip"), txt = $("liveText"), clock = $("clock");
+    const t = new Date().toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+    $("banner").hidden = !signedOut; if (signedOut) $("banner").textContent = "Signed out. Reload the page to sign in through Cloudflare Access.";
+    if (!D.status) { chip.className = "livechip " + (ERR.status ? "bad" : ""); txt.textContent = ERR.status ? "Can't reach the engine (" + ERR.status + ")" : "Connecting to the engine…"; clock.className = "clock stale"; $("clockText").textContent = t; return; }
+    const s = D.status, units = ok(s.units), up = units ? units.engine.active === "active" : !!ok(s.engine);
+    const bad = document.querySelectorAll(".run.bad").length, warn = document.querySelectorAll(".run.warn").length, total = document.querySelectorAll(".run").length;
+    if (!fresh()) { chip.className = "livechip warn"; txt.textContent = "Stale · last update " + ago((Date.now() - AT.status) / 1000) + " ago"; clock.className = "clock stale"; $("clockText").textContent = "STALE " + t; return; }
+    chip.className = "livechip " + (!up || bad ? "bad" : warn ? "warn" : "good");
+    txt.textContent = (up ? "Live · engine running · " : "Engine DOWN · ") + (total - bad - warn) + " of " + total + " panels clear";
+    clock.className = "clock"; $("clockText").textContent = "LIVE " + t;
+  }
+
+  // ---------- wires between panels (drawn only when panels sit side by side)
+  const WIRES = [["signals", "engine", "flow"], ["record", "engine", "data"], ["owner", "engine", "human"], ["research", "engine", "data"], ["engine", "desks", "flow"], ["jobs", "desks", "data"], ["links", "desks", "data"], ["desks", "focus", "flow"], ["desks", "signals", "loop"]];
+  const WSTYLE = { flow: ["var(--ink)", "", .7], data: ["var(--dim)", "4 4", .9], human: ["var(--orange)", "6 4", .9], loop: ["var(--pink)", "", .8] };
+  function drawWires() {
+    const svg = $("wires"), board = $("board"), B = board.getBoundingClientRect();
+    const R = id => { const e = $("p-" + id); if (!e) return null; const r = e.getBoundingClientRect(); return { l: r.left - B.left, r: r.right - B.left, t: r.top - B.top, b: r.bottom - B.top, w: r.width, h: r.height }; };
+    const live = hbAge() != null && hbAge() < 180 && fresh();
+    let out = "";
+    for (const [a, b, kind] of WIRES) {
+      const A = R(a), Z = R(b); if (!A || !Z) continue;
+      const [col, dash, op] = WSTYLE[kind];
+      let d;
+      if (kind === "loop") {
+        // results feed signals again: routed under every panel and up the left gutter, never across a panel
+        if (!(Z.r < A.l)) continue; const y = B.height - 4, x = Math.max(4, Z.l - 12), ym = Z.t + Z.h / 2;
+        d = `M${A.l + A.w / 2},${A.b} V${y} H${x} V${ym} H${Z.l}`;
+      } else {
+        if (A.r + 8 < Z.l) { const x1 = A.r, y1 = A.t + A.h / 2, x2 = Z.l, y2 = Math.min(Math.max(y1, Z.t + 24), Z.b - 24), m = (x1 + x2) / 2; d = `M${x1},${y1} C${m},${y1} ${m},${y2} ${x2},${y2}`; }
+        else if (Z.r + 8 < A.l) { const x1 = A.l, y1 = A.t + A.h / 2, x2 = Z.r, y2 = Math.min(Math.max(y1, Z.t + 24), Z.b - 24), m = (x1 + x2) / 2; d = `M${x1},${y1} C${m},${y1} ${m},${y2} ${x2},${y2}`; }
+        else continue;
+      }
+      const animate = live && kind !== "data";
+      out += `<path d="${d}" fill="none" stroke="${col}" stroke-opacity="${live ? op : .25}" stroke-width="1.6" ${dash || animate ? `stroke-dasharray="${dash || "8 4"}"` : ""} class="${animate ? "anim" : ""}"/>`;
+    }
+    svg.innerHTML = out;
+    $("legendNote").textContent = live ? "Lines move because the engine heartbeat is fresh (" + ago(hbAge()) + ")." : "Lines are still: no fresh engine heartbeat.";
+  }
+
+  function renderAll() {
+    renderSignals(); renderRecord(); renderOwner(); renderEngine(); renderResearch(); renderDesks();
+    const j = renderJobs(), l = renderLinks(); renderFocus(); renderStats(j, l); renderTop(); drawWires();
+  }
+
+  // ---------- refresh loop
+  let tick = 0;
+  async function cycle() {
+    const due = Object.keys(SRC).filter(k => tick % EVERY[k] === 0);
+    if (due.length && !signedOut) await Promise.all(due.map(load));
+    renderAll(); tick += 1;
+  }
+  (async () => { await Promise.all(Object.keys(SRC).map(load)); renderAll(); tick = 1; setInterval(() => { if (tick % 5 === 0) cycle(); else { tick += 1; renderTop(); } }, 1000); })();
+  window.addEventListener("resize", () => { clearTimeout(window.__rw); window.__rw = setTimeout(drawWires, 120); });
+})();
+</script>
+</body>
+</html>
