@@ -395,7 +395,8 @@ def test_evaluate_all_structure_and_logging(data, tmp_path):
     assert res["n_info"]["n_total"] >= 31
     for name, cand in res["candidates"].items():
         keys = list(cand["criteria"])
-        assert [k[0] for k in keys[:4]] == list("1234") and len(keys) == 5
+        assert [k[0] for k in keys[:5]] == list("12345") and len(keys) == 6
+        assert cand["criteria"]["5 09:45 fill robustness"]["result"] == dc.INSUFFICIENT
         assert all(v["result"] in (dc.PASS, dc.FAIL, dc.INSUFFICIENT) for v in cand["criteria"].values())
         assert cand["verdict"] in ("WORTH PAPER-TESTING", "UNSUPPORTED", "INCONCLUSIVE")
         assert math.isfinite(cand["metrics"]["sharpe"])
@@ -412,3 +413,104 @@ def test_evaluate_all_structure_and_logging(data, tmp_path):
     con.close()
     assert n_ret > 1000
     assert dc.trial_counts(db, {})["n_total"] == 31                    # 28 old + the 3 now logged: no double count
+
+import intraday_0945 as i945
+
+
+def _bars_for_slot(symbol, local_date, slot, price):
+    from zoneinfo import ZoneInfo
+    import datetime as dt
+    local_day = dt.date.fromisoformat(local_date)
+    hour, minute = map(int, slot.split(":"))
+    stamp = dt.datetime.combine(local_day, dt.time(hour, minute), ZoneInfo("America/New_York"))
+    return {"symbol": symbol, "timestamp": stamp.astimezone(dt.timezone.utc).isoformat(), "open": price}
+
+
+def test_intraday_fill_priority_and_coverage_are_per_symbol():
+    idx = pd.bdate_range("2020-03-06", periods=5)
+    daily = pd.DataFrame({s: np.arange(100, 105, dtype=float) for s in i945.SYMBOLS}, index=idx)
+    rows = []
+    for s in i945.SYMBOLS:
+        for d in idx:
+            day = d.strftime("%Y-%m-%d")
+            if day == "2020-03-09" and s == "SPY":
+                rows.append(_bars_for_slot(s, day, "09:50", 111.0))
+            elif day == "2020-03-10" and s == "SPY":
+                rows.append(_bars_for_slot(s, day, "09:55", 112.0))
+            elif day == "2020-03-11" and s == "SPY":
+                continue
+            else:
+                rows.append(_bars_for_slot(s, day, "09:45", 110.0))
+    bars = pd.DataFrame(rows)
+    prices, sources, report = i945.select_fills(bars, daily)
+    assert prices.loc[pd.Timestamp("2020-03-09"), "SPY"] == 111
+    assert sources.loc[pd.Timestamp("2020-03-09"), "SPY"] == "09:50"
+    assert prices.loc[pd.Timestamp("2020-03-10"), "SPY"] == 112
+    assert sources.loc[pd.Timestamp("2020-03-10"), "SPY"] == "09:55"
+    assert prices.loc[pd.Timestamp("2020-03-11"), "SPY"] == daily.loc[pd.Timestamp("2020-03-11"), "SPY"]
+    assert sources.loc[pd.Timestamp("2020-03-11"), "SPY"] == "daily_open"
+    assert report["overlap_start"] == "2020-03-06"
+    assert report["coverage"]["SPY"]["on_time_0945"] == 2
+    assert report["coverage"]["SPY"]["fallback_0950"] == 1
+    assert report["coverage"]["SPY"]["fallback_0955"] == 1
+    assert report["coverage"]["SPY"]["fallback_daily_open"] == 1
+
+
+def test_intraday_rejects_duplicate_bars_and_unknown_overlap():
+    idx = pd.bdate_range("2020-01-02", periods=3)
+    daily = pd.DataFrame({s: 100.0 for s in i945.SYMBOLS}, index=idx)
+    rows = [_bars_for_slot(s, d.strftime("%Y-%m-%d"), "09:45", 100.0)
+            for s in i945.SYMBOLS for d in idx]
+    with pytest.raises(i945.IntradayDataError, match="duplicate"):
+        i945.select_fills(pd.DataFrame(rows + [rows[0]]), daily)
+    with pytest.raises(i945.IntradayDataError, match="no 09:45"):
+        i945.select_fills(pd.DataFrame(rows[:-3]), daily)
+
+
+def test_intraday_accepts_dst_correct_local_slots():
+    idx = pd.DatetimeIndex(["2020-03-06", "2020-03-09"])
+    daily = pd.DataFrame({s: [100.0, 101.0] for s in i945.SYMBOLS}, index=idx)
+    rows = [_bars_for_slot(s, d, "09:45", 110.0) for s in i945.SYMBOLS for d in idx.strftime("%Y-%m-%d")]
+    prices, sources, report = i945.select_fills(pd.DataFrame(rows), daily)
+    assert report["overlap_start"] == "2020-03-06"
+    assert sources.eq("09:45").all().all()
+    assert prices.loc[pd.Timestamp("2020-03-09"), "SPY"] == 110.0
+
+
+
+def test_criterion5_uses_fill_events_and_enforces_substitution_budget(data):
+    _, opens, closes = data
+    sources = pd.DataFrame("09:45", index=opens.index, columns=dc.SA_UNIVERSE + ["IEF", "SHY"])
+    coverage = {s: {"coverage_pct": 100.0} for s in sources.columns}
+    result, detail = dc.evaluate_criterion5("S-A", opens, closes, opens, sources, coverage, "2006-06-01")
+    assert detail["actual"]["sharpe"] == pytest.approx(detail["open_proxy_same_window"]["sharpe"])
+    assert detail["fills"]["candidate"]["total"] > 0
+    assert detail["fills"]["candidate"]["substituted_pct"] == 0
+    assert result["result"] in (dc.PASS, dc.FAIL)  # sample is sufficient; performance decides
+
+    fallback = sources.copy()
+    fallback.loc[:, :] = "09:50"
+    result2, detail2 = dc.evaluate_criterion5("S-A", opens, closes, opens, fallback, coverage, "2006-06-01")
+    assert result2["result"] == dc.INSUFFICIENT
+    assert detail2["fills"]["candidate"]["substituted_pct"] == 1.0
+
+
+def test_fill_quality_counts_each_buy_and_sell_fill():
+    sources = pd.DataFrame({"SPY": ["09:45"], "SHY": ["09:50"]},
+                           index=pd.DatetimeIndex(["2020-01-02"]))
+    events = [(0, "SPY", "buy"), (0, "SHY", "sell"), (0, "SHY", "buy")]
+    q = dc.fill_quality(events, sources)
+    assert q["total"] == 3 and q["09:45"] == 1 and q["09:50"] == 2
+    assert q["substituted_pct"] == pytest.approx(2 / 3)
+
+
+def test_criterion5_missing_traded_fill_is_insufficient(data):
+    _, opens, closes = data
+    symbols = dc.SA_UNIVERSE + ["IEF", "SHY"]
+    sources = pd.DataFrame("09:45", index=opens.index, columns=symbols)
+    coverage = {s: {"coverage_pct": 100.0} for s in symbols}
+    prices = opens.copy()
+    sources.loc[:, :] = "missing"
+    result, detail = dc.evaluate_criterion5("S-A", opens, closes, prices, sources, coverage, "2006-06-01")
+    assert detail["fills"]["candidate"]["missing"] == detail["fills"]["candidate"]["total"]
+    assert result["result"] == dc.INSUFFICIENT

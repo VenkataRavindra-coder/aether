@@ -32,6 +32,7 @@ import pandas as pd
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent))
 import research_gate as rg  # noqa: E402
+import intraday_0945 as i945  # noqa: E402
 
 DATA_FILE = HERE / "data" / "us_daily_yf.csv.gz"
 RESULTS = HERE / "results"
@@ -39,7 +40,7 @@ TRIAL_DB = HERE.parent / "research.sqlite"
 REPO = HERE.parent.parent
 INVENTORY_FILE = REPO / "docs" / "TRIAL_INVENTORY_daily_v1.md"   # must contain a line "N_inventory: <int>"
 
-TAG = "prereg-daily-v1"
+TAG = "prereg-daily-v1.2"
 DATA_SHA256 = "e9524a2a60e1c609af72c991d1be8cc8d42f36d95bcafcf1b1b81dd1971ed9b6"
 START, END = "2007-03-01", "2026-10-06"       # evaluation window; nothing after END is ever read
 SEED = 20261007
@@ -62,9 +63,8 @@ FAMILY = {"S-A": [{"sma": s, "confirm": c} for s in (150, 200, 250) for c in (1,
           "S-B": [{"rsi_below": t, "exit_sma": e} for t in (5, 10, 15) for e in (3, 5, 10)],
           "S-C": [{"entry_offset": o, "exit_day": j} for o in (-1, 0, 1) for j in (3, 4, 5)]}
 PASS, FAIL, INSUFFICIENT = "PASS", "FAIL", "INSUFFICIENT"
-# `run` is locked until (1) the execution-price question is settled by a registered amendment (the open is not the
-# 09:45 ET price the rules specify) and (2) the trial inventory has been reviewed by hand. Lifting the lock is a
-# reviewed change to this constant, after the amendment is tagged.
+# `run` remains locked until the committed 09:45 manifest and manual trial inventory have been reviewed.
+# Lifting this is a separate, reviewed change. Passing research gates still does not authorize live orders.
 RUN_LOCKED = True
 
 
@@ -240,7 +240,7 @@ def sc_target_on(index, i0, entry_offset, exit_day):
 
 
 # ------------------------------------------------------------------ simulator
-def simulate(op, col, sleeves, weights, target_on, reset, i0, initial):
+def simulate(op, col, sleeves, weights, target_on, reset, i0, initial, return_events=False):
     """Sleeve simulator. sleeves[k] = (on_symbol, off_symbol or None). target_on[i, k]: sleeve k wants its ON asset
     at the open of row i. reset[i]: at that open, sleeve values are reset to `weights`. initial[k]: -1 nothing held
     (a purchase at the first open), 0 off asset, 1 on asset. A position decided at open i earns open(i)->open(i+1).
@@ -252,6 +252,7 @@ def simulate(op, col, sleeves, weights, target_on, reset, i0, initial):
     n = T - 1 - i0
     net, cost, gross = np.empty(n), np.empty(n), np.empty(n)
     holds = np.zeros((n, K), bool)
+    events = []
     for j, i in enumerate(range(i0, T - 1)):
         before = v.sum()
         for k in range(K):
@@ -259,14 +260,22 @@ def simulate(op, col, sleeves, weights, target_on, reset, i0, initial):
             if hold[k] != want:
                 if want == 0 and sleeves[k][1] is None:
                     raise ValueError("sleeve has no off asset")
+                new_symbol = sleeves[k][0] if want == 1 else sleeves[k][1]
                 if hold[k] != -1:
+                    old_symbol = sleeves[k][0] if hold[k] == 1 else sleeves[k][1]
+                    events.append((i, old_symbol, "sell"))
                     v[k] *= 1.0 - (SLIP + FEE)
+                events.append((i, new_symbol, "buy"))
                 v[k] *= 1.0 - SLIP
                 hold[k] = want
         if reset[i]:
             tot = v.sum()
             tgt = w * tot
             d = tgt - v
+            for k, delta in enumerate(d):
+                if abs(delta) > 1e-12 * max(tot, 1.0):
+                    sym = sleeves[k][0] if hold[k] == 1 else sleeves[k][1]
+                    events.append((i, sym, "sell" if delta < 0 else "buy"))
             c = np.where(d < 0, -d, 0.0).sum() * (SLIP + FEE) + np.where(d > 0, d, 0.0).sum() * SLIP
             v = tgt * (1.0 - c / tot)
         after = v.sum()
@@ -277,7 +286,8 @@ def simulate(op, col, sleeves, weights, target_on, reset, i0, initial):
         net[j] = v.sum() / before - 1.0
         cost[j] = 1.0 - after / before
         gross[j] = v.sum() / after - 1.0
-    return pd.DataFrame({"net": net, "cost": cost, "gross": gross}), holds
+    sim = pd.DataFrame({"net": net, "cost": cost, "gross": gross})
+    return (sim, holds, events) if return_events else (sim, holds)
 
 
 def reset_days(index, i0):
@@ -296,42 +306,51 @@ def _prep(opens, closes, symbols, start):
     return opens[syms].to_numpy(float), col, i0
 
 
-def run_sa(opens, closes, sma_n, confirm, start=START):
+def run_sa(opens, closes, sma_n, confirm, start=START, trade_opens=None, include_events=False):
     syms = SA_UNIVERSE + [CASH]
-    op, col, i0 = _prep(opens, closes, syms, start)
+    op, col, i0 = _prep(opens if trade_opens is None else trade_opens, closes, syms, start)
     T = len(closes)
     on = np.column_stack([np.concatenate(([False], trend_state(closes[s], sma_n, confirm)[:-1])) for s in SA_UNIVERSE])
     if np.isnan(sma(closes[SA_UNIVERSE[0]], sma_n)[i0 - 1]):
         raise Refused("not enough warm-up history before the window start for the SMA")
     sleeves = [(s, CASH) for s in SA_UNIVERSE]
-    sim, holds = simulate(op, col, sleeves, [1 / 6] * 6, on, reset_days(closes.index, i0), i0, [0] * 6)
+    sim_out = simulate(op, col, sleeves, [1 / 6] * 6, on, reset_days(closes.index, i0), i0, [0] * 6, include_events)
+    sim, holds = sim_out[:2]
     sim.index = closes.index[i0:T - 1]
-    return {"sim": sim, "holds": holds, "round_trips": count_runs(holds), "trips": None, "target": on[i0:T - 1]}
+    out = {"sim": sim, "holds": holds, "round_trips": count_runs(holds), "trips": None, "target": on[i0:T - 1]}
+    if include_events: out["fill_events"] = sim_out[2]
+    return out
 
 
-def run_sb(opens, closes, rsi_below, exit_sma, start=START):
+def run_sb(opens, closes, rsi_below, exit_sma, start=START, trade_opens=None, include_events=False):
     syms = ["SPY", CASH]
-    op, col, i0 = _prep(opens, closes, syms, start)
+    op, col, i0 = _prep(opens if trade_opens is None else trade_opens, closes, syms, start)
     T = len(closes)
     on = sb_target_on(closes["SPY"], i0, rsi_below, exit_sma)[:, None]
-    sim, holds = simulate(op, col, [("SPY", CASH)], [1.0], on, np.zeros(T, bool), i0, [0])
+    sim_out = simulate(op, col, [("SPY", CASH)], [1.0], on, np.zeros(T, bool), i0, [0], include_events)
+    sim, holds = sim_out[:2]
     sim.index = closes.index[i0:T - 1]
-    return {"sim": sim, "holds": holds, "round_trips": count_runs(holds), "trips": trip_returns(sim, holds[:, 0]),
-            "target": on[i0:T - 1]}
+    out = {"sim": sim, "holds": holds, "round_trips": count_runs(holds), "trips": trip_returns(sim, holds[:, 0]),
+           "target": on[i0:T - 1]}
+    if include_events: out["fill_events"] = sim_out[2]
+    return out
 
 
-def run_sc(opens, closes, entry_offset, exit_day, start=START):
+def run_sc(opens, closes, entry_offset, exit_day, start=START, trade_opens=None, include_events=False):
     syms = ["TLT", CASH]
-    op, col, i0 = _prep(opens, closes, syms, start)
+    op, col, i0 = _prep(opens if trade_opens is None else trade_opens, closes, syms, start)
     T = len(closes)
     on = sc_target_on(closes.index, i0, entry_offset, exit_day)[:, None]
-    sim, holds = simulate(op, col, [("TLT", CASH)], [1.0], on, np.zeros(T, bool), i0, [0])
+    sim_out = simulate(op, col, [("TLT", CASH)], [1.0], on, np.zeros(T, bool), i0, [0], include_events)
+    sim, holds = sim_out[:2]
     sim.index = closes.index[i0:T - 1]
-    return {"sim": sim, "holds": holds, "round_trips": count_runs(holds), "trips": trip_returns(sim, holds[:, 0]),
-            "target": on[i0:T - 1]}
+    out = {"sim": sim, "holds": holds, "round_trips": count_runs(holds), "trips": trip_returns(sim, holds[:, 0]),
+           "target": on[i0:T - 1]}
+    if include_events: out["fill_events"] = sim_out[2]
+    return out
 
 
-def run_bench(opens, closes, which, start=START):
+def run_bench(opens, closes, which, start=START, trade_opens=None, include_events=False):
     if which == "P":
         syms, weights, sl = ["SPY", "IEF"], [0.6, 0.4], [("SPY", None), ("IEF", None)]
         reset = True
@@ -343,12 +362,13 @@ def run_bench(opens, closes, which, start=START):
         reset = True
     else:
         raise ValueError(which)
-    op, col, i0 = _prep(opens, closes, syms, start)
+    op, col, i0 = _prep(opens if trade_opens is None else trade_opens, closes, syms, start)
     T = len(closes)
-    sim, holds = simulate(op, col, sl, weights, np.ones((T, len(sl)), bool),
-                          reset_days(closes.index, i0) if reset else np.zeros(T, bool), i0, [-1] * len(sl))
+    sim_out = simulate(op, col, sl, weights, np.ones((T, len(sl)), bool),
+                       reset_days(closes.index, i0) if reset else np.zeros(T, bool), i0, [-1] * len(sl), include_events)
+    sim = sim_out[0]
     sim.index = closes.index[i0:T - 1]
-    return sim
+    return {"sim": sim, "fill_events": sim_out[2]} if include_events else sim
 
 
 def count_runs(holds: np.ndarray) -> int:
@@ -522,7 +542,74 @@ def sensitivity_flags(criteria: dict, sens: dict) -> dict:
     return out
 
 
-def evaluate_candidate(name, opens, closes, n_info, start=START, mc_draws=MC_DRAWS, rand_draws=RANDOM_DRAWS):
+def fill_quality(events, sources):
+    counts = {"09:45": 0, "09:50": 0, "09:55": 0, "daily_open": 0, "missing": 0}
+    for i, symbol, _side in events:
+        date = sources.index[int(i)]
+        source = sources.at[date, symbol]
+        counts[source if source in counts else "missing"] += 1
+    total = sum(counts.values())
+    counts["total"] = total
+    counts["substituted"] = total - counts["09:45"]
+    counts["substituted_pct"] = counts["substituted"] / total if total else 0.0
+    return counts
+
+
+def _candidate_run(name, opens, closes, start, trade_opens=None, include_events=False):
+    p = BASE[name]
+    if name == "S-A":
+        return run_sa(opens, closes, p["sma"], p["confirm"], start, trade_opens, include_events)
+    if name == "S-B":
+        return run_sb(opens, closes, p["rsi_below"], p["exit_sma"], start, trade_opens, include_events)
+    return run_sc(opens, closes, p["entry_offset"], p["exit_day"], start, trade_opens, include_events)
+
+
+def evaluate_criterion5(name, opens, closes, fill_prices, fill_sources, coverage, start):
+    """Gating 09:45 fill robustness. The long-history OHLC proxy remains separate and is compared on this overlap."""
+    proxy = _candidate_run(name, opens, closes, start)
+    actual = _candidate_run(name, opens, closes, start, fill_prices, True)
+    proxy_m, m = perf(proxy["sim"]["net"]), perf(actual["sim"]["net"])
+    p = run_bench(opens, closes, "P", start, fill_prices, True)
+    spy = run_bench(opens, closes, "SPY", start, fill_prices, True)
+    bm = {"60/40": perf(p["sim"]["net"]), "SPY": perf(spy["sim"]["net"])}
+    quality = {"candidate": fill_quality(actual["fill_events"], fill_sources),
+               "60/40": fill_quality(p["fill_events"], fill_sources),
+               "SPY": fill_quality(spy["fill_events"], fill_sources)}
+    required_symbols = set(SA_UNIVERSE + [CASH]) if name == "S-A" else (
+        {"SPY", CASH} if name == "S-B" else {"TLT", CASH})
+    required_symbols |= {"SPY", "IEF"}
+    if name == "S-A":
+        ew = run_bench(opens, closes, "EW6", start, fill_prices, True)
+        bm["EW6"] = perf(ew["sim"]["net"])
+        quality["EW6"] = fill_quality(ew["fill_events"], fill_sources)
+        required_symbols |= set(SA_UNIVERSE)
+    coverage_pct = {s: float(coverage[s]["coverage_pct"]) for s in sorted(required_symbols)}
+    coverage_ok = all(x >= 98.0 for x in coverage_pct.values())
+    budget_ok = all(q["total"] > 0 and q["substituted_pct"] <= 0.02 for q in quality.values())
+    enough = len(actual["sim"]["net"]) >= MIN_DAYS and actual["round_trips"] >= MIN_ROUND_TRIPS
+    reference_ok = (m["sharpe"] > 0 and
+                    (proxy_m["sharpe"] <= 0 or m["sharpe"] >= 0.75 * proxy_m["sharpe"]) and
+                    m["cagr"] > 0 and
+                    m["sharpe"] > bm["60/40"]["sharpe"] and m["sharpe"] > bm["SPY"]["sharpe"] and
+                    m["calmar"] > bm["60/40"]["calmar"] and m["calmar"] > bm["SPY"]["calmar"])
+    details = {"start": start, "days": len(actual["sim"]["net"]), "round_trips": actual["round_trips"],
+               "actual": m, "open_proxy_same_window": proxy_m, "benchmarks_0945": bm,
+               "coverage_pct_0945": coverage_pct, "fills": quality}
+    no_missing_fills = all(q["missing"] == 0 for q in quality.values())
+    sufficient = (enough and coverage_ok and budget_ok and no_missing_fills
+                  and all(q["total"] > 0 for q in quality.values()))
+    fill_counts = "; ".join(
+        f"{run}: on-time {q['09:45']}/{q['total']}, 09:50 {q['09:50']}, 09:55 {q['09:55']}, daily-open {q['daily_open']}"
+        for run, q in quality.items())
+    why = (f"09:45 overlap {start}, {details['days']} returns, {actual['round_trips']} round trips; "
+           f"coverage={'ok' if coverage_ok else 'below 98%'}, substitutions={'within 2%' if budget_ok else 'over 2%'}, "
+           f"missing fills={'none' if no_missing_fills else 'present'}; "
+           f"Sharpe {m['sharpe']:.2f} vs open-proxy {proxy_m['sharpe']:.2f}, "
+           f"CAGR {m['cagr']:.1%}; 60/40 {bm['60/40']['sharpe']:.2f}/{bm['60/40']['calmar']:.2f}, "
+           f"SPY {bm['SPY']['sharpe']:.2f}/{bm['SPY']['calmar']:.2f}; fills: {fill_counts}")
+    return crit(reference_ok, why, sufficient, float(m["sharpe"])), details
+
+def evaluate_candidate(name, opens, closes, n_info, start=START, mc_draws=MC_DRAWS, rand_draws=RANDOM_DRAWS, intraday=None):
     runner = {"S-A": lambda p: run_sa(opens, closes, p["sma"], p["confirm"], start),
               "S-B": lambda p: run_sb(opens, closes, p["rsi_below"], p["exit_sma"], start),
               "S-C": lambda p: run_sc(opens, closes, p["entry_offset"], p["exit_day"], start)}[name]
@@ -566,6 +653,13 @@ def evaluate_candidate(name, opens, closes, n_info, start=START, mc_draws=MC_DRA
               f"{bs['sharpe']:.2f}/{bs['calmar']:.2f}; S17-style OR reading: {'beats' if either else 'does not beat'}; "
               f"CAGR {m['cagr']:.1%} vs {bp['cagr']:.1%}/{bs['cagr']:.1%}; exposure {exposure:.0%}",
         cal_ok and enough_trips and len(r) >= MIN_DAYS, float(m["sharpe"] - max(bp["sharpe"], bs["sharpe"])))
+    if intraday is None:
+        c["5 09:45 fill robustness"] = crit(False, "intraday fill data/manifest not supplied", sufficient=False)
+        c5_detail = None
+    else:
+        fill_prices, fill_sources, coverage, overlap_start = intraday
+        c["5 09:45 fill robustness"], c5_detail = evaluate_criterion5(
+            name, opens, closes, fill_prices, fill_sources, coverage, overlap_start)
     extra = {}
     if name == "S-A":
         ok = m["max_dd"] < be["max_dd"] and m["sharpe"] > be["sharpe"]
@@ -587,11 +681,12 @@ def evaluate_candidate(name, opens, closes, n_info, start=START, mc_draws=MC_DRA
     flags = sensitivity_flags(c, sens)
     return {"name": name, "params": BASE[name], "metrics": m, "round_trips": trips, "criteria": c,
             "verdict": verdict(c), "dsr_sensitivity": sens, "sensitivity_flags": flags,
-            "verdict_sensitive": any(f["sensitive"] for f in flags.values()), "returns": r, "benchmarks": {"P": bp, "SPY": bs, "EW6": be}, **extra}
+            "verdict_sensitive": any(f["sensitive"] for f in flags.values()), "criterion5": c5_detail,
+            "returns": r, "benchmarks": {"P": bp, "SPY": bs, "EW6": be}, **extra}
 
 
 def evaluate_all(opens, closes, db, names=NAMES, start=START, mc_draws=MC_DRAWS, rand_draws=RANDOM_DRAWS,
-                 inventory=None):
+                 inventory=None, intraday=None):
     """Print N first, then evaluate. N is computed from the database plus the candidates' own Sharpes."""
     quick = {}
     for n in names:
@@ -602,7 +697,7 @@ def evaluate_all(opens, closes, db, names=NAMES, start=START, mc_draws=MC_DRAWS,
     n_info = trial_counts(db, quick, inventory)
     out = {"n_info": n_info, "candidates": {}}
     for n in names:
-        out["candidates"][n] = evaluate_candidate(n, opens, closes, n_info, start, mc_draws, rand_draws)
+        out["candidates"][n] = evaluate_candidate(n, opens, closes, n_info, start, mc_draws, rand_draws, intraday)
     return out
 
 
@@ -661,8 +756,8 @@ def main(argv=None):
         if a.cmd == "holdout":
             raise Refused("the holdout stays closed: it needs the soak to be complete and a docs/holdout.lock entry")
         if a.cmd == "run" and RUN_LOCKED:
-            raise Refused("run is locked: the 09:45 ET execution-price amendment and the trial inventory review are "
-                          "pending. Nothing has been run on the real history.")
+            raise Refused("run is locked pending review of the 09:45 data manifest and complete trial inventory; "
+                          "nothing has been run on the real history")
         commit = registration_commit()
         if a.cmd == "count":
             print(json.dumps({"counts": trial_counts(str(TRIAL_DB), {}), "inventory": trial_inventory(str(TRIAL_DB))},
@@ -670,14 +765,20 @@ def main(argv=None):
             return 0
         require_clean()
         data_sha = check_data()
+        if _git("ls-files", "--error-unmatch", str(i945.MANIFEST_FILE.relative_to(REPO))).returncode:
+            raise Refused("the intraday manifest must be committed before run")
         opens, closes = load_data()
-        res = evaluate_all(opens, closes, a.db, inventory=read_inventory())
+        fill_prices, fill_sources, manifest = i945.load_fills(daily_opens=opens)
+        if manifest.get("daily_data_sha256") != data_sha:
+            raise Refused("intraday manifest was made against a different daily-data fingerprint")
+        intraday = (fill_prices, fill_sources, manifest["coverage"], manifest["overlap_start"])
+        res = evaluate_all(opens, closes, a.db, inventory=read_inventory(), intraday=intraday)
         print(render(res))
         RESULTS.mkdir(exist_ok=True)
         stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         head = _git("rev-parse", "HEAD").stdout.strip()
         record = {"prereg_tag": TAG, "prereg_commit": commit, "head_commit": head, "runner_sha256": sha256_file(__file__),
-                  "data_sha256": data_sha, "window": [START, END], "n_info": res["n_info"],
+                  "data_sha256": data_sha, "intraday_data_sha256": manifest["intraday_data_sha256"], "window": [START, END], "n_info": res["n_info"],
                   "research_gate_sha256": sha256_file(HERE.parent / "research_gate.py"),
                   "candidates": {n: {k: v for k, v in c.items() if k != "returns"} for n, c in res["candidates"].items()}}
         out = RESULTS / f"daily_v1_{stamp}.json"
