@@ -68,10 +68,12 @@ PASS, FAIL, INSUFFICIENT = "PASS", "FAIL", "INSUFFICIENT"
 C5_SYMBOLS = ["SPY", "QQQ", "IWM", "EFA", "TLT", "GLD", "IEF", "SHY"]
 C5_MIN_COVERAGE, C5_MAX_SUBSTITUTED, C5_SHARPE_RATIO = 0.98, 0.02, 0.75
 FILL_ORDER = ("09:45", "09:50", "09:55", "daily")   # 09:45 is on time; every other kind is a substituted fill
-# `run` is locked until (1) the execution-price question is settled by a registered amendment (the open is not the
-# 09:45 ET price the rules specify) and (2) the trial inventory has been reviewed by hand. Lifting the lock is a
-# reviewed change to this constant, after the amendment is tagged.
-RUN_LOCKED = True
+# `run` was locked until (1) the execution-price question was settled by a registered amendment and (2) the trial
+# inventory was reviewed by hand. Lifted 2026-10-22 in its own reviewed change (Amendment 1 section 5 step 5), after:
+# amendments 1-3 tagged (prereg-daily-v1.1/.2/.3), the SIP intraday manifest committed (98a84a1), criterion 5
+# implemented with tests, and docs/TRIAL_INVENTORY_daily_v1.md committed (N_inventory 37). The other guards still
+# apply: registration tag ancestry, clean tree, data and intraday fingerprints, the inventory line.
+RUN_LOCKED = False
 
 
 class Refused(Exception):
@@ -504,6 +506,8 @@ def load_intraday(index, path=INTRADAY_FILE, manifest=None):
     """(fills, kinds): DataFrames on the daily calendar `index` x C5_SYMBOLS. fills holds the 09:45 open or, if that bar
     is missing, the 09:50 open, the 09:55 open, then the daily open (FILL_ORDER); kinds says which. NaN/None = no price.
     With a manifest, a file whose SHA-256 differs is refused."""
+    if not Path(path).exists():
+        raise Refused(f"intraday file {Path(path).name} is missing: run fetch_0945.py first")
     if manifest is not None and sha256_file(path) != manifest["sha256"]:
         raise Refused(f"intraday data fingerprint differs from the committed manifest ({manifest['sha256'][:16]})")
     raw = pd.read_csv(path, dtype={"date": str, "slot": str})

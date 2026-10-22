@@ -195,10 +195,18 @@ def test_registration_guards(tmp_path):
         dc.registration_commit(repo)                                  # tag not an ancestor of HEAD
 
 
-def test_run_is_locked_until_the_amendment(capsys):
-    assert dc.RUN_LOCKED is True
-    assert dc.main(["run"]) == 2
-    assert "locked" in capsys.readouterr().err
+def test_run_unlocked_only_with_the_committed_sip_manifest():
+    """Step 5 of Amendment 1 lifted the lock after the SIP manifest (Amendment 3) was committed."""
+    assert dc.RUN_LOCKED is False
+    m = dc.read_manifest()
+    assert m["sha256"] == "bca9579ee7632f1b445fda7186ff9d971e829012c2f6273564a3f164824d2736"
+    assert m["overlap_start"] == "2016-01-04" and "SIP" in dc.MANIFEST_FILE.read_text()
+    assert dc.INTRADAY_FILE.name == "intraday_0945_sip.csv.gz"
+
+
+def test_missing_intraday_file_refuses(tmp_path):
+    with pytest.raises(dc.Refused, match="missing"):
+        dc.load_intraday(pd.DatetimeIndex([]), tmp_path / "nope.csv.gz")
 
 
 def test_inventory_lists_every_logged_and_backfilled_attempt(tmp_path):
