@@ -480,6 +480,20 @@ once at import instead of lazily on the first log() call during live trading.
       `prereg-daily-v1.2`. The server's trial database holds 0 logged trials and one restored row of 28, so the
       trial-Sharpe variance for the deflated Sharpe is now `max(0.000324276, variance of logged trials incl. the
       candidates)`: the new trials can raise the bar, never lower it below the stage-1 record.
+    - **Amendment 3, 2026-10-22 (before any result):** `docs/PREREG_daily_v1_amendment3.md`, tag
+      `prereg-daily-v1.3`. Criterion 5 uses the SIP feed: IEX 09:45 coverage was SHY 50.4%, IEF 86.7%, GLD 93.8%
+      (coverage only, no returns), which would have made criterion 5 INSUFFICIENT for every candidate. SIP manifest
+      `98a84a1` (sha `bca9579e...`, overlap 2016-01-04, every symbol >= 99.9%). Trial inventory N_inventory 37, N = 40.
+    - **Result 2026-10-22 (run once, server, head `283acac`, results/daily_v1_20261022_064221.json; trials 7-9):
+      all three UNSUPPORTED.**
+      - **S-A** (200-day trend, six ETFs): Sharpe 0.82, CAGR 6.8%, max DD 16.1% (2007-2026). Passes drawdown,
+        benchmarks (Sharpe/Calmar above 60/40 and SPY) and its own comparator (DD 16.1% vs 36.6% equal weight), but
+        FAILS DSR (0.121; luck threshold 1.08 after 40 attempts), PBO (0.562) and criterion 5 (at 09:45, 2016-2026,
+        Sharpe 0.93 vs 60/40 0.96). CAGR is below SPY (6.8% vs 11.2%). Reading: a drawdown reducer, not an edge.
+      - **S-B** (SPY RSI(2)): Sharpe 0.54, CAGR 3.2%; mean +0.21% per round trip over 159 trips, but FAILS DSR
+        (0.009), PBO (0.584), benchmarks and criterion 5.
+      - **S-C** (TLT turn-of-month): Sharpe -0.45, CAGR -3.2%, max DD 56%; random-day test p 0.99. No effect.
+      - Consequence: none is "worth paper-testing"; none may be proposed for live trading under this registration.
   - **Incidents on record (no trades resulted from either):**
     - 2026-10-13 18:42 UTC: the `/us` dashboard "Pause new trades" wrote
       `~/ratelark/AETHER_HALT` (old breaker path). The engine read `~/AETHER_HALT` and never saw
