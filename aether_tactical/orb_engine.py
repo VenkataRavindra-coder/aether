@@ -28,8 +28,9 @@ def _evaluate(bars, session) -> dict:
     rng = [b for b in bars if b.t < range_end]
     if not bars or bars[-1].t < range_end - timedelta(minutes=1):
         return {**out, "state": "forming_range", "trade": None, "reason": "opening range not complete yet"}
-    if len(rng) != 15:
-        return {**out, "state": "no_trade", "trade": None, "reason": f"incomplete range ({len(rng)} of 15 bars)"}
+    need = RANGE // timedelta(minutes=1)   # 15; derived so research neighbours can vary RANGE alone
+    if len(rng) != need:
+        return {**out, "state": "no_trade", "trade": None, "reason": f"incomplete range ({len(rng)} of {need} bars)"}
     hi, lo = max(b.h for b in rng), min(b.l for b in rng)
     out.update(range_high=round(hi, 4), range_low=round(lo, 4))
     cut, flat = entry_cutoff(session), flat_time(session)

@@ -760,3 +760,8 @@ these tests decide whether it is worth doing.
   else "inconclusive". No rule may be changed after data is seen; a changed rule is a new strategy
   with its own 40 sessions. "Worth a live micro test" is not permission to trade: going live still
   needs the owner's decision, the risk controller and the canary path.
+- **Historical test (registered 2026-10-22, before any data):** `docs/PREREG_tactical_hist_v1.md`,
+  tag `prereg-tactical-hist-v1`. The frozen A and B rules on SPY SIP 1-minute bars 2016-01-04 to
+  2026-10-20, six logged variants (baseline + two neighbours each), criteria C1-C6. **New live gate:**
+  a tactical strategy may be proposed for a live micro test only if its forward verdict is "worth a live
+  micro test" AND its historical verdict is "historically supported". Verdicts: (pending run).
