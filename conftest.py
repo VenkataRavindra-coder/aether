@@ -34,6 +34,12 @@ os.environ["AETHER_HALT_FILE"] = os.path.join(TEST_SCRATCH, "AETHER_HALT")
 os.environ["AETHER_HOME"] = TEST_SCRATCH
 os.environ["AETHER_RISK_STATE"] = os.path.join(TEST_SCRATCH, ".aether_risk_state.json")
 os.environ["AETHER_CANARY_RISK_STATE"] = os.path.join(TEST_SCRATCH, ".aether_canary_risk_state.json")
+# And for every record the dashboard shows as real. 2026-10-21: canary tests (fake broker, limit 300)
+# wrote preflight/order/assert_flat rows into the server's real aether_decisions.sqlite, and the
+# board's activity log displayed them as live canary activity.
+os.environ["AETHER_DECISION_DB"] = os.path.join(TEST_SCRATCH, "aether_decisions.sqlite")
+os.environ["TACTICAL_LEDGER"] = os.path.join(TEST_SCRATCH, "tactical_paper.jsonl")
+os.environ["AETHER_LOCK_FILE"] = os.path.join(TEST_SCRATCH, ".aether.lock")
 
 _ROOT = Path(__file__).resolve().parent
 _EXITS = re.compile(r"sys\.exit\(|raise SystemExit")
