@@ -38,7 +38,7 @@ RESULTS = HERE / "results"
 TRIAL_DB = HERE.parent / "research.sqlite"
 REPO = HERE.parent.parent
 INVENTORY_FILE = REPO / "docs" / "TRIAL_INVENTORY_daily_v1.md"   # must contain a line "N_inventory: <int>"
-INTRADAY_FILE = HERE / "data" / "intraday_0945_iex.csv.gz"         # written once by fetch_0945.py (amendment 1)
+INTRADAY_FILE = HERE / "data" / "intraday_0945_sip.csv.gz"         # written once by fetch_0945.py (amendments 1, 3)
 MANIFEST_FILE = REPO / "docs" / "INTRADAY_MANIFEST_daily_v1.md"    # its SHA-256 and overlap start, committed first
 
 TAG = "prereg-daily-v1"
