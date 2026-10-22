@@ -764,4 +764,16 @@ these tests decide whether it is worth doing.
   tag `prereg-tactical-hist-v1`. The frozen A and B rules on SPY SIP 1-minute bars 2016-01-04 to
   2026-10-20, six logged variants (baseline + two neighbours each), criteria C1-C6. **New live gate:**
   a tactical strategy may be proposed for a live micro test only if its forward verdict is "worth a live
-  micro test" AND its historical verdict is "historically supported". Verdicts: (pending run).
+  micro test" AND its historical verdict is "historically supported".
+  - **Result 2026-10-22 (run once, server, data SHA-256 `1ca901b4...5ee745`, 2,715 sessions, 0 refused;
+    trials 1-6 logged in batch `tactical-hist-v1`, N = 37):**
+    - **A `orb15`: HISTORICALLY UNSUPPORTED.** 1,792 trades, mean -1.53 bp net (t -1.22), profit
+      factor 0.92, total -25.9%, max drawdown 29.7%; up in 3 of 10 years; both neighbours (10 and 30
+      min) also negative; DSR 0.001; -5.53 bp at 4 bp/side.
+    - **B `engulf15`: HISTORICALLY UNSUPPORTED.** 338 trades, mean -1.81 bp net (t -0.97), profit
+      factor 0.84, total -6.1%, max drawdown 12.4%; up in 2 of 10 years; both neighbours (1.3x and
+      2.0x volume) also negative; DSR 0.001; -5.81 bp at 4 bp/side.
+    - Consequence (prereg section 7): neither A nor B can be proposed for live trading under this
+      registration, whatever the forward test shows. The forward 40-session paper test keeps running
+      unchanged, as locked. 2022's near-zero result for A was checked: 251 sessions, 0 bad, 156 trades,
+      +0.019%.
