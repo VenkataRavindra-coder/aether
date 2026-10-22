@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""AETHER research: 09:45 ET fill prices for the daily candidates (docs/PREREG_daily_v1_amendment1.md, section 2).
+"""AETHER research: 09:45 ET fill prices for the daily candidates (Amendment 1 section 2; feed per Amendment 3).
 
   .venv/bin/python aether-research/us_momentum/fetch_0945.py fetch     # once; paper data keys from .env
 
 Downloads, for the eight symbols criterion 5 needs, only:
-  - the OPEN of the five-minute bars stamped 09:45, 09:50 and 09:55 ET (Alpaca IEX feed, Adjustment.ALL), and
+  - the OPEN of the five-minute bars stamped 09:45, 09:50 and 09:55 ET (Alpaca SIP feed, Adjustment.ALL), and
   - the session's daily open (same feed and adjustment), the last-resort substitute.
 Nothing after 2026-10-06 is kept. It then writes docs/INTRADAY_MANIFEST_daily_v1.md: the file's SHA-256, the overlap
 start (the first date every symbol has a 09:45 bar) and per-symbol coverage. It never computes or prints a return or
@@ -24,7 +24,7 @@ from zoneinfo import ZoneInfo
 
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parent.parent
-OUT = HERE / "data" / "intraday_0945_iex.csv.gz"
+OUT = HERE / "data" / "intraday_0945_sip.csv.gz"   # Amendment 3: SIP, not IEX
 MANIFEST = REPO / "docs" / "INTRADAY_MANIFEST_daily_v1.md"
 CAL_FILE = HERE / "data" / "us_daily_yf.csv.gz"     # the registered data: its SPY rows are the trading calendar
 SYMBOLS = ["SPY", "QQQ", "IWM", "EFA", "TLT", "GLD", "IEF", "SHY"]
@@ -96,7 +96,7 @@ def write_manifest(cov, file_sha, path=MANIFEST, out_file=OUT):
              "figure was computed.", "",
              f"sha256: {file_sha}", f"file: {out_file.relative_to(REPO)}", f"overlap_start: {cov['overlap_start']}",
              f"window_end: {END.isoformat()}", f"sessions: {cov['sessions']}",
-             "feed: IEX, Adjustment.ALL, 5-minute bars 09:45/09:50/09:55 ET + daily open", "",
+             "feed: SIP (Amendment 3), Adjustment.ALL, 5-minute bars 09:45/09:50/09:55 ET + daily open", "",
              "| symbol | first 09:45 bar | 09:45 coverage | 09:50 | 09:55 | daily open | none |",
              "|---|---|---|---|---|---|---|"]
     for s, v in cov["symbols"].items():
@@ -123,9 +123,9 @@ def fetch(out=OUT, manifest=MANIFEST):
         a = dt.datetime(year, 1, 1, tzinfo=NY)
         b = dt.datetime.combine(min(dt.date(year + 1, 1, 1), END + dt.timedelta(days=1)), dt.time(), tzinfo=NY)
         five = dc.get_stock_bars(StockBarsRequest(symbol_or_symbols=SYMBOLS, timeframe=TimeFrame(5, TimeFrameUnit.Minute),
-                                                  start=a, end=b, feed=DataFeed.IEX, adjustment=Adjustment.ALL)).data
+                                                  start=a, end=b, feed=DataFeed.SIP, adjustment=Adjustment.ALL)).data
         day = dc.get_stock_bars(StockBarsRequest(symbol_or_symbols=SYMBOLS, timeframe=TimeFrame.Day, start=a, end=b,
-                                                 feed=DataFeed.IEX, adjustment=Adjustment.ALL)).data
+                                                 feed=DataFeed.SIP, adjustment=Adjustment.ALL)).data
         n = 0
         for sym in SYMBOLS:
             for r in five.get(sym, []):
