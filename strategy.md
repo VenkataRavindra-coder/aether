@@ -17,6 +17,10 @@ If this file and the code disagree, trading stops until they agree.
 Live Alpaca account `…7342`: active, **unfunded**, shorting disabled.
 Crypto live trading is **hard-blocked** in the Risk Controller regardless of settings.
 
+> **Update 2026-10-22:** the live account holds the $100 micro-live funding, the automatic canary
+> is off (`CANARY_AUTO=0`, timers disabled, halt file kept) and **no strategy may trade live**.
+> The strategy phase is closed; see section 11 for the only route back to live trading.
+
 ---
 
 ## 2. Engines
@@ -685,6 +689,43 @@ DSR/PBO gate and the drawdown limit pass (section 8, phase 2).
 `python3 canary.py sell --limit <bid>` → `python3 canary.py assert-flat`. If the script or
 server is unavailable, cancel and close VTI in the Alpaca web dashboard. Engine procedures:
 section 6.
+
+---
+
+## 11. Strategy phase closed (2026-10-22) and re-open criteria
+
+Recorded 2026-10-22, after every pre-registered result so far was in. Changes no code, no threshold
+and no existing result.
+
+**Evidence at closing.** Every tested idea failed its pre-registered gate: `us_etf_momentum_v1`
+(S2) NO-GO; daily S-A, S-B, S-C UNSUPPORTED; tactical A `orb15` and B `engulf15` HISTORICALLY
+UNSUPPORTED. Trial count **N = 40** (section 8). Infrastructure, execution, risk controls and the
+canary all work; the missing piece is a strategy with a demonstrated edge.
+
+**Decision.**
+- No live strategy. `US_LIVE=false` stays. The owner's capital follows a passive benchmark
+  (SPY or 60/40) outside AETHER.
+- The $100 in the live account stays in cash. Any change (for example buying SPY) is a manual,
+  one-off owner action recorded here the same day; no automated or discretionary trading.
+- AETHER and the Hetzner server keep running as an engineering and research lab. Paper engines
+  and the tactical 40-session forward test continue unchanged, as locked.
+
+**Re-open criteria (all required, fixed now, before any further result exists).** Live strategy
+trading may be proposed again only for a strategy that:
+1. was pre-registered in `docs/` (rules, data, costs, criteria) and tagged **before** its first run;
+2. is logged through `trials.log_trial` with every variant, so N includes it; N never decreases and
+   stays at least 40 plus every trial since;
+3. passes deflated Sharpe **>= 0.95** AND PBO **<= 0.05** at that N;
+4. has positive mean net return at 2 bp per side **and** at the 4 bp per side cost stress;
+5. has a 95th-percentile Monte Carlo drawdown within the active drawdown limit (section 3);
+6. then passes a forward paper test of at least 40 sessions or two months (whichever its
+   registration fixes) with the frozen rule, net positive and inside the simulation's 90% band;
+7. is approved in writing in this file by the owner, with amount, stop rule and sunset date, and
+   starts at micro size through the Risk Controller and canary path.
+
+A shared post, prompt, AI suggestion or new narrative is not evidence and does not trigger a review.
+A changed rule is a new strategy and starts at step 1. Going live without meeting every step is only
+possible as a written RISK ACCEPTANCE (section 8), never as a pass.
 
 ---
 
