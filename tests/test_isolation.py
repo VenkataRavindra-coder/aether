@@ -17,3 +17,16 @@ def test_dotenv_cannot_restore_real_halt_or_live_keys(tmp_path):
     assert safety_guard.halt_file() == tmp_path / "AETHER_HALT"
     assert os.environ.get("APCA_LIVE_API_KEY_ID", "") == ""
     assert os.environ.get("APCA_LIVE_API_SECRET_KEY", "") == ""
+
+
+def test_records_shown_on_the_dashboard_are_never_the_real_ones():
+    """Tests must not write rows the dashboard presents as real activity (2026-10-21 incident)."""
+    import tempfile
+    from pathlib import Path
+
+    import decision_log
+    from aether_tactical import ledger
+    scratch = Path(tempfile.gettempdir()).resolve()
+    for p in (Path(decision_log.DB_PATH), ledger.path(), Path(os.environ["AETHER_LOCK_FILE"])):
+        p = p.resolve()
+        assert scratch in p.parents, p
