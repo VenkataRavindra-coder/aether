@@ -395,7 +395,8 @@ def test_evaluate_all_structure_and_logging(data, tmp_path):
     assert res["n_info"]["n_total"] >= 31
     for name, cand in res["candidates"].items():
         keys = list(cand["criteria"])
-        assert [k[0] for k in keys[:4]] == list("1234") and len(keys) == 5
+        assert [k[0] for k in keys[:4]] == list("1234") and len(keys) == 6
+        assert keys[-1] == "5 09:45 ET fills" and cand["criteria"][keys[-1]]["result"] == dc.INSUFFICIENT  # no 09:45 data
         assert all(v["result"] in (dc.PASS, dc.FAIL, dc.INSUFFICIENT) for v in cand["criteria"].values())
         assert cand["verdict"] in ("WORTH PAPER-TESTING", "UNSUPPORTED", "INCONCLUSIVE")
         assert math.isfinite(cand["metrics"]["sharpe"])
@@ -412,3 +413,105 @@ def test_evaluate_all_structure_and_logging(data, tmp_path):
     con.close()
     assert n_ret > 1000
     assert dc.trial_counts(db, {})["n_total"] == 31                    # 28 old + the 3 now logged: no double count
+
+
+# ---------- criterion 5: 09:45 ET fills (amendment 1) -------------------------------------------------------------
+def _intraday(tmp_path, closes, opens, start="2009-01-02", drop=None, shift=1.0, seed=3):
+    """Synthetic intraday file: a 09:45 price for every symbol and day from `start` (the proxy open x shift with
+    noise), plus a daily open; `drop` = {(symbol, date-str)} whose 09:45 bar is missing (09:50 used instead)."""
+    rng = np.random.default_rng(seed)
+    rows = []
+    for d in closes.index[closes.index >= pd.Timestamp(start)]:
+        ds = d.strftime("%Y-%m-%d")
+        for s in dc.C5_SYMBOLS:
+            o = float(opens.at[d, s])
+            if not drop or (s, ds) not in drop:
+                rows.append((s, ds, "09:45", o * shift * (1 + rng.normal(0, 0.0005))))
+            else:
+                rows.append((s, ds, "09:50", o * shift))
+            rows.append((s, ds, "daily", o))
+    p = tmp_path / "i.csv.gz"
+    pd.DataFrame(rows, columns=["symbol", "date", "slot", "open"]).to_csv(p, index=False)
+    return p
+
+
+def test_manifest_is_required_and_parsed(tmp_path):
+    with pytest.raises(dc.Refused, match="missing"):
+        dc.read_manifest(tmp_path / "nope.md")
+    m = tmp_path / "m.md"
+    m.write_text("x\nsha256: " + "a" * 64 + "\noverlap_start: 2020-07-27\n")
+    assert dc.read_manifest(m) == {"sha256": "a" * 64, "overlap_start": "2020-07-27"}
+    m.write_text("sha256: short\n")
+    with pytest.raises(dc.Refused, match="lacks"):
+        dc.read_manifest(m)
+
+
+def test_intraday_fingerprint_must_match_the_manifest(data, tmp_path):
+    _, o, c = data
+    p = _intraday(tmp_path, c, o)
+    with pytest.raises(dc.Refused, match="fingerprint"):
+        dc.load_intraday(c.index, p, {"sha256": "0" * 64, "overlap_start": "2009-01-02"})
+    fills, kinds = dc.load_intraday(c.index, p, {"sha256": dc.sha256_file(p), "overlap_start": "2009-01-02"})
+    assert (kinds.loc["2009-01-02":, "SPY"] == "09:45").all() and kinds.loc[:"2008-12-31", "SPY"].isna().all()
+
+
+def test_fill_order_prefers_0945_then_substitutes(data, tmp_path):
+    _, o, c = data
+    day = c.index[c.index >= pd.Timestamp("2010-03-01")][0].strftime("%Y-%m-%d")
+    p = _intraday(tmp_path, c, o, drop={("TLT", day)})
+    fills, kinds = dc.load_intraday(c.index, p)
+    assert kinds.at[pd.Timestamp(day), "TLT"] == "09:50" and kinds.at[pd.Timestamp(day), "SPY"] == "09:45"
+
+
+def test_used_prices_cover_every_held_asset_on_both_days():
+    idx = pd.bdate_range("2020-01-01", periods=5)
+    holds = np.array([[True], [False], [True]])
+    used = dc.used_prices(holds, [("SPY", "SHY")], 1, idx)
+    assert used == {(idx[1], "SPY"), (idx[2], "SPY"), (idx[2], "SHY"), (idx[3], "SHY"), (idx[3], "SPY"), (idx[4], "SPY")}
+
+
+def test_criterion5_identical_prices_pass_the_ratio_and_count_no_substitutes(data, tmp_path):
+    _, o, c = data
+    p = _intraday(tmp_path, c, o)
+    fills, kinds = dc.load_intraday(c.index, p)
+    res, info = dc.criterion5("S-B", o, c, fills, kinds, "2009-01-02")
+    assert res["result"] in (dc.PASS, dc.FAIL, dc.INSUFFICIENT)
+    assert all(v["share"] == 0.0 for v in info["substituted"].values())
+    assert set(info["substituted"]) == {"S-B", "P", "SPY"}
+    assert abs(info["fills_0945"]["sharpe"] - info["open_proxy"]["sharpe"]) < 0.5      # tiny noise only
+
+
+def test_criterion5_too_many_substitutes_is_insufficient(data, tmp_path):
+    _, o, c = data
+    days = [d.strftime("%Y-%m-%d") for d in c.index[c.index >= pd.Timestamp("2009-01-02")]]
+    drop = {("SPY", d) for d in days[::20]}                                  # 5% of SPY days without 09:45
+    p = _intraday(tmp_path, c, o, drop=drop)
+    fills, kinds = dc.load_intraday(c.index, p)
+    res, info = dc.criterion5("S-B", o, c, fills, kinds, "2009-01-02")
+    assert res["result"] == dc.INSUFFICIENT and "coverage below 98%" in res["detail"]
+
+
+def test_criterion5_short_window_is_insufficient(data, tmp_path):
+    _, o, c = data
+    p = _intraday(tmp_path, c, o, start="2011-06-01")
+    fills, kinds = dc.load_intraday(c.index, p)
+    res, _ = dc.criterion5("S-C", o, c, fills, kinds, "2011-06-01")
+    assert res["result"] == dc.INSUFFICIENT
+
+
+def test_criterion5_missing_price_is_insufficient_not_a_crash(data, tmp_path):
+    _, o, c = data
+    p = _intraday(tmp_path, c, o, start="2010-01-04")
+    fills, kinds = dc.load_intraday(c.index, p)
+    res, info = dc.criterion5("S-A", o, c, fills, kinds, "2009-01-02")       # window starts before the data
+    assert res["result"] == dc.INSUFFICIENT and info == {}
+
+
+def test_evaluate_all_with_intraday_includes_criterion_5(data, tmp_path):
+    _, o, c = data
+    p = _intraday(tmp_path, c, o)
+    fills, kinds = dc.load_intraday(c.index, p)
+    res = dc.evaluate_all(o, c, _db(tmp_path), names=("S-C",), start="2006-06-01", mc_draws=100, rand_draws=100,
+                          intraday=(fills, kinds, "2009-01-02"))
+    cand = res["candidates"]["S-C"]
+    assert "5 09:45 ET fills" in cand["criteria"] and "criterion_5" in cand

@@ -38,6 +38,8 @@ RESULTS = HERE / "results"
 TRIAL_DB = HERE.parent / "research.sqlite"
 REPO = HERE.parent.parent
 INVENTORY_FILE = REPO / "docs" / "TRIAL_INVENTORY_daily_v1.md"   # must contain a line "N_inventory: <int>"
+INTRADAY_FILE = HERE / "data" / "intraday_0945_iex.csv.gz"         # written once by fetch_0945.py (amendment 1)
+MANIFEST_FILE = REPO / "docs" / "INTRADAY_MANIFEST_daily_v1.md"    # its SHA-256 and overlap start, committed first
 
 TAG = "prereg-daily-v1"
 DATA_SHA256 = "e9524a2a60e1c609af72c991d1be8cc8d42f36d95bcafcf1b1b81dd1971ed9b6"
@@ -62,6 +64,10 @@ FAMILY = {"S-A": [{"sma": s, "confirm": c} for s in (150, 200, 250) for c in (1,
           "S-B": [{"rsi_below": t, "exit_sma": e} for t in (5, 10, 15) for e in (3, 5, 10)],
           "S-C": [{"entry_offset": o, "exit_day": j} for o in (-1, 0, 1) for j in (3, 4, 5)]}
 PASS, FAIL, INSUFFICIENT = "PASS", "FAIL", "INSUFFICIENT"
+# Criterion 5 (amendment 1): 09:45 ET fills.
+C5_SYMBOLS = ["SPY", "QQQ", "IWM", "EFA", "TLT", "GLD", "IEF", "SHY"]
+C5_MIN_COVERAGE, C5_MAX_SUBSTITUTED, C5_SHARPE_RATIO = 0.98, 0.02, 0.75
+FILL_ORDER = ("09:45", "09:50", "09:55", "daily")   # 09:45 is on time; every other kind is a substituted fill
 # `run` is locked until (1) the execution-price question is settled by a registered amendment (the open is not the
 # 09:45 ET price the rules specify) and (2) the trial inventory has been reviewed by hand. Lifting the lock is a
 # reviewed change to this constant, after the amendment is tagged.
@@ -481,6 +487,128 @@ def trial_counts(db, pending_sharpes: dict, inventory=None) -> dict:
             "var_per_period": var}
 
 
+# ------------------------------------------------------------------ criterion 5: 09:45 ET fills (amendment 1)
+def read_manifest(path=MANIFEST_FILE) -> dict:
+    """sha256 and overlap_start from the committed intraday manifest. Missing file or lines refuse the run."""
+    p = Path(path)
+    if not p.exists():
+        raise Refused(f"{p.name} is missing: run fetch_0945.py and commit the manifest before any run")
+    t = p.read_text()
+    m1, m2 = re.search(r"^sha256:\s*([0-9a-f]{64})\s*$", t, re.M), re.search(r"^overlap_start:\s*(\d{4}-\d{2}-\d{2})\s*$", t, re.M)
+    if not m1 or not m2:
+        raise Refused(f"{p.name} lacks a 'sha256:' or 'overlap_start:' line")
+    return {"sha256": m1.group(1), "overlap_start": m2.group(1)}
+
+
+def load_intraday(index, path=INTRADAY_FILE, manifest=None):
+    """(fills, kinds): DataFrames on the daily calendar `index` x C5_SYMBOLS. fills holds the 09:45 open or, if that bar
+    is missing, the 09:50 open, the 09:55 open, then the daily open (FILL_ORDER); kinds says which. NaN/None = no price.
+    With a manifest, a file whose SHA-256 differs is refused."""
+    if manifest is not None and sha256_file(path) != manifest["sha256"]:
+        raise Refused(f"intraday data fingerprint differs from the committed manifest ({manifest['sha256'][:16]})")
+    raw = pd.read_csv(path, dtype={"date": str, "slot": str})
+    raw = raw[raw["date"] <= END]
+    days = [d.strftime("%Y-%m-%d") for d in index]
+    f = np.full((len(days), len(C5_SYMBOLS)), np.nan)
+    k = np.full((len(days), len(C5_SYMBOLS)), None, dtype=object)
+    for kind in reversed(FILL_ORDER):                    # later kinds are overwritten by better ones
+        sub = raw[raw["slot"] == kind].pivot_table(index="date", columns="symbol", values="open", aggfunc="first")
+        sub = sub.reindex(index=days, columns=C5_SYMBOLS).to_numpy(float)
+        mask = ~np.isnan(sub)
+        f[mask] = sub[mask]
+        k[mask] = kind
+    return (pd.DataFrame(f, index=index, columns=C5_SYMBOLS),
+            pd.DataFrame(k, index=index, columns=C5_SYMBOLS, dtype=object))
+
+
+def with_fills(opens, fills, start):
+    """The open-proxy prices with every C5 symbol replaced by its 09:45 fill price from `start` on."""
+    out = opens.copy()
+    rows = out.index >= pd.Timestamp(start)
+    for s in C5_SYMBOLS:
+        if s in out.columns:
+            out.loc[rows, s] = fills.loc[rows, s]
+    return out
+
+
+def used_prices(holds, sleeves, i0, index):
+    """Every (date, symbol) price a simulated run uses: the asset each sleeve holds over row j is valued at the fill
+    price of day i0+j and of day i0+j+1 (which is also the sale price when it is sold that morning)."""
+    used = set()
+    for j in range(holds.shape[0]):
+        for k, (on, off) in enumerate(sleeves):
+            sym = on if holds[j, k] else off
+            if sym is None:
+                continue
+            used.add((index[i0 + j], sym))
+            used.add((index[i0 + j + 1], sym))
+    return used
+
+
+def substituted_share(used, kinds) -> dict:
+    n = len(used)
+    k = [kinds.at[d, s] for d, s in used]
+    by = {x: sum(1 for v in k if v == x) for x in FILL_ORDER}
+    missing = sum(1 for v in k if v is None or (isinstance(v, float) and math.isnan(v)))
+    sub = n - by["09:45"]
+    return {"required": n, "on_time": by["09:45"], "at_0950": by["09:50"], "at_0955": by["09:55"],
+            "daily_open": by["daily"], "missing": missing, "share": sub / n if n else float("nan")}
+
+
+C5_SLEEVES = {"S-A": [(s, CASH) for s in SA_UNIVERSE], "S-B": [("SPY", CASH)], "S-C": [("TLT", CASH)]}
+BENCH_SLEEVES = {"P": [("SPY", None), ("IEF", None)], "SPY": [("SPY", None)], "EW6": [(s, None) for s in SA_UNIVERSE]}
+
+
+def criterion5(name, opens, closes, fills, kinds, start):
+    """Amendment 1, criterion 5. Re-run the candidate and the benchmarks with every fill at the 09:45 ET price over the
+    window where all eight symbols have 09:45 bars, and compare with the open-proxy run over the identical window."""
+    params = BASE[name]
+    runner = {"S-A": lambda o: run_sa(o, closes, params["sma"], params["confirm"], start),
+              "S-B": lambda o: run_sb(o, closes, params["rsi_below"], params["exit_sma"], start),
+              "S-C": lambda o: run_sc(o, closes, params["entry_offset"], params["exit_day"], start)}[name]
+    o945 = with_fills(opens, fills, start)
+    try:
+        proxy, c945 = runner(opens), runner(o945)
+        benches = {b: run_bench(o945, closes, b, start) for b in (("P", "SPY", "EW6") if name == "S-A" else ("P", "SPY"))}
+    except Refused as e:                                 # a price still missing after every substitute
+        return crit(False, f"09:45 run not possible: {e}", sufficient=False), {}
+    i0 = int(np.searchsorted(closes.index, pd.Timestamp(start)))
+    idx = closes.index
+    needed = sorted({s for sl in C5_SLEEVES[name] for s in sl if s} | {s for b in benches for sl in BENCH_SLEEVES[b] for s in sl if s})
+    cov = {s: float((kinds.loc[idx >= pd.Timestamp(start), s] == "09:45").mean()) for s in needed}
+    subs = {name: substituted_share(used_prices(c945["holds"], C5_SLEEVES[name], i0, idx), kinds)}
+    for b in benches:
+        h = np.ones((len(benches[b]), len(BENCH_SLEEVES[b])), bool)
+        subs[b] = substituted_share(used_prices(h, BENCH_SLEEVES[b], i0, idx), kinds)
+    m_open, m945 = perf(proxy["sim"]["net"]), perf(c945["sim"]["net"])
+    bp, bs = perf(benches["P"]["net"]), perf(benches["SPY"]["net"])
+    trips = c945["round_trips"]
+    low_cov = [s for s, v in cov.items() if v < C5_MIN_COVERAGE]
+    over = [k for k, v in subs.items() if not v["share"] <= C5_MAX_SUBSTITUTED]
+    sufficient = (m945["days"] >= MIN_DAYS and trips >= MIN_ROUND_TRIPS and not low_cov and not over
+                  and all(math.isfinite(x["calmar"]) for x in (m945, bp, bs)))
+    ratio_ok = m945["sharpe"] >= C5_SHARPE_RATIO * m_open["sharpe"] if m_open["sharpe"] > 0 else True
+    c4 = (m945["sharpe"] > bp["sharpe"] and m945["sharpe"] > bs["sharpe"]
+          and m945["calmar"] > bp["calmar"] and m945["calmar"] > bs["calmar"])
+    ok = m945["sharpe"] > 0 and ratio_ok and m945["cagr"] > 0 and c4
+    why = []
+    if low_cov:
+        why.append("09:45 coverage below 98% for " + ", ".join(f"{s} {cov[s]:.1%}" for s in low_cov))
+    if over:
+        why.append("substituted fills above 2% in " + ", ".join(f"{k} {subs[k]['share']:.1%}" for k in over))
+    if m945["days"] < MIN_DAYS or trips < MIN_ROUND_TRIPS:
+        why.append(f"sample {m945['days']} days / {trips} completed round trips (need {MIN_DAYS} / {MIN_ROUND_TRIPS})")
+    detail = (f"window {start}..{END}: 09:45 Sharpe {m945['sharpe']:.2f} vs open-proxy {m_open['sharpe']:.2f} "
+              f"(need > 0 and >= {C5_SHARPE_RATIO:g}x if positive), CAGR {m945['cagr']:.1%}, Sharpe/Calmar "
+              f"{m945['sharpe']:.2f}/{m945['calmar']:.2f} vs 60/40 {bp['sharpe']:.2f}/{bp['calmar']:.2f} vs SPY "
+              f"{bs['sharpe']:.2f}/{bs['calmar']:.2f} (benchmarks at 09:45); substituted "
+              + ", ".join(f"{k} {v['share']:.2%}" for k, v in subs.items())
+              + ("; INSUFFICIENT: " + "; ".join(why) if why else ""))
+    info = {"window_start": start, "coverage": cov, "substituted": subs, "open_proxy": m_open, "fills_0945": m945,
+            "bench_0945": {"P": bp, "SPY": bs}, "round_trips": trips}
+    return crit(ok, detail, sufficient, float(m945["sharpe"])), info
+
+
 # ------------------------------------------------------------------ criteria and verdicts
 def crit(passed, detail, sufficient=True, value=None):
     if not sufficient:
@@ -522,7 +650,8 @@ def sensitivity_flags(criteria: dict, sens: dict) -> dict:
     return out
 
 
-def evaluate_candidate(name, opens, closes, n_info, start=START, mc_draws=MC_DRAWS, rand_draws=RANDOM_DRAWS):
+def evaluate_candidate(name, opens, closes, n_info, start=START, mc_draws=MC_DRAWS, rand_draws=RANDOM_DRAWS,
+                       intraday=None):
     runner = {"S-A": lambda p: run_sa(opens, closes, p["sma"], p["confirm"], start),
               "S-B": lambda p: run_sb(opens, closes, p["rsi_below"], p["exit_sma"], start),
               "S-C": lambda p: run_sc(opens, closes, p["entry_offset"], p["exit_day"], start)}[name]
@@ -584,6 +713,11 @@ def evaluate_candidate(name, opens, closes, n_info, start=START, mc_draws=MC_DRA
             t["p"] <= RANDOM_P, f"p {t['p']:.4f} over {t['draws']} draws, {t['n_windows']} windows; real mean excess "
                                 f"{t['real']:.3%}", t["n_windows"] >= MIN_WINDOWS and enough_trips, float(t["p"]))
         extra["random_day"] = t
+    if intraday is None:
+        c["5 09:45 ET fills"] = crit(False, "09:45 data not supplied: criterion 5 cannot pass", sufficient=False)
+    else:
+        fills, kinds, c5_start = intraday
+        c["5 09:45 ET fills"], extra["criterion_5"] = criterion5(name, opens, closes, fills, kinds, c5_start)
     flags = sensitivity_flags(c, sens)
     return {"name": name, "params": BASE[name], "metrics": m, "round_trips": trips, "criteria": c,
             "verdict": verdict(c), "dsr_sensitivity": sens, "sensitivity_flags": flags,
@@ -591,7 +725,7 @@ def evaluate_candidate(name, opens, closes, n_info, start=START, mc_draws=MC_DRA
 
 
 def evaluate_all(opens, closes, db, names=NAMES, start=START, mc_draws=MC_DRAWS, rand_draws=RANDOM_DRAWS,
-                 inventory=None):
+                 inventory=None, intraday=None):
     """Print N first, then evaluate. N is computed from the database plus the candidates' own Sharpes."""
     quick = {}
     for n in names:
@@ -602,7 +736,7 @@ def evaluate_all(opens, closes, db, names=NAMES, start=START, mc_draws=MC_DRAWS,
     n_info = trial_counts(db, quick, inventory)
     out = {"n_info": n_info, "candidates": {}}
     for n in names:
-        out["candidates"][n] = evaluate_candidate(n, opens, closes, n_info, start, mc_draws, rand_draws)
+        out["candidates"][n] = evaluate_candidate(n, opens, closes, n_info, start, mc_draws, rand_draws, intraday)
     return out
 
 
@@ -671,13 +805,17 @@ def main(argv=None):
         require_clean()
         data_sha = check_data()
         opens, closes = load_data()
-        res = evaluate_all(opens, closes, a.db, inventory=read_inventory())
+        man = read_manifest()
+        fills, kinds = load_intraday(closes.index, manifest=man)
+        res = evaluate_all(opens, closes, a.db, inventory=read_inventory(),
+                           intraday=(fills, kinds, man["overlap_start"]))
         print(render(res))
         RESULTS.mkdir(exist_ok=True)
         stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         head = _git("rev-parse", "HEAD").stdout.strip()
         record = {"prereg_tag": TAG, "prereg_commit": commit, "head_commit": head, "runner_sha256": sha256_file(__file__),
                   "data_sha256": data_sha, "window": [START, END], "n_info": res["n_info"],
+                  "intraday_sha256": man["sha256"], "criterion5_window_start": man["overlap_start"],
                   "research_gate_sha256": sha256_file(HERE.parent / "research_gate.py"),
                   "candidates": {n: {k: v for k, v in c.items() if k != "returns"} for n, c in res["candidates"].items()}}
         out = RESULTS / f"daily_v1_{stamp}.json"
