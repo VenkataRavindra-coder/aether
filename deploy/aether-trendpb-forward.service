@@ -1,0 +1,11 @@
+[Unit]
+Description=AETHER trend-pullback forward journal (research, second paper account data keys, no orders)
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=ratelark
+WorkingDirectory=/home/ratelark/ratelark
+EnvironmentFile=/home/ratelark/ratelark/.env
+ExecStart=/home/ratelark/ratelark/.venv/bin/python3 aether-research/trend_pullback/forward.py run
+TimeoutStartSec=900
