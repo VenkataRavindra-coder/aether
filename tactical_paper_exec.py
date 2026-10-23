@@ -19,6 +19,7 @@ Never touches the live account, the engine's paper account, or the Risk Controll
 
   python3 tactical_paper_exec.py tick     # timer, every minute 09:46-15:54 New York
   python3 tactical_paper_exec.py close    # timer, 15:55 New York
+  python3 tactical_paper_exec.py score    # timer, 16:10 New York: score today's fills, Telegram report
   python3 tactical_paper_exec.py status   # read-only
 """
 from __future__ import annotations
@@ -36,6 +37,11 @@ RISK_USD = float(os.getenv("TACTICAL_PAPER_RISK_USD", "50"))
 PREFIX = "tpx-"
 STATE = Path(os.getenv("TACTICAL_EXEC_STATE", str(HERE / "tactical_exec_state.json")))
 MAX_SIGNAL_AGE_MIN = 2          # enter only if the signal bar closed within this many minutes
+LEDGER = Path(os.getenv("TACTICAL_EXEC_LEDGER", str(HERE / "tactical_exec_ledger.jsonl")))
+COST_BP_PER_SIDE = 2.0          # same cost model as every AETHER test, on top of the paper fill
+# Confidence bar, fixed 2026-10-23 before any auto-trade result: per strategy, after TARGET_TRADES trades,
+# "paper-confirmed" needs mean net bp > 0 AND t >= 2 AND no single trade > half of the gross profit.
+TARGET_TRADES, MIN_T, MAX_TOP_SHARE = 40, 2.0, 0.5
 
 
 def _load_env():
@@ -213,6 +219,131 @@ def day_summary(tc, day: str) -> str:
     return "\n".join(lines)
 
 
+# ---------------------------------------------------------------- scoring (append-only ledger)
+def ledger_rows() -> list:
+    if not LEDGER.exists():
+        return []
+    return [json.loads(x) for x in LEDGER.read_text().splitlines() if x.strip()]
+
+
+def _f(x):
+    try:
+        return float(x)
+    except (TypeError, ValueError):
+        return None
+
+
+def _val(x):
+    return str(getattr(x, "value", x) or "")
+
+
+def trade_from_orders(parent, eod_sell_px):
+    """Pure. Entry = the parent buy's fill; exit = its filled stop/target leg, else the 15:55 close fill."""
+    qty, entry = _f(getattr(parent, "filled_qty", None)), _f(getattr(parent, "filled_avg_price", None))
+    if not qty or not entry:
+        return None, "entry not filled"
+    exit_px, why = None, None
+    for leg in getattr(parent, "legs", None) or []:
+        if _f(getattr(leg, "filled_qty", None)):
+            exit_px = _f(leg.filled_avg_price)
+            why = "stop" if "stop" in _val(getattr(leg, "order_type", "")) else "target"
+            break
+    if exit_px is None:
+        exit_px, why = eod_sell_px, "close_15_55"
+    if not exit_px:
+        return None, "exit fill not found"
+    gross = (exit_px / entry - 1) * 1e4
+    return {"qty": qty, "entry_px": round(entry, 4), "exit_px": round(exit_px, 4), "exit_reason": why,
+            "gross_bp": round(gross, 2), "net_bp": round(gross - 2 * COST_BP_PER_SIDE, 2),
+            "pnl_usd": round(qty * (exit_px - entry), 2)}, "ok"
+
+
+def stats(rows: list) -> dict:
+    nets = [r["trade"]["net_bp"] for r in rows if r.get("trade")]
+    n = len(nets)
+    mean = sum(nets) / n if n else None
+    sd = math.sqrt(sum((x - mean) ** 2 for x in nets) / (n - 1)) if n > 1 else None
+    t = mean / (sd / math.sqrt(n)) if n > 1 and sd else None
+    gains = [x for x in nets if x > 0]
+    losses = -sum(x for x in nets if x < 0)
+    return {"sessions": len(rows), "trades": n, "wins": len(gains), "mean_net_bp": mean, "t_stat": t,
+            "profit_factor": (sum(gains) / losses) if losses else (math.inf if gains else None),
+            "top_trade_share": (max(gains) / sum(gains)) if gains else None,
+            "pnl_usd": round(sum(r["trade"]["pnl_usd"] for r in rows if r.get("trade")), 2)}
+
+
+def verdict(s: dict) -> str:
+    if s["trades"] < TARGET_TRADES:
+        return f"collecting ({s['trades']}/{TARGET_TRADES} trades)"
+    if s["mean_net_bp"] <= 0:
+        return "NOT confirmed: loses after costs on paper"
+    if (s["t_stat"] or 0) >= MIN_T and (s["top_trade_share"] or 1) <= MAX_TOP_SHARE:
+        return "PAPER-CONFIRMED: worth discussing a small live test (with a written risk acceptance)"
+    return "inconclusive: positive but not convincing yet"
+
+
+def scorecard(rows: list) -> str:
+    out = []
+    for name, label in (("orb15", "A breakout"), ("engulf15", "B engulfing")):
+        s = stats([r for r in rows if r["strategy"] == name])
+        m = "-" if s["mean_net_bp"] is None else f"{s['mean_net_bp']:+.1f} bp"
+        t = "-" if s["t_stat"] is None else f"{s['t_stat']:.2f}"
+        wr = "-" if not s["trades"] else f"{round(100 * s['wins'] / s['trades'])}%"
+        out.append(f"{label}: {s['trades']}/{TARGET_TRADES} trades, win {wr}, avg {m}, t {t}, "
+                   f"P/L ${s['pnl_usd']:+.2f}\n  -> {verdict(s)}")
+    return "\n".join(out)
+
+
+def score(tc=None, day=None, now=None):
+    """Score one finished day from the broker's own fills; append one ledger row per strategy (never rewritten)."""
+    from aether_tactical.market_time import now_ny
+    now = now or now_ny()
+    day = day or now.date().isoformat()
+    st = load_state().get(day, {})
+    before = ledger_rows()
+    have = {(r["day"], r["strategy"]) for r in before}
+    todo = [k for k in ("orb15", "engulf15") if (day, k) not in have]
+    if not st or not todo:
+        return "nothing to score"
+    orders, eod_px = [], None
+    if any(st.get(k, {}).get("status") == "entered" for k in todo):
+        tc = tc or client()
+        from datetime import datetime as _dt
+        from alpaca.trading.enums import QueryOrderStatus
+        from alpaca.trading.requests import GetOrdersRequest
+        start = _dt.fromisoformat(day + "T00:00:00-05:00")
+        orders = list(tc.get_orders(GetOrdersRequest(status=QueryOrderStatus.ALL, symbols=[SYMBOL], after=start,
+                                                     until=start + timedelta(days=1), nested=True, limit=500)))
+        eod = [o for o in orders if _val(getattr(o, "side", "")) == "sell" and _f(getattr(o, "filled_qty", None))
+               and not str(getattr(o, "client_order_id", "")).startswith("manual-")]
+        eod_px = _f(eod[0].filled_avg_price) if eod else None
+    by_coid = {getattr(o, "client_order_id", ""): o for o in orders}
+    added = []
+    for k in todo:
+        info = st.get(k, {"status": "no_trade", "reason": "no signal"})
+        row = {"day": day, "strategy": k, "status": info.get("status"), "reason": info.get("reason"), "trade": None}
+        if info.get("status") == "entered":
+            parent = by_coid.get(f"{PREFIX}{k}-{day}")
+            tr, why = trade_from_orders(parent, eod_px) if parent is not None else (None, "parent order not found")
+            row["trade"], row["status"] = tr, ("traded" if tr else f"unscored: {why}")
+        added.append(row)
+    with LEDGER.open("a") as f:
+        for r in added:
+            f.write(json.dumps(r, separators=(",", ":")) + "\n")
+    rows = before + added
+    lines = [f"{r['strategy']}: " + (f"{r['trade']['net_bp']:+.1f} bp net, ${r['trade']['pnl_usd']:+.2f} "
+                                    f"({r['trade']['exit_reason']})" if r["trade"] else str(r["status"])) for r in added]
+    crossed = [k for k in ("orb15", "engulf15")
+               if stats([r for r in rows if r["strategy"] == k])["trades"] >= TARGET_TRADES
+               > stats([r for r in before if r["strategy"] == k])["trades"]]
+    msg = f"{day} paper result\n" + "\n".join(lines)
+    if now.weekday() == 4 or crossed:
+        msg += "\n\n" + ("40-TRADE VERDICT REACHED\n" if crossed else "Weekly scorecard\n") + scorecard(rows)
+    _tell(msg)
+    _log("score", "scored", "; ".join(lines))
+    return msg
+
+
 def status():
     tc = client()
     acct = tc.get_account()
@@ -224,18 +355,21 @@ def status():
     from aether_tactical.market_time import now_ny
     print(json.dumps({"account": "stress-test (paper)", "equity": str(acct.equity), "position": pos,
                       "today": load_state().get(now_ny().date().isoformat(), {})}, indent=2, default=str))
+    print("\n" + scorecard(ledger_rows()))
 
 
 def main(argv=None) -> int:
     _load_env()
     cmd = (argv if argv is not None else sys.argv[1:] or ["status"])[0]
-    if cmd in ("tick", "close") and os.getenv("TACTICAL_PAPER_EXEC", "0") != "1":
+    if cmd in ("tick", "close", "score") and os.getenv("TACTICAL_PAPER_EXEC", "0") != "1":
         print("TACTICAL_PAPER_EXEC is not 1: off")
         return 0
     if cmd == "tick":
         print(tick())
     elif cmd == "close":
         print(close())
+    elif cmd == "score":
+        print(score())
     elif cmd == "status":
         status()
     else:
