@@ -1,0 +1,11 @@
+[Unit]
+Description=AETHER tactical PAPER auto-trading: score today's fills, Telegram result and weekly scorecard
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=ratelark
+WorkingDirectory=/home/ratelark/ratelark
+EnvironmentFile=/home/ratelark/ratelark/.env
+ExecStart=/home/ratelark/ratelark/.venv/bin/python3 tactical_paper_exec.py score
+TimeoutStartSec=120

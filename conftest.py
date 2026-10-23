@@ -41,6 +41,7 @@ os.environ["AETHER_DECISION_DB"] = os.path.join(TEST_SCRATCH, "aether_decisions.
 os.environ["TACTICAL_LEDGER"] = os.path.join(TEST_SCRATCH, "tactical_paper.jsonl")
 os.environ["AETHER_LOCK_FILE"] = os.path.join(TEST_SCRATCH, ".aether.lock")
 os.environ["TACTICAL_EXEC_STATE"] = os.path.join(TEST_SCRATCH, "tactical_exec_state.json")
+os.environ["TACTICAL_EXEC_LEDGER"] = os.path.join(TEST_SCRATCH, "tactical_exec_ledger.jsonl")
 os.environ["STRESS_ALPACA_API_KEY"] = ""
 os.environ["STRESS_ALPACA_SECRET_KEY"] = ""
 

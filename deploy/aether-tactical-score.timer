@@ -1,0 +1,9 @@
+[Unit]
+Description=Score the tactical paper auto-trades at 16:10 New York, weekdays
+
+[Timer]
+OnCalendar=Mon..Fri *-*-* 16:10:00 America/New_York
+Persistent=true
+
+[Install]
+WantedBy=timers.target

@@ -42,6 +42,8 @@
 !deploy/aether-tactical-exec.timer
 !deploy/aether-tactical-close.service
 !deploy/aether-tactical-close.timer
+!deploy/aether-tactical-score.service
+!deploy/aether-tactical-score.timer
 # 2026-10-23: trend-pullback-v1 forward journal timer (research, no orders)
 !deploy/aether-trendpb-forward.service
 !deploy/aether-trendpb-forward.timer

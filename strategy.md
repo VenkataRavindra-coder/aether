@@ -11,6 +11,11 @@
   SPY and BRK.B there), $50 risk per trade, broker-held stops, flat at 15:55 New York; switch `TACTICAL_PAPER_EXEC=1`.
   Paper only and hard-wired so; it ignores the live halt file by design. It changes no verdict: both rules stay
   historically unsupported, so this is for watching them work, not for going live.
+  **Confidence bar (fixed 2026-10-23, before any auto-trade result):** each strategy is scored daily from the
+  broker's own paper fills (`tactical_exec_ledger.jsonl`, append-only; 2 bp per side on top). After 40 auto-trades
+  (manual trades never count), "paper-confirmed" needs mean net bp > 0 AND t >= 2 AND no single trade > half of the
+  gross profit. Only then is a small live test discussed, and it still needs a written risk acceptance, whole-share
+  capital and a separate live build through the Risk Controller. Weekly scorecard on Telegram every Friday.
 - **Off:** automatic canary (`CANARY_AUTO=0`, timers disabled). **Still on (lab):** paper engine, dashboard, backups, outside monitor, daily check, stress test (stress-test paper account), tactical paper scorer.
 - The live risk ledger (`risk_mark`, weekdays 15:50 ET) still marks the live account: a market drop can latch a breaker and send a Telegram alert. With no strategy trading live this is informational; clear with `risk_admin.py reset` after review.
 

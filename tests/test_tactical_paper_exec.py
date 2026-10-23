@@ -95,3 +95,65 @@ def test_off_unless_enabled_and_paper_keys_required(monkeypatch, capsys):
 def test_client_is_hard_wired_to_paper():
     import inspect
     assert "paper=True" in inspect.getsource(tpx.client) and "APCA_LIVE" not in inspect.getsource(tpx)
+
+
+# ---------- scoring ----------
+class Leg:
+    def __init__(self, typ, filled_qty=None, px=None):
+        self.order_type, self.filled_qty, self.filled_avg_price = typ, filled_qty, px
+
+
+class Parent:
+    def __init__(self, qty, px, legs=(), coid="tpx-orb15-2026-10-23"):
+        self.filled_qty, self.filled_avg_price, self.legs, self.client_order_id, self.side = qty, px, list(legs), coid, "buy"
+
+
+def test_trade_exit_from_a_filled_stop_leg():
+    tr, why = tpx.trade_from_orders(Parent("10", "100", [Leg("stop", "10", "99")]), eod_sell_px=101.0)
+    assert why == "ok" and tr["exit_reason"] == "stop" and tr["net_bp"] == pytest.approx(-104.0) and tr["pnl_usd"] == -10.0
+
+
+def test_trade_exit_from_the_close_when_no_leg_filled():
+    tr, _ = tpx.trade_from_orders(Parent("10", "100", [Leg("stop")]), eod_sell_px=101.0)
+    assert tr["exit_reason"] == "close_15_55" and tr["net_bp"] == pytest.approx(96.0)
+
+
+def test_unfilled_entry_is_not_a_trade():
+    assert tpx.trade_from_orders(Parent(None, None), 101.0)[0] is None
+
+
+class FakeTCOrders:
+    def __init__(self, orders): self.orders = orders
+    def get_orders(self, req): return self.orders
+
+
+class Sell:
+    side, client_order_id, filled_qty, filled_avg_price = "sell", "close-x", "10", "101"
+
+
+def test_score_appends_once_per_day_and_reports(tmp_path, monkeypatch):
+    monkeypatch.setattr(tpx, "LEDGER", tmp_path / "l.jsonl")
+    told = []
+    monkeypatch.setattr(tpx, "_tell", told.append)
+    tpx.save_state({"2026-10-23": {"orb15": {"status": "entered"}, "engulf15": {"status": "no_trade", "reason": "none"}}})
+    tc = FakeTCOrders([Parent("10", "100", [Leg("stop")]), Sell()])
+    friday = datetime(2026, 10, 23, 16, 10, tzinfo=NY)
+    tpx.score(tc=tc, day="2026-10-23", now=friday)
+    rows = tpx.ledger_rows()
+    assert [(r["strategy"], r["status"]) for r in rows] == [("orb15", "traded"), ("engulf15", "no_trade")]
+    assert "Weekly scorecard" in told[-1] and "1/40" in told[-1]
+    assert tpx.score(tc=tc, day="2026-10-23", now=friday) == "nothing to score"     # append-only, never twice
+    assert len(tpx.ledger_rows()) == 2
+
+
+def _rows(nets):
+    return [{"strategy": "orb15", "trade": {"net_bp": x, "pnl_usd": x / 10}} for x in nets]
+
+
+def test_verdict_bar():
+    assert tpx.verdict(tpx.stats(_rows([5.0] * 10))).startswith("collecting")
+    assert tpx.verdict(tpx.stats(_rows([-1.0, 1.0] * 20 + [-3.0]))).startswith("NOT confirmed")
+    good = [8.0, 6.0, -2.0, 7.0] * 10
+    assert tpx.verdict(tpx.stats(_rows(good))).startswith("PAPER-CONFIRMED")
+    lucky = [-1.0] * 39 + [500.0]                       # one trade makes everything: never confirmed
+    assert not tpx.verdict(tpx.stats(_rows(lucky))).startswith("PAPER-CONFIRMED")
