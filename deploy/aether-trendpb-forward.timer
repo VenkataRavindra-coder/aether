@@ -1,0 +1,9 @@
+[Unit]
+Description=Update the trend-pullback forward journal on weekdays at 16:25 New York time (after the close)
+
+[Timer]
+OnCalendar=Mon..Fri *-*-* 16:25:00 America/New_York
+Persistent=true
+
+[Install]
+WantedBy=timers.target

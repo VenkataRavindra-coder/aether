@@ -842,3 +842,24 @@ these tests decide whether it is worth doing.
       registration, whatever the forward test shows. The forward 40-session paper test keeps running
       unchanged, as locked. 2022's near-zero result for A was checked: 251 sessions, 0 bad, 156 trades,
       +0.019%.
+
+
+## Trend-pullback candlestick registration (pre-registered 2026-10-23, before any result)
+
+Owner decision 2026-10-23: GO for a research PR, NO-GO for live trading. Registration
+`docs/PREREG_trend_pullback_v1.md`, tag `prereg-trend-pullback-v1` (created on the merged commit, before any run).
+Rules: `aether-research/trend_pullback/rules.py` (binding copy).
+
+- **Four frozen variants on SPY only:** bullish engulfing and hammer, each on 1-hour and daily candles. Trend =
+  close > EMA50; pullback = low <= EMA20; entry = break above the completed signal candle's high in the next slot;
+  stop = signal low; target 2R; max hold 6 hourly slots / 10 sessions; one position at a time; 5 bp per side.
+  No neighbours, no optimisation, no change after results.
+- **Historical test:** the tactical-hist-v1 SIP file (hash-pinned, no new fetch), criteria C1-C10 including a
+  bootstrap lower bound, profit factor >= 1.20, max drawdown <= 20%, both halves positive, matched random-entry
+  p <= 0.05, Sharpe >= buy-and-hold, and deflated Sharpe >= 0.95 over the full trial registry (N = 44). PBO
+  reported only. Verdicts: supported / unsupported / insufficient evidence / mixed.
+- **Forward journal:** from 2026-10-26, replay only, second paper account's data keys, no orders
+  (`deploy/aether-trendpb-forward.timer`, 16:25 New York).
+- **Separation:** no verdict overrides S2 NO-GO, the test plan, the Risk Controller, the paper soak or the
+  Oct 22 decision. "Historically supported" only allows a new registration for an order-placing paper test.
+- **Result:** not yet run.
