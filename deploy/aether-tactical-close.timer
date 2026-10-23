@@ -1,0 +1,9 @@
+[Unit]
+Description=Close tactical paper positions at 15:55 New York, weekdays
+
+[Timer]
+OnCalendar=Mon..Fri *-*-* 15:55:00 America/New_York
+Persistent=false
+
+[Install]
+WantedBy=timers.target

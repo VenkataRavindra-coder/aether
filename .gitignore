@@ -38,6 +38,10 @@
 !deploy/aether-canary-close.timer
 !deploy/aether-tactical.service
 !deploy/aether-tactical.timer
+!deploy/aether-tactical-exec.service
+!deploy/aether-tactical-exec.timer
+!deploy/aether-tactical-close.service
+!deploy/aether-tactical-close.timer
 # 2026-10-23: trend-pullback-v1 forward journal timer (research, no orders)
 !deploy/aether-trendpb-forward.service
 !deploy/aether-trendpb-forward.timer

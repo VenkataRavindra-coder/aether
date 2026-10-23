@@ -1,0 +1,11 @@
+[Unit]
+Description=AETHER tactical PAPER auto-trading: flat by 15:55 New York (stress-test paper account, QQQ)
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=ratelark
+WorkingDirectory=/home/ratelark/ratelark
+EnvironmentFile=/home/ratelark/ratelark/.env
+ExecStart=/home/ratelark/ratelark/.venv/bin/python3 tactical_paper_exec.py close
+TimeoutStartSec=120

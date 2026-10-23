@@ -6,6 +6,11 @@
 - **Live account = buy-and-hold.** Owner delegated the choice; decision: hold the market. Bought 0.241332 VTI at $372.904 avg (order `hold-vti-20261023`, ~$90) on 2026-10-23, by hand outside canary.py; ~$10 cash. No bot manages it.
 - **Live canary: 1 of 10 round trips, PASS** (2026-10-23; buy fill 5 s, -0.3 bp vs mid; sell fill 1 s, -1.0 bp; cash residual -$0.024; evidence `tests/evidence/canary/report-20261023-100926.json`). The live order path is proven. Canary preflight now refuses while the VTI hold exists (expected).
 - **Two locks on the live account:** `~/AETHER_HALT` ("paused") and Alpaca's account setting `suspend_trade=True`. Any manual live order needs `suspend_trade=False` first (`TradingClient.set_account_configurations`), then back to True. The canary and engine cannot trade while either lock is on.
+- **Tactical paper auto-trading (owner request 2026-10-23):** `tactical_paper_exec.py` trades the frozen
+  orb15 / engulf15 rules automatically on the **stress-test paper account**, symbol **QQQ** (the stress test owns
+  SPY and BRK.B there), $50 risk per trade, broker-held stops, flat at 15:55 New York; switch `TACTICAL_PAPER_EXEC=1`.
+  Paper only and hard-wired so; it ignores the live halt file by design. It changes no verdict: both rules stay
+  historically unsupported, so this is for watching them work, not for going live.
 - **Off:** automatic canary (`CANARY_AUTO=0`, timers disabled). **Still on (lab):** paper engine, dashboard, backups, outside monitor, daily check, stress test (stress-test paper account), tactical paper scorer.
 - The live risk ledger (`risk_mark`, weekdays 15:50 ET) still marks the live account: a market drop can latch a breaker and send a Telegram alert. With no strategy trading live this is informational; clear with `risk_admin.py reset` after review.
 

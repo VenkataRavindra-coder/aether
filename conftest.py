@@ -40,6 +40,9 @@ os.environ["AETHER_CANARY_RISK_STATE"] = os.path.join(TEST_SCRATCH, ".aether_can
 os.environ["AETHER_DECISION_DB"] = os.path.join(TEST_SCRATCH, "aether_decisions.sqlite")
 os.environ["TACTICAL_LEDGER"] = os.path.join(TEST_SCRATCH, "tactical_paper.jsonl")
 os.environ["AETHER_LOCK_FILE"] = os.path.join(TEST_SCRATCH, ".aether.lock")
+os.environ["TACTICAL_EXEC_STATE"] = os.path.join(TEST_SCRATCH, "tactical_exec_state.json")
+os.environ["STRESS_ALPACA_API_KEY"] = ""
+os.environ["STRESS_ALPACA_SECRET_KEY"] = ""
 
 _ROOT = Path(__file__).resolve().parent
 _EXITS = re.compile(r"sys\.exit\(|raise SystemExit")
