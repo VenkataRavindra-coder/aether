@@ -873,3 +873,20 @@ Rules: `aether-research/trend_pullback/rules.py` (binding copy).
 - **Separation:** no verdict overrides S2 NO-GO, the test plan, the Risk Controller, the paper soak or the
   Oct 22 decision. "Historically supported" only allows a new registration for an order-placing paper test.
 - **Result:** not yet run.
+
+
+## Intraday momentum registration (pre-registered 2026-10-25, before any result)
+
+Owner decision 2026-10-25: GO for a research PR (details left to Claude), NO-GO for live trading. Registration
+`docs/PREREG_intraday_momentum_v1.md`, tag `prereg-intraday-momentum-v1` (created on the merged commit, before any
+run). Rules: `aether-research/intraday_momentum/im_rules.py` (binding copy).
+
+- **Two frozen variants on SPY only:** r1 = previous close to 10:00 return; `imom_long` buys the last half hour
+  (15:30 open to close) when r1 > 0; `imom_ls` also shorts it when r1 < 0 (research only, live shorting is
+  disabled). Flat overnight, 5 bp per side. Source: Gao, Han, Li and Zhou (2018), a hypothesis source only.
+- **Historical test:** the tactical-hist-v1 SIP file (hash-pinned, no new fetch), criteria C1-C10 as in
+  trend-pullback-v1, with a matched random-day benchmark for C8; N = 46.
+- **Separation:** no verdict overrides S2 NO-GO, the test plan, the Risk Controller, the paper soak or the
+  Oct 22 decision. Only a "historically supported" `imom_long` allows a new PR for automatic paper trading on
+  the second paper account.
+- **Result:** not yet run.
