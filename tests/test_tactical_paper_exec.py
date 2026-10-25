@@ -157,3 +157,71 @@ def test_verdict_bar():
     assert tpx.verdict(tpx.stats(_rows(good))).startswith("PAPER-CONFIRMED")
     lucky = [-1.0] * 39 + [500.0]                       # one trade makes everything: never confirmed
     assert not tpx.verdict(tpx.stats(_rows(lucky))).startswith("PAPER-CONFIRMED")
+
+
+# ---------------------------------------------------------------- 2026-10-25 execution fix (rules unchanged)
+def test_oct23_case_late_bar_is_waited_for_then_entered():
+    """Breakout bar starts 09:49 (closes 09:50). At the 09:50:05 tick the data still ends at 09:48; it arrives
+    on the retry. Before the fix this tick saw no signal and the next tick recorded a miss."""
+    full = bars_until(20, breakout_at=19)            # bar 19 starts 09:49
+    calls, slept = [], []
+
+    def fetch(sym, sess, now):
+        calls.append(now)
+        return full[:-1] if len(calls) == 1 else full
+    tc = FakeTC()
+    out = tpx.tick(now=full[-1].t + timedelta(minutes=1, seconds=5), tc=tc, fetch=fetch,
+                   session_lookup=lambda d: S, sleep=slept.append)
+    assert "data lag: waited 6s" in out and "orb15: entered" in out
+    assert slept == [tpx.LAG_WAIT_S] and len(tc.sent) == 1
+
+
+def test_next_tick_with_signal_bar_already_followed_enters_within_two_minutes():
+    """If the retry also fails, the next tick sees the signal bar plus the bar after it ("traded").
+    Within MAX_SIGNAL_AGE_MIN of the signal close it is still entered, at market, same stop."""
+    b = bars_until(21, breakout_at=19)               # signal bar 19 (09:49-09:50), bar 20 (09:50-09:51) present
+    tc = FakeTC()
+    now = S.open + timedelta(minutes=21, seconds=5)  # 09:51:05, 65 s after the signal bar closed
+    out = tpx.tick(now=now, tc=tc, fetch=lambda *a: b, session_lookup=lambda d: S, sleep=lambda s: None)
+    assert "orb15: entered" in out and "(late data)" in out and len(tc.sent) == 1
+    assert tc.sent[0].stop_loss.stop_price == 100.0
+    st = tpx.load_state()["2026-10-23"]["orb15"]
+    assert st["late_data"] is True and st["last_bar"] == "09:50" and st["decided_at"] == "09:51:05"
+
+
+def test_late_data_older_than_two_minutes_is_still_a_miss_with_diagnostics():
+    b = bars_until(23, breakout_at=19)               # signal closed 09:50; now 09:53:05
+    tc = FakeTC()
+    tpx.tick(now=S.open + timedelta(minutes=23, seconds=5), tc=tc, fetch=lambda *a: b, session_lookup=lambda d: S,
+             sleep=lambda s: None)
+    st = tpx.load_state()["2026-10-23"]["orb15"]
+    assert tc.sent == [] and st["status"] == "missed" and st["last_bar"] == "09:52" and "data_wait_s" in st
+
+
+def test_late_data_never_enters_a_trade_the_rules_already_stopped_out():
+    b = bars_until(21, breakout_at=19)
+    stopped = b[:-1] + [Bar(b[-1].t, 100.8, 100.9, 99.9, 100.0, 1000)]   # the next bar hits the 100.0 stop
+    tc = FakeTC()
+    tpx.tick(now=S.open + timedelta(minutes=21, seconds=5), tc=tc, fetch=lambda *a: stopped,
+             session_lookup=lambda d: S, sleep=lambda s: None)
+    assert tc.sent == [] and tpx.load_state()["2026-10-23"]["orb15"]["status"] == "missed"
+
+
+def test_recent_traded_as_signal_is_pure_and_bounded():
+    r = {"strategy": "orb15", "state": "traded", "range_low": 100.0,
+         "trade": {"entry_time": "09:50", "exit_reason": "data_end", "stop": 100.0}}
+    sig, t = tpx.recent_traded_as_signal(r, S, S.open + timedelta(minutes=21, seconds=50))
+    assert sig["state"] == "signal" and sig["late_data"] and t == S.open + timedelta(minutes=20)
+    assert tpx.recent_traded_as_signal(r, S, S.open + timedelta(minutes=22, seconds=1))[0] is None
+    assert tpx.recent_traded_as_signal({**r, "state": "signal"}, S, S.open)[0] is None
+    eng = {"strategy": "engulf15", "state": "traded", "trade": {"entry_time": "10:15", "exit_reason": "data_end", "stop": 99.5}}
+    assert tpx.recent_traded_as_signal(eng, S, S.open + timedelta(minutes=46))[0]["stop"] == 99.5
+
+
+def test_lag_retry_is_bounded():
+    slept = []
+    b = bars_until(18)
+    got, waited, fresh = tpx.fetch_with_lag_retry(lambda *a: b, "QQQ", S, S.open + timedelta(minutes=25, seconds=5),
+                                                  sleep=slept.append)
+    assert fresh is False and len(slept) == tpx.LAG_RETRIES and waited == tpx.LAG_RETRIES * tpx.LAG_WAIT_S
+    assert waited < 45                               # stays inside the service's 50 s start timeout
