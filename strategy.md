@@ -872,7 +872,20 @@ Rules: `aether-research/trend_pullback/rules.py` (binding copy).
   (`deploy/aether-trendpb-forward.timer`, 16:25 New York).
 - **Separation:** no verdict overrides S2 NO-GO, the test plan, the Risk Controller, the paper soak or the
   Oct 22 decision. "Historically supported" only allows a new registration for an order-placing paper test.
-- **Result:** not yet run.
+- **Result 2026-10-25 (run once, server, data SHA-256 `1ca901b4...5ee745`, 2,715 sessions, 0 failed;
+  results `aether-research/trend_pullback/results/trend_pullback_20261025_051257.json`, N = 44):** no variant
+  supported.
+  - `tpb_engulf_1h`: **MIXED.** 149 trades, +1.44 bp net (95% low -8.67, t 0.27), PF 1.06, max DD 9.3%;
+    beats random entries (p 0.032) but second half negative (+8.22 / -3.14 bp), -8.56 bp at 10 bp/side, DSR 0.036.
+  - `tpb_hammer_1h`: **INSUFFICIENT EVIDENCE.** 81 trades, +6.30 bp net (95% low -6.34, t 0.92), PF 1.33, max DD
+    2.6%; beats random entries (p 0.014), both halves positive (+12.79 / +0.56 bp), up in 6 of 9 years; fails at
+    10 bp/side (-3.70 bp), DSR 0.136. The only lead so far, and a weak one: about 9 trades a year, roughly $0.10 a
+    day on a $5,000 sleeve even if real. Forward journal is its next evidence; no rule change.
+  - `tpb_engulf_1d`: **INSUFFICIENT EVIDENCE.** 5 trades (+30.98 bp, 95% low -86.14). Not interpretable.
+  - `tpb_hammer_1d`: **INSUFFICIENT EVIDENCE.** 10 trades (+19.80 bp, 95% low -91.91). Not interpretable.
+  - PBO across the four (reported only): 0.92.
+  - Consequence (prereg section 7): none may be proposed for order-placing paper or live trading under this
+    registration. The forward journal (section 7) still runs for all four, unchanged.
 
 
 ## Intraday momentum registration (pre-registered 2026-10-25, before any result)
@@ -889,4 +902,13 @@ run). Rules: `aether-research/intraday_momentum/im_rules.py` (binding copy).
 - **Separation:** no verdict overrides S2 NO-GO, the test plan, the Risk Controller, the paper soak or the
   Oct 22 decision. Only a "historically supported" `imom_long` allows a new PR for automatic paper trading on
   the second paper account.
-- **Result:** not yet run.
+- **Result 2026-10-25 (run once, server, data SHA-256 `1ca901b4...5ee745`, 2,715 sessions, 0 failed, 2,712
+  eligible days; results `aether-research/intraday_momentum/results/intraday_momentum_20261025_051240.json`,
+  N = 46):** both **HISTORICALLY UNSUPPORTED**; both retired, no re-tuning.
+  - `imom_long`: 1,504 trades, gross -0.63 bp, net -10.63 bp (95% low -11.89, t -15.5), PF 0.28, total -79.9%,
+    max DD 79.9%; negative in every year 2016-2025 and in both halves; random-day p 0.554; DSR 0.000.
+  - `imom_ls`: 2,707 trades, gross -0.18 bp, net -10.18 bp (t -17.2), PF 0.34, total -93.7%; random-day p 0.605.
+  - Why it failed: the 10:00 signal adds nothing (the signal's trades are no better than random days), and the
+    last half hour itself averaged -0.51 bp gross on all 2,712 days, so there is no gross edge to pay even 0.5 bp
+    per side (break-even cost is below zero). The 2018 paper's effect (sample 1993-2013) is not present in SPY
+    2016-2026. Late entry and earlier exit change nothing (-10.37 / -11.06 bp).
