@@ -1,0 +1,273 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AETHER Research</title>
+<meta name="color-scheme" content="dark">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&family=JetBrains+Mono:wght@400;600;700&display=swap">
+<style>
+/* AETHER Research page (2026-10-25). Every value comes from GET /api/research, which reads the strategy
+   registry, results files, forward journals and the paper ledger. Nothing is invented: when a value cannot
+   be read the page says so. Historical, forward (shadow), paper and live evidence are never mixed. */
+:root {
+  --bg: #12100e; --panel: #1b1815; --panel2: #231f1b; --line: #3a322a; --ink: #f4ede5; --muted: #a59b8f; --dim: #6f665c;
+  --orange: #f08a3c; --glow: 0 0 0 1px rgba(240,138,60,.55), 0 0 18px rgba(240,138,60,.16);
+  --good: #3fd17f; --warn: #f5b83d; --bad: #ff5a5f; --info: #6aa7ff;
+  --display: "Archivo", "Arial Narrow", Arial, sans-serif; --mono: "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: radial-gradient(1200px 600px at 70% -10%, #2a1d12 0%, var(--bg) 60%) fixed, var(--bg); color: var(--ink); font: 13px/1.45 var(--display); min-height: 100vh; }
+.wrap { max-width: 1280px; margin: 0 auto; padding: 18px 22px 28px; }
+@media (max-width: 640px) { .wrap { padding: 14px 16px 22px; } }
+.pages { display: flex; gap: 6px; flex-wrap: wrap; }
+.pages a { font: 700 10px/1 var(--mono); letter-spacing: .14em; text-transform: uppercase; text-decoration: none; color: var(--muted); border: 1px solid var(--line); border-radius: 6px; padding: 7px 10px; }
+.pages a:hover { color: var(--ink); border-color: var(--orange); }
+.pages a[aria-current=page] { color: #1b0f05; background: var(--orange); border-color: var(--orange); }
+.top { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+.upd { font: 400 10.5px/1 var(--mono); color: var(--muted); }
+h1 { margin: 14px 0 18px; font: 900 clamp(26px, 4.2vw, 54px)/.95 var(--display); font-stretch: 72%; text-transform: uppercase; text-align: right; }
+h1 span { color: var(--orange); }
+.panel { background: linear-gradient(180deg, var(--panel2), var(--panel)); border-radius: 14px; box-shadow: var(--glow); padding: 14px; min-width: 0; margin-bottom: 18px; }
+.ph { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+.no { font: 700 10px/1 var(--mono); color: var(--orange); }
+.ph h2 { margin: 0; font: 900 15px/1 var(--display); font-stretch: 80%; text-transform: uppercase; letter-spacing: .02em; }
+.ph .sub { margin-left: auto; font: 400 10.5px/1.3 var(--mono); color: var(--muted); }
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; }
+.stat { border: 1px solid var(--line); border-radius: 10px; padding: 9px 10px; background: rgba(0,0,0,.2); min-width: 0; }
+.stat span { display: block; font: 700 9px/1.2 var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+.stat b { display: block; font: 700 17px/1.2 var(--mono); margin-top: 4px; overflow-wrap: anywhere; }
+.stat i { display: block; font: 400 10px/1.3 var(--mono); color: var(--muted); font-style: normal; margin-top: 3px; }
+.pos { color: var(--good); } .neg { color: var(--bad); } .mut { color: var(--muted); }
+.probs { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.probs li { border-left: 3px solid var(--bad); padding: 6px 10px; background: rgba(255,90,95,.08); border-radius: 4px; font: 400 12px/1.4 var(--mono); }
+.okline { font: 700 12px/1.4 var(--mono); color: var(--good); }
+.legend { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+.chip { font: 700 9px/1 var(--mono); letter-spacing: .1em; text-transform: uppercase; padding: 5px 7px; border-radius: 5px; border: 1px solid var(--line); color: var(--muted); }
+.g-strong { background: var(--good); color: #0b1a10; border-color: var(--good); }
+.g-promising { background: #2c8a57; color: #f4ede5; border-color: #2c8a57; }
+.g-weak { background: var(--warn); color: #1b0f05; border-color: var(--warn); }
+.g-inconclusive { background: var(--line); color: var(--ink); }
+.g-rejected { background: transparent; color: var(--bad); border-color: var(--bad); }
+.cards { display: grid; gap: 10px; }
+.card { border: 1px solid var(--line); border-radius: 12px; padding: 12px; background: rgba(0,0,0,.18); }
+.card .hd { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+.card .rk { font: 700 11px/1 var(--mono); color: var(--orange); }
+.card .nm { font: 800 15px/1.2 var(--display); font-stretch: 85%; }
+.card .meta { font: 400 10.5px/1.4 var(--mono); color: var(--muted); margin-top: 4px; }
+.card .why { font: 400 12px/1.4 var(--display); margin-top: 6px; }
+.stg { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-top: 10px; }
+@media (max-width: 900px) { .stg { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 480px) { .stg { grid-template-columns: 1fr; } }
+.st { border: 1px solid var(--line); border-radius: 8px; padding: 8px; min-width: 0; }
+.st h3 { margin: 0 0 5px; font: 700 9px/1 var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+.st.h h3 { color: var(--info); } .st.f h3 { color: var(--warn); } .st.p h3 { color: var(--orange); } .st.l h3 { color: var(--good); }
+.st dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 2px 8px; font: 400 11px/1.35 var(--mono); }
+.st dt { color: var(--muted); } .st dd { margin: 0; text-align: right; overflow-wrap: anywhere; }
+.st .none { font: 400 11px/1.4 var(--mono); color: var(--dim); overflow-wrap: anywhere; }
+.card .meta, .card .why, .none, .probs li { overflow-wrap: anywhere; }
+.reasons { margin: 6px 0 0; padding-left: 16px; font: 400 11.5px/1.45 var(--display); color: var(--muted); }
+details.arch summary { cursor: pointer; font: 700 11px/1 var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); padding: 4px 0; }
+table { width: 100%; border-collapse: collapse; font: 400 11.5px/1.4 var(--mono); }
+th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font: 700 9px/1.2 var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+.tblwrap { overflow-x: auto; }
+.chart { width: 100%; height: auto; display: block; }
+#pnl { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px; }
+#pnl > div { min-width: 0; border: 1px solid var(--line); border-radius: 10px; padding: 8px; }
+#pnl > p { grid-column: 1 / -1; }
+.chart text { font: 400 10px var(--mono); fill: var(--muted); }
+.foot { font: 400 10.5px/1.5 var(--mono); color: var(--muted); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <nav class="pages" aria-label="Pages"><a href="/">Board</a><a href="/trend">Trend Gate</a><a href="/tactical">Tactical</a><a href="/autotest">Auto test</a><a href="/research" aria-current="page">Research</a></nav>
+    <span class="upd" id="upd">loading…</span>
+  </div>
+  <h1>Strategy <span>research</span></h1>
+
+  <section class="panel">
+    <div class="ph"><span class="no">01</span><h2>Where we stand</h2><span class="sub">ranked by strength of evidence, not by return</span></div>
+    <div class="stats" id="stats"></div>
+  </section>
+
+  <section class="panel">
+    <div class="ph"><span class="no">02</span><h2>Problems</h2><span class="sub">skipped runs, missing data, duplicates, failed checks</span></div>
+    <div id="probs"></div>
+  </section>
+
+  <section class="panel">
+    <div class="ph"><span class="no">03</span><h2>Forward journals</h2><span class="sub">rules replayed on new data, no orders</span></div>
+    <div class="tblwrap"><table id="jobs"></table></div>
+  </section>
+
+  <section class="panel">
+    <div class="ph"><span class="no">04</span><h2>Daily net P&amp;L</h2><span class="sub">forward (on $5,000) and paper (actual fills), never mixed</span></div>
+    <div id="pnl"></div>
+  </section>
+
+  <section class="panel">
+    <div class="ph"><span class="no">05</span><h2>Active and inconclusive</h2><span class="sub">each stage shown separately</span></div>
+    <div class="legend">
+      <span class="chip g-strong">strong</span><span class="chip g-promising">promising</span><span class="chip g-weak">weak lead</span>
+      <span class="chip g-inconclusive">inconclusive</span><span class="chip g-rejected">rejected</span>
+    </div>
+    <div class="cards" id="active"></div>
+  </section>
+
+  <section class="panel">
+    <div class="ph"><span class="no">06</span><h2>Archive</h2><span class="sub">retired and frozen strategies, kept with their reasons</span></div>
+    <details class="arch"><summary id="archsum">show</summary><div class="cards" id="archive"></div></details>
+  </section>
+
+  <p class="foot" id="foot"></p>
+</div>
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const num = (x, d = 2, sign = true) => (x === null || x === undefined || Number.isNaN(x)) ? "—"
+    : (x === Infinity ? "∞" : (sign && x > 0 ? "+" : "") + Number(x).toFixed(d));
+  const cls = x => (typeof x === "number" ? (x > 0 ? "pos" : x < 0 ? "neg" : "") : "mut");
+  const usd = x => (x === null || x === undefined) ? "—" : (x < 0 ? "−$" : "$") + Math.abs(x).toFixed(2);
+  const pct = x => (x === null || x === undefined) ? "—" : Math.round(x * 100) + "%";
+  const gcls = g => ({ "strong": "g-strong", "promising": "g-promising", "weak lead": "g-weak", "inconclusive": "g-inconclusive", "rejected": "g-rejected" }[g] || "");
+
+  function dl(rows) {
+    const r = rows.filter(([, v]) => v !== undefined);
+    return "<dl>" + r.map(([k, v, c]) => `<dt>${esc(k)}</dt><dd class="${c || ""}">${esc(v)}</dd>`).join("") + "</dl>";
+  }
+  function hist(h) {
+    if (!h) return '<p class="none">no historical test</p>';
+    if (h.error) return `<p class="none">${esc(h.error)}</p>`;
+    return dl([
+      ["verdict", h.verdict || "see strategy.md"],
+      ["trades", h.trades ?? "—"],
+      ["net / trade", h.mean_net_bp !== undefined ? num(h.mean_net_bp) + " bp" : undefined, cls(h.mean_net_bp)],
+      ["win rate", h.win_rate !== undefined ? pct(h.win_rate) : undefined],
+      ["profit factor", h.profit_factor !== undefined ? num(h.profit_factor, 2, false) : undefined],
+      ["max drawdown", h.max_drawdown_pct !== undefined ? num(h.max_drawdown_pct, 1, false) + "%" : undefined],
+      ["Sharpe", h.sharpe !== undefined ? num(h.sharpe) : undefined, cls(h.sharpe)],
+      ["buy & hold Sharpe", h.buy_hold_sharpe !== undefined ? num(h.buy_hold_sharpe) : undefined],
+      ["CAGR", h.cagr_pct !== undefined ? num(h.cagr_pct, 1) + "%" : undefined, cls(h.cagr_pct)],
+      ["deflated Sharpe", h.dsr !== undefined ? num(h.dsr, 3, false) : undefined],
+      ["vs random p", h.random_p !== undefined ? num(h.random_p, 3, false) : undefined],
+      ["criteria", h.criteria_total ? `${h.criteria_passed}/${h.criteria_total} passed` : undefined],
+      ["benchmark", h.benchmark],
+    ]) + `<p class="none">${esc(h.source || "")}</p>`;
+  }
+  function fwd(f, health) {
+    if (!f) return '<p class="none">not in forward observation</p>';
+    return dl([
+      ["trades", `${f.trades} / ${f.target_trades ?? "—"}`],
+      ["net / trade", f.mean_net_bp === null ? "—" : num(f.mean_net_bp) + " bp", cls(f.mean_net_bp)],
+      ["win rate", f.trades ? pct(f.win_rate) : "—"],
+      ["on $5,000", usd(f.net_usd_5k), cls(f.net_usd_5k)],
+      ["journal", health || "—", health === "ok" ? "pos" : health === "error" ? "neg" : "mut"],
+      ["ends", f.ends || "—"],
+    ]);
+  }
+  function pap(p) {
+    if (!p) return '<p class="none">no paper trading</p>';
+    if (p.trades === undefined) return `<p class="none">${esc(p.note || p.source || "")}</p>`;
+    return dl([
+      ["trades", `${p.trades} / ${p.target_trades ?? "—"}`],
+      ["net / trade", p.mean_net_bp === null ? "—" : num(p.mean_net_bp) + " bp", cls(p.mean_net_bp)],
+      ["win rate", p.trades ? pct(p.win_rate) : "—"],
+      ["P&L", usd(p.net_usd), cls(p.net_usd)],
+      ["where", `${p.symbol || ""} · ${p.account || ""}`],
+    ]);
+  }
+  function card(it, i) {
+    const reasons = (it.reasons || []).map(r => `<li>${esc(r)}</li>`).join("");
+    return `<article class="card">
+      <div class="hd"><span class="rk">#${i + 1}</span><span class="nm">${esc(it.name)}</span>
+        <span class="chip ${gcls(it.grade)}">${esc(it.grade)}</span><span class="chip">${esc(it.status.replace("_", " "))}</span></div>
+      <div class="meta">${esc(it.id)} · ${esc(it.version)} · ${esc((it.markets || []).join(", "))} · ${esc(it.timeframe)} · trials ${esc(((it.trials || {}).ids || []).join(", ") || (it.trials || {}).note || "—")}</div>
+      <div class="why">${esc(it.grade_why)}${it.next_evaluation ? " · next: " + esc(it.next_evaluation) : ""}</div>
+      <div class="stg">
+        <div class="st h"><h3>Historical</h3>${hist(it.historical)}</div>
+        <div class="st f"><h3>Forward (shadow)</h3>${fwd(it.forward, it.forward_health)}</div>
+        <div class="st p"><h3>Paper</h3>${pap(it.paper)}</div>
+        <div class="st l"><h3>Live</h3><p class="none">no live trading</p></div>
+      </div>
+      ${reasons ? `<ul class="reasons">${reasons}</ul>` : ""}
+    </article>`;
+  }
+  function chart(series, label) {
+    if (!series.length) return `<p class="none">${esc(label)}: no closed trades yet</p>`;
+    const W = 640, H = 220, P = 30;
+    const ys = series.map(d => d.cumulative), lo = Math.min(0, ...ys), hi = Math.max(0, ...ys), span = (hi - lo) || 1;
+    const x = i => P + (series.length === 1 ? (W - 2 * P) / 2 : i * (W - 2 * P) / (series.length - 1));
+    const y = v => H - P - (v - lo) * (H - 2 * P) / span;
+    const path = series.map((d, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(d.cumulative).toFixed(1)}`).join("");
+    const last = series[series.length - 1];
+    const col = last.cumulative >= 0 ? "var(--good)" : "var(--bad)";
+    return `<div><p class="none">${esc(label)} · ${series.length} days · cumulative <b class="${cls(last.cumulative)}">${usd(last.cumulative)}</b></p>
+      <svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(label)} cumulative P&L">
+        <line x1="${P}" x2="${W - P}" y1="${y(0)}" y2="${y(0)}" stroke="var(--line)"/>
+        <path d="${path}" fill="none" stroke="${col}" stroke-width="2"/>
+        <text x="${P}" y="${H - 8}">${esc(series[0].day)}</text><text x="${W - P}" y="${H - 8}" text-anchor="end">${esc(last.day)}</text>
+      </svg></div>`;
+  }
+
+  async function load() {
+    let d;
+    try {
+      const r = await fetch("/api/research", { credentials: "same-origin", cache: "no-store" });
+      if (r.status === 401 || r.status === 403) { $("upd").textContent = "signed out"; return; }
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      d = await r.json();
+    } catch (e) { $("upd").textContent = "could not load: " + e.message; return; }
+    if (!d.ok) { $("upd").textContent = "research data unreadable"; $("probs").innerHTML = `<ul class="probs">${(d.errors || []).map(e => `<li>${esc(e)}</li>`).join("")}</ul>`; return; }
+    $("upd").textContent = "updated " + d.generated_at.replace("T", " ").slice(0, 16) + " New York";
+    const s = d.summary || {}, t = d.trials || {};
+    const best = s.best;
+    $("stats").innerHTML = [
+      ["Strategies", s.strategies, Object.entries(s.by_grade || {}).map(([k, v]) => `${v} ${k}`).join(" · ")],
+      ["Strongest evidence", best ? best.grade : "—", best ? best.name : ""],
+      ["Target", "$" + Number(s.target_usd_per_day).toFixed(2) + "/day", "average, never forced"],
+      ["Live", "—", s.live_note || ""],
+      ["Paper", s.paper_usd_per_day === null ? "—" : usd(s.paper_usd_per_day) + "/day", s.paper_days ? `${s.paper_days} scored days` : "no scored paper days"],
+      ["Trials (N)", t.n ?? "—", t.db === null || t.db === undefined ? "trial database not on this machine" : `${t.db} logged + ${t.backfilled} backfilled + ${t.outside_db} outside`],
+    ].map(([k, v, i]) => `<div class="stat"><span>${esc(k)}</span><b>${esc(v)}</b><i>${esc(i)}</i></div>`).join("");
+
+    const probs = [...(d.registry_problems || [])];
+    for (const [u, h] of Object.entries(d.forward_jobs || {})) for (const p of h.problems || []) probs.push(`${u}: ${p}`);
+    if (t.problem) probs.push(t.problem);
+    for (const e of d.errors || []) probs.push(e);
+    $("probs").innerHTML = probs.length ? `<ul class="probs">${probs.map(p => `<li>${esc(p)}</li>`).join("")}</ul>` : '<p class="okline">No problems found by the last checks.</p>';
+
+    const jobs = Object.entries(d.forward_jobs || {});
+    $("jobs").innerHTML = jobs.length ? "<tr><th>Job</th><th>State</th><th>Last run</th><th>Latest session</th><th>Next run</th></tr>" +
+      jobs.map(([u, h]) => `<tr><td>${esc(u)}</td><td class="${h.state === "ok" ? "pos" : h.state === "error" ? "neg" : "mut"}">${esc(h.state)}</td>
+        <td>${esc((h.last_run || "—").replace("T", " ").slice(0, 16))}</td><td>${esc(h.latest_session || "—")}</td>
+        <td>${esc((h.next_run || "—").replace("T", " ").slice(0, 16))} NY</td></tr>`).join("") : "<tr><td>No forward journals registered.</td></tr>";
+
+    const items = d.strategies || [];
+    const fwdItems = items.filter(i => i.forward), papItems = items.filter(i => i.paper && i.paper.daily_usd);
+    let pnl = "";
+    const empty = [];
+    for (const i of fwdItems) { const d = i.forward.daily_usd_5k || []; if (d.length) pnl += chart(d, `Forward · ${i.name} (rules replayed, $5,000 sleeve)`); else empty.push("forward · " + i.name); }
+    for (const i of papItems) { const d = i.paper.daily_usd || []; if (d.length) pnl += chart(d, `Paper · ${i.name} (${i.paper.symbol}, actual fills)`); else empty.push("paper · " + i.name); }
+    if (empty.length) pnl += `<p class="none">No closed trades yet: ${esc(empty.join("; "))}</p>`;
+    $("pnl").innerHTML = pnl || '<p class="none">No forward or paper trades recorded yet.</p>';
+
+    const active = items.filter(i => !["retired", "frozen_no_go"].includes(i.status));
+    const arch = items.filter(i => ["retired", "frozen_no_go"].includes(i.status));
+    $("active").innerHTML = active.length ? active.map(card).join("") : '<p class="none">No active strategies.</p>';
+    $("archive").innerHTML = arch.map((it, i) => card(it, active.length + i)).join("");
+    $("archsum").textContent = `show ${arch.length} retired / frozen`;
+    $("foot").textContent = "Stages: historical = backtest on past data · forward = frozen rules replayed on new data, no orders · paper = orders on a paper account · live = real money. A historical pass allows forward observation only; paper and live each need their own approval.";
+  }
+  load();
+  setInterval(load, 60000);
+})();
+</script>
+</body>
+</html>

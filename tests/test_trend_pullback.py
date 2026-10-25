@@ -347,3 +347,41 @@ def test_forward_update_cache_uses_calendar_and_skips_unfinished(tmp_path, monke
     added, failed = forward.update_cache(None, None, now, fetch=fetch)
     assert calls == ["2026-10-22", "2026-10-23", "2026-10-26"] and (added, failed) == (3, 1)
     assert forward.update_cache(None, None, now, fetch=fetch) == (0, 0)   # cached sessions are not refetched
+
+
+def test_forward_run_writes_status_for_health_checks(tmp_path, monkeypatch):
+    """2026-10-25: each run leaves last_run.json (ok, failed forward sessions, duplicates) for research_health.py."""
+    import json as _json
+    monkeypatch.setattr(forward, "DATA", tmp_path)
+    days = [date(2026, 10, 23), date(2026, 10, 26), date(2026, 10, 27)]
+    cal = [_session(d) for d in days]
+    monkeypatch.setattr(forward, "calendar", lambda tc, a, b: cal)
+    monkeypatch.setattr(forward, "clients", lambda env=None: (None, None))
+    from aether_tactical import bars as _bars
+    monkeypatch.setattr(_bars, "fetch_session", lambda sym, s, now=None, client=None: [] if s.day == "2026-10-26" else _flat(s, 100))
+
+    class _Now(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return datetime(2026, 10, 27, 16, 25, tzinfo=NY)
+    monkeypatch.setattr(forward, "datetime", _Now)
+    assert forward.main(["run"]) == 0
+    st = _json.loads((tmp_path / "last_run.json").read_text())
+    assert st["ok"] is True and st["failed_forward_sessions"] == ["2026-10-26"] and st["duplicates"] == 0
+    assert st["latest_session"] == "2026-10-27" and st["finished_at"]
+    # a refused run is recorded as not ok, with the reason
+    def refuse(env=None):
+        raise forward.Refused("missing TP_APCA_API_KEY_ID / TP_APCA_API_SECRET_KEY (second paper account)")
+    monkeypatch.setattr(forward, "clients", refuse)
+    assert forward.main(["run"]) == 2
+    st = _json.loads((tmp_path / "last_run.json").read_text())
+    assert st["ok"] is False and "missing TP_APCA" in st["error"]
+
+
+def test_forward_duplicate_rows_counted(tmp_path, monkeypatch):
+    monkeypatch.setattr(forward, "DATA", tmp_path)
+    a = _trade("2026-10-27T10:30:00-04:00")
+    forward.append_new({"tpb_engulf_1h": [a]})
+    with forward.journal_path().open("a") as f:
+        f.write(forward.journal_path().read_text().splitlines()[0] + "\n")
+    assert forward.duplicate_rows() == 1

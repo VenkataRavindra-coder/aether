@@ -47,3 +47,7 @@
 # 2026-10-23: trend-pullback-v1 forward journal timer (research, no orders)
 !deploy/aether-trendpb-forward.service
 !deploy/aether-trendpb-forward.timer
+# 2026-10-25: strategy registry, research page and research health timer
+!aether-research/registry/strategies.json
+!deploy/aether-research-health.service
+!deploy/aether-research-health.timer

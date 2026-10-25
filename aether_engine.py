@@ -2152,3 +2152,8 @@ app.include_router(_build_tactical_router())
 # status FILE and decision-log rows only; no broker calls and no import of the test-trading code.
 from autotest_view import build_router as _build_autotest_router  # noqa: E402
 app.include_router(_build_autotest_router())
+
+# research_view (2026-10-25): GET /research page + /api/research. Strategy registry, evidence by stage
+# (historical / forward / paper / live), forward-journal health, trial count. Files only; no broker calls.
+from research_view import build_router as _build_research_router  # noqa: E402
+app.include_router(_build_research_router())
