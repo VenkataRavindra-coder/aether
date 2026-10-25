@@ -79,6 +79,8 @@ def _creds(mode):
     if mode == "paper":
         return (_env("APCA_API_KEY_ID", "ALPACA_API_KEY", "ALPACA_KEY_ID"),
                 _env("APCA_API_SECRET_KEY", "ALPACA_SECRET_KEY", "ALPACA_API_SECRET"))
+    if mode == "stress":   # the dedicated stress/tactical paper account (tactical_paper_exec.py)
+        return _env("STRESS_ALPACA_API_KEY"), _env("STRESS_ALPACA_SECRET_KEY")
     return "", ""
 
 
@@ -411,6 +413,93 @@ def market(held: str = ""):
         if len(_MCACHE) > 20:
             _MCACHE.clear()
         _MCACHE[key] = (time.time(), data)
+    return data
+
+
+# ---------- money: every account, where it is invested, balance, gain/loss (2026-10-25) ----------
+# One section the owner reads first. Each account is read with its own keys straight from Alpaca
+# (GET only). Real money (live) is never added to practice (paper) money. A value that cannot be
+# read is reported as an error for that account, never filled in.
+
+MONEY_ACCOUNTS = [
+    # (mode, title, what it is, real money?)
+    ("live", "Your real money", "Live Alpaca account. Bought and held by hand; no bot trades it.", True),
+    ("paper", "Engine practice", "Paper account the AETHER engine trades (US ETF sleeve).", False),
+    ("stress", "Auto-trading practice", "Stress-test paper account: tactical A/B auto-trades on QQQ.", False),
+]
+_MONEY_CACHE = {"t": 0.0, "data": None}
+MONEY_CACHE_SECONDS = 30
+
+
+def _alpaca_as(mode, path, params=None):
+    key, sec = _creds(mode)
+    base = "https://api.alpaca.markets" if mode == "live" else "https://paper-api.alpaca.markets"
+    url = base + path + ("?" + urllib.parse.urlencode(params) if params else "")
+    req = urllib.request.Request(url, headers={"APCA-API-KEY-ID": key, "APCA-API-SECRET-KEY": sec})
+    try:
+        with urllib.request.urlopen(req, timeout=HTTP_TIMEOUT) as r:
+            return json.loads(r.read().decode())
+    except urllib.error.HTTPError as e:
+        raise RuntimeError(f"Alpaca {path} returned HTTP {e.code}") from None
+
+
+def _money_book(mode):
+    key, sec = _creds(mode)
+    if not key or not sec:
+        return {"configured": False}
+    a = _alpaca_as(mode, "/v2/account")
+    eq, last, cash = _f(a.get("equity")), _f(a.get("last_equity")), _f(a.get("cash"))
+    holdings = []
+    for p in _alpaca_as(mode, "/v2/positions"):
+        holdings.append({
+            "symbol": _pretty(p.get("symbol"), p.get("asset_class", "")),
+            "qty": _f(p.get("qty")), "avg_cost": _f(p.get("avg_entry_price")),
+            "price": _f(p.get("current_price")), "cost": _f(p.get("cost_basis")),
+            "value": _f(p.get("market_value")), "gain": _f(p.get("unrealized_pl")),
+            "gain_pct": _f(p.get("unrealized_plpc")) * 100,
+        })
+    holdings.sort(key=lambda h: -abs(h["value"]))
+    book = {"configured": True, "balance": eq, "cash": cash,
+            "invested": sum(h["cost"] for h in holdings),
+            "market_value": sum(h["value"] for h in holdings),
+            "open_gain": sum(h["gain"] for h in holdings),
+            "today": (eq - last) if last else None,
+            "today_pct": ((eq - last) / last * 100) if last else None,
+            "holdings": holdings}
+    # Since start = first funded day in Alpaca's own equity history (days before funding are 0).
+    try:
+        h = _alpaca_as(mode, "/v2/account/portfolio/history", {"period": "1A", "timeframe": "1D"})
+        firsts = [(int(t), float(e)) for t, e in zip(h.get("timestamp") or [], h.get("equity") or []) if e]
+        if firsts:
+            t0, e0 = firsts[0]
+            book.update(start_balance=e0, start_date=datetime.fromtimestamp(t0, timezone.utc).date().isoformat(),
+                        since_start=eq - e0, since_start_pct=(eq - e0) / e0 * 100 if e0 else None)
+    except Exception as e:  # balance and holdings are still real; only the start figure is missing
+        book["start_error"] = str(e)[:200]
+    return book
+
+
+def _build_money():
+    out = {"generated_at": datetime.now(timezone.utc).isoformat(), "accounts": [],
+           "canary_auto": os.getenv("CANARY_AUTO", "0").strip().lower() in ("1", "true", "yes", "on")}
+    for mode, title, what, real in MONEY_ACCOUNTS:
+        row = {"id": mode, "title": title, "what": what, "real_money": real}
+        try:
+            row.update(_money_book(mode))
+        except Exception as e:
+            row.update(configured=True, error=str(e)[:200])
+        out["accounts"].append(row)
+    return out
+
+
+@router.get("/api/money")
+def money():
+    with _LOCK:
+        if _MONEY_CACHE["data"] is not None and time.time() - _MONEY_CACHE["t"] < MONEY_CACHE_SECONDS:
+            return _MONEY_CACHE["data"]
+    data = _build_money()
+    with _LOCK:
+        _MONEY_CACHE.update(t=time.time(), data=data)
     return data
 
 
