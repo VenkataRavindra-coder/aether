@@ -1000,4 +1000,15 @@ NO-GO for paper or live under this registration. Registration `docs/PREREG_risk_
   1.25x its drawdown; DSR >= 0.95 at N = 52. Dollars at $100, $1,000 and $5,000.
 - **Separation:** no verdict overrides S2 NO-GO, the test plan, the Risk Controller, Stage 6, the soak or the Oct 22
   decision; "historically supported" only allows a forward-journal PR.
-- **Result:** not yet run.
+- **Result 2026-10-25 (run once with --log-trials, server, data `e9524a2a...71ed9b6`, 4,932 days, N = 52; trials 19-21;
+  `aether-research/risk_balanced/results/risk_balanced_20261025_060540.json`, archived in `4ff7af7`):**
+  **`rb_63` MIXED** (9 of 12). Not supported; no forward journal or paper test under this registration.
+  - Passed: Sharpe 0.96 (bootstrap 95% low +0.51), the highest of any AETHER test; beats equal weight monthly
+    (0.84) by +0.12, paired 95% low +0.03, and in both halves (0.90 / 1.01); CAGR +10.7% (filter 7.8%); +10.6% at
+    10 bp/side; up in 15 of 18 years; turnover 8.1% a month; neighbours 21 / 126 also above equal weight
+    (0.95 / 0.93). Average weights SPY 22%, QQQ 18%, IWM 16%, GLD 21%, TLT 24%.
+  - Failed: C4 and C10, max drawdown 24.7% (> 20%, and > 1.25 x the filter's 16.5%; 2022 -19.2%, stocks and bonds
+    fell together); C11 deflated Sharpe 0.910 < 0.95.
+  - Caution: the edge over equal weight is thin (21-day neighbour's paired low -0.00) and PBO is 0.88 (reported only).
+  - Reading: a better-balanced way to hold these ETFs, not a proven edge. Dollars (historical averages): $0.04,
+    $0.43, $2.13 per trading day at $100, $1,000, $5,000; about $4,700 for $2 per day. No parameter change follows.
