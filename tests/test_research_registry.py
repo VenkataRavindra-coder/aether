@@ -23,12 +23,12 @@ def test_committed_registry_is_valid_and_complete():
     ids = {s["id"] for s in reg["strategies"]}
     for must in ("s2_us_etf_momentum_v1", "daily_v1_sa", "daily_v1_sb", "daily_v1_sc", "tactical_orb15",
                  "tactical_engulf15_v1.5", "tpb_hammer_1h", "tpb_engulf_1h", "imom_long", "imom_ls",
-                 "eb_55_20", "eb_20_10", "eb_100_50"):
+                 "eb_55_20", "eb_20_10", "eb_100_50", "rb_63", "rb_21", "rb_126"):
         assert must in ids
     trial_ids = sorted(i for s in reg["strategies"] for i in s["trials"]["ids"])
-    assert trial_ids == list(range(1, 19))                    # every logged trial 1-18 claimed exactly once
+    assert trial_ids == list(range(1, 22))                    # every logged trial 1-21 claimed exactly once
     n = len(trial_ids) + reg["trial_accounting"]["backfilled"] + reg["trial_accounting"]["outside_db"]
-    assert n == 49
+    assert n == 52
     s2 = next(s for s in reg["strategies"] if s["id"] == "s2_us_etf_momentum_v1")
     assert s2["status"] == "frozen_no_go"
     for s in reg["strategies"]:
@@ -76,16 +76,19 @@ def test_grade_ranks_evidence_not_return():
     assert rr.grade(base, big_but_shaky, None)[0] == "inconclusive"   # higher return, weaker evidence
 
 
-def test_build_ranks_hammer_first_and_separates_stages(tmp_path):
+def test_build_ranks_by_evidence_and_separates_stages(tmp_path):
     st = rr.build(now=datetime(2026, 10, 25, 9, 0, tzinfo=NY), db=tmp_path / "none.sqlite", ledger=tmp_path / "none.jsonl")
     assert st["ok"] and st["registry_problems"] == []
     first = st["strategies"][0]
-    assert first["id"] == "tpb_hammer_1h" and first["grade"] == "weak lead"
+    assert first["id"] == "rb_63" and first["grade"] == "weak lead"          # highest DSR among weak leads
+    leads = [i["id"] for i in st["strategies"] if i["grade"] == "weak lead"]
+    assert "tpb_hammer_1h" in leads and leads[-1] == "tpb_hammer_1h"         # lowest DSR of the weak leads
+    assert next(i for i in st["strategies"] if i["id"] == "rb_21")["grade"] == "inconclusive"   # low bound -0.00
     for it in st["strategies"]:
         assert set(("historical", "forward", "paper", "live")) <= set(it)
         assert it["live"] is None
     assert st["summary"]["live_usd_per_day"] is None
-    assert st["trials"]["n"] == 49 and st["trials"]["db"] is None
+    assert st["trials"]["n"] == 52 and st["trials"]["db"] is None
 
 
 # ------------------------------------------------------------------ schedule and DST
@@ -180,15 +183,15 @@ def test_trial_check_flags_drift(tmp_path):
     con = sqlite3.connect(db)
     con.execute("CREATE TABLE research_trials (id INTEGER PRIMARY KEY)")
     con.execute("CREATE TABLE untracked_trials (count INTEGER)")
-    con.executemany("INSERT INTO research_trials (id) VALUES (?)", [(i,) for i in range(1, 20)])
+    con.executemany("INSERT INTO research_trials (id) VALUES (?)", [(i,) for i in range(1, 23)])
     con.execute("INSERT INTO untracked_trials VALUES (28)")
     con.commit()
     con.close()
     reg = rr.load_registry()
     t = rr.trial_check(reg, db)
-    assert t["db"] == 19 and "[19]" in t["problem"]           # trial 19 logged but not in the registry
+    assert t["db"] == 22 and "[22]" in t["problem"]           # trial 22 logged but not in the registry
     con = sqlite3.connect(db)
-    con.execute("DELETE FROM research_trials WHERE id = 19")
+    con.execute("DELETE FROM research_trials WHERE id = 22")
     con.commit()
     con.close()
     assert rr.trial_check(reg, db)["problem"] is None
@@ -222,7 +225,7 @@ def test_api_and_page():
     app.include_router(research_view.build_router())
     c = TestClient(app)
     d = c.get("/api/research").json()
-    assert d["ok"] and len(d["strategies"]) == 19
+    assert d["ok"] and len(d["strategies"]) == 22
     page = c.get("/research").text
     assert "/api/research" in page and "Forward (shadow)" in page
     for f in ("board.html", "tactical.html", "trend.html", "autotest.html", "research.html"):

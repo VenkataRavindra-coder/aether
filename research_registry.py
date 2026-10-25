@@ -104,6 +104,7 @@ def historical(entry: dict, repo: Path = REPO) -> dict | None:
                     "total_net_pct": v.get("total_pct"), "boot95_low": (v.get("sharpe_boot95") or [None])[0],
                     "dsr": (v.get("dsr") or {}).get("dsr"),
                     "buy_hold_sharpe": (comp.get("hold_same_etfs") or {}).get("sharpe"),
+                    "vs_equal_weight_low": (v.get("sharpe_diff_vs_equal_weight_95") or [None])[0],
                     "benchmark": "hold {:.2f} / 200-day filter {:.2f} Sharpe".format(
                         (comp.get("hold_same_etfs") or {}).get("sharpe", float("nan")),
                         (comp.get("sma200_same_etfs") or {}).get("sharpe", float("nan"))),
@@ -196,6 +197,8 @@ def grade(entry: dict, hist: dict | None, fwd: dict | None) -> tuple[str, str]:
     if supported:
         return "promising", "historical criteria passed; forward evidence still collecting"
     h = hist or {}
+    if (h.get("vs_equal_weight_low") or 0) > 0 and (h.get("boot95_low") or 0) > 0:
+        return "weak lead", "beats its own comparator by more than noise, but criteria not met"
     if ((h.get("mean_net_bp") or 0) > 0 and h.get("random_p") is not None and h["random_p"] <= 0.05
             and (h.get("half1_mean_bp") or 0) > 0 and (h.get("half2_mean_bp") or 0) > 0):
         return "weak lead", "positive in both halves and better than random entries, but criteria not met"

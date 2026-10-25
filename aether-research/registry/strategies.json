@@ -1065,6 +1065,162 @@
    "live": null,
    "next_evaluation": null,
    "registered": "2026-10-25"
+  },
+  {
+   "id": "rb_63",
+   "name": "Risk-balanced ETF holding (63-day volatility)",
+   "family": "allocation (inverse volatility)",
+   "version": "risk-balanced-v1",
+   "registration": {
+    "doc": "docs/PREREG_risk_balanced_v1.md",
+    "tag": "prereg-risk-balanced-v1"
+   },
+   "rules": "aether-research/risk_balanced/rb_rules.py",
+   "params": {
+    "vol_n": 63,
+    "rebalance": "monthly",
+    "judged": true
+   },
+   "markets": [
+    "SPY",
+    "QQQ",
+    "IWM",
+    "GLD",
+    "TLT"
+   ],
+   "timeframe": "monthly",
+   "data": {
+    "period": "2007-03-01..2026-10-06",
+    "source": "Yahoo daily, adjusted",
+    "sha256": "e9524a2a...71ed9b6"
+   },
+   "trials": {
+    "batch": "risk-balanced-v1",
+    "ids": [
+     19
+    ]
+   },
+   "status": "inconclusive",
+   "stage": "historical",
+   "verdict": "MIXED",
+   "reasons": [
+    "max drawdown 24.7% > 20% limit (2022: -19.2%)",
+    "max drawdown > 1.25 x the 200-day filter's (16.5%)",
+    "deflated Sharpe 0.910 < 0.95 (N = 52)",
+    "edge over equal weight is thin: paired 95% low +0.03; 21-day neighbour's low -0.00; PBO 0.88"
+   ],
+   "historical": {
+    "source": "results_json",
+    "results_file": "aether-research/risk_balanced/results/risk_balanced_20261025_060540.json",
+    "variant": "rb_63"
+   },
+   "forward": null,
+   "paper": null,
+   "live": null,
+   "next_evaluation": null,
+   "registered": "2026-10-25"
+  },
+  {
+   "id": "rb_21",
+   "name": "Risk-balanced ETF holding (21-day volatility) (neighbour)",
+   "family": "allocation (inverse volatility)",
+   "version": "risk-balanced-v1",
+   "registration": {
+    "doc": "docs/PREREG_risk_balanced_v1.md",
+    "tag": "prereg-risk-balanced-v1"
+   },
+   "rules": "aether-research/risk_balanced/rb_rules.py",
+   "params": {
+    "vol_n": 21,
+    "rebalance": "monthly",
+    "judged": false
+   },
+   "markets": [
+    "SPY",
+    "QQQ",
+    "IWM",
+    "GLD",
+    "TLT"
+   ],
+   "timeframe": "monthly",
+   "data": {
+    "period": "2007-03-01..2026-10-06",
+    "source": "Yahoo daily, adjusted",
+    "sha256": "e9524a2a...71ed9b6"
+   },
+   "trials": {
+    "batch": "risk-balanced-v1",
+    "ids": [
+     20
+    ]
+   },
+   "status": "inconclusive",
+   "stage": "historical",
+   "verdict": "not judged (neighbour)",
+   "reasons": [
+    "robustness neighbour of rb_63; Sharpe above equal weight, but the judged base is MIXED"
+   ],
+   "historical": {
+    "source": "results_json",
+    "results_file": "aether-research/risk_balanced/results/risk_balanced_20261025_060540.json",
+    "variant": "rb_21"
+   },
+   "forward": null,
+   "paper": null,
+   "live": null,
+   "next_evaluation": null,
+   "registered": "2026-10-25"
+  },
+  {
+   "id": "rb_126",
+   "name": "Risk-balanced ETF holding (126-day volatility) (neighbour)",
+   "family": "allocation (inverse volatility)",
+   "version": "risk-balanced-v1",
+   "registration": {
+    "doc": "docs/PREREG_risk_balanced_v1.md",
+    "tag": "prereg-risk-balanced-v1"
+   },
+   "rules": "aether-research/risk_balanced/rb_rules.py",
+   "params": {
+    "vol_n": 126,
+    "rebalance": "monthly",
+    "judged": false
+   },
+   "markets": [
+    "SPY",
+    "QQQ",
+    "IWM",
+    "GLD",
+    "TLT"
+   ],
+   "timeframe": "monthly",
+   "data": {
+    "period": "2007-03-01..2026-10-06",
+    "source": "Yahoo daily, adjusted",
+    "sha256": "e9524a2a...71ed9b6"
+   },
+   "trials": {
+    "batch": "risk-balanced-v1",
+    "ids": [
+     21
+    ]
+   },
+   "status": "inconclusive",
+   "stage": "historical",
+   "verdict": "not judged (neighbour)",
+   "reasons": [
+    "robustness neighbour of rb_63; Sharpe above equal weight, but the judged base is MIXED"
+   ],
+   "historical": {
+    "source": "results_json",
+    "results_file": "aether-research/risk_balanced/results/risk_balanced_20261025_060540.json",
+    "variant": "rb_126"
+   },
+   "forward": null,
+   "paper": null,
+   "live": null,
+   "next_evaluation": null,
+   "registered": "2026-10-25"
   }
  ]
 }
