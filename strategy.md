@@ -886,6 +886,8 @@ Rules: `aether-research/trend_pullback/rules.py` (binding copy).
   - PBO across the four (reported only): 0.92.
   - Consequence (prereg section 7): none may be proposed for order-placing paper or live trading under this
     registration. The forward journal (section 7) still runs for all four, unchanged.
+  - Logged run (`trend_pullback_20261025_051509.json`, trials 12-15): identical trades and verdicts; N was 46
+    by then (the two intraday-momentum trials were already logged), so DSR moved slightly (hammer_1h 0.132).
 
 
 ## Intraday momentum registration (pre-registered 2026-10-25, before any result)
@@ -912,6 +914,8 @@ run). Rules: `aether-research/intraday_momentum/im_rules.py` (binding copy).
     last half hour itself averaged -0.51 bp gross on all 2,712 days, so there is no gross edge to pay even 0.5 bp
     per side (break-even cost is below zero). The 2018 paper's effect (sample 1993-2013) is not present in SPY
     2016-2026. Late entry and earlier exit change nothing (-10.37 / -11.06 bp).
+  - Logged run (`intraday_momentum_20261025_051452.json`, trials 10-11): identical results. All result files
+    are archived in the repo (commit `6d517f1`).
 
 
 ## Strategy registry and promotion ladder (2026-10-25)
