@@ -960,4 +960,16 @@ any run). Rules: `aether-research/etf_breakout/eb_rules.py` (binding copy).
   positive). Dollars reported at $100, $1,000 and $5,000.
 - **Separation:** no verdict overrides S2 NO-GO, the test plan, the Risk Controller, the soak or the Oct 22
   decision. "Historically supported" only allows a forward-journal PR (no orders).
-- **Result:** not yet run.
+- **Result 2026-10-25 (run once, server, data SHA-256 `e9524a2a...71ed9b6`, 4,932 days, N = 49; logged run
+  `aether-research/etf_breakout/results/etf_breakout_20261025_054553.json`, trials 16-18; archived in `c15dc69`):**
+  **`eb_55_20` MIXED** (8 of 12 criteria). Not supported; no forward journal or paper test under this registration.
+  - Passed: 268 trades, profit factor 1.87 (average win +6.08%, loss -3.11%), Sharpe 0.62 with block-bootstrap
+    95% low +0.21, CAGR +4.0%, max drawdown 12.9%, both halves positive (0.51 / 0.70), up in 16 of 18 years,
+    +3.7% a year at 10 bp/side, both neighbours positive (20/10: Sharpe 0.63, CAGR 4.1%; 100/50: 0.72, 5.3%).
+  - Failed: C8 and C9, Sharpe below the 200-day filter (0.85, CAGR 7.8%, max DD 16.5%) and buy-and-hold (0.85,
+    CAGR 11.3%, max DD 29.4%) on the same ETFs; C10 deflated Sharpe 0.444; C11 QQQ supplied 55% of the profit.
+  - Reading: like S-A, a drawdown reducer, not an edge; idle sleeves earn 0% in cash about half the time.
+    Average pairwise ETF correlation +0.21 (2.7 effective bets of 5). PBO across the three (reported only): 0.71.
+  - Dollars (historical averages, not forecasts): $0.02, $0.16 and $0.82 per trading day at $100, $1,000 and
+    $5,000; about $12,200 would be needed for $2 per trading day at this average.
+  - No parameter change follows: the neighbours are recorded, not promoted; a changed rule is a new registration.

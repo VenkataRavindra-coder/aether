@@ -94,6 +94,23 @@ def historical(entry: dict, repo: Path = REPO) -> dict | None:
         if doc is None:
             return {"source": h["results_file"], "error": "results file not found"}
         v = doc["variants"][h["variant"]]
+        if "cagr_pct" in v and "verdict" not in v:          # portfolio-style results (etf-breakout-v1)
+            judged = bool(v.get("base"))
+            crit = doc.get("criteria") or {}
+            comp = doc.get("comparators") or {}
+            return {"source": h["results_file"], "verdict": doc.get("verdict") if judged else "not judged (neighbour)",
+                    "trades": v.get("trades"), "win_rate": v.get("win_rate"), "profit_factor": v.get("profit_factor"),
+                    "max_drawdown_pct": v.get("max_drawdown_pct"), "sharpe": v.get("sharpe"), "cagr_pct": v.get("cagr_pct"),
+                    "total_net_pct": v.get("total_pct"), "boot95_low": (v.get("sharpe_boot95") or [None])[0],
+                    "dsr": (v.get("dsr") or {}).get("dsr"),
+                    "buy_hold_sharpe": (comp.get("hold_same_etfs") or {}).get("sharpe"),
+                    "benchmark": "hold {:.2f} / 200-day filter {:.2f} Sharpe".format(
+                        (comp.get("hold_same_etfs") or {}).get("sharpe", float("nan")),
+                        (comp.get("sma200_same_etfs") or {}).get("sharpe", float("nan"))),
+                    "criteria_passed": sum(bool(x) for x in crit.values()) if judged else None,
+                    "criteria_total": len(crit) if judged else None,
+                    "usd_per_day_5k": ((doc.get("dollars") or {}).get("5000") or {}).get("usd_per_trading_day") if judged else None,
+                    "n_trials": (doc.get("n_info") or {}).get("n")}
         rnd = v.get("random_entry") or {}
         bm = doc.get("benchmarks") or {}
         bh = v.get("buy_hold_sharpe")
