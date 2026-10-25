@@ -1221,6 +1221,166 @@
    "live": null,
    "next_evaluation": null,
    "registered": "2026-10-25"
+  },
+  {
+   "id": "st_200",
+   "name": "200-day filter, idle in T-bills (BIL)",
+   "family": "trend filter + cash management",
+   "version": "sma-tbill-v1",
+   "registration": {
+    "doc": "docs/PREREG_sma_tbill_v1.md",
+    "tag": "prereg-sma-tbill-v1"
+   },
+   "rules": "aether-research/sma_tbill/st_rules.py",
+   "params": {
+    "sma_n": 200,
+    "idle": "BIL",
+    "judged": true
+   },
+   "markets": [
+    "SPY",
+    "QQQ",
+    "IWM",
+    "GLD",
+    "TLT",
+    "BIL"
+   ],
+   "timeframe": "daily",
+   "data": {
+    "period": "2007-06-01..2026-10-06",
+    "source": "Yahoo daily, adjusted (ETFs registered file + one-time BIL download)",
+    "sha256": "ETF e9524a2a...71ed9b6; BIL 1bf45684...c292fd2"
+   },
+   "trials": {
+    "batch": "sma-tbill-v1",
+    "ids": [
+     22
+    ]
+   },
+   "status": "retired",
+   "stage": "historical",
+   "verdict": "HISTORICALLY UNSUPPORTED",
+   "reasons": [
+    "T-bills added no net return: CAGR 7.4% = idle-cash version 7.4%; Sharpe 0.82 vs 0.83",
+    "worse than cash before 2016 (-0.25% a year; near-zero rates), slightly better after (+0.11%)",
+    "frequent switching (112-216 per ETF over 19 years) pays 10 bp extra per switch for the BIL leg; BIL earned 1.4% a year",
+    "Sharpe below buy-and-hold of the five ETFs (0.82 vs 0.85); deflated Sharpe 0.758 < 0.95 (N = 55)",
+    "design note: BIL was charged 5 bp per side like the ETFs; its real spread is about 0.1 bp, so the cost assumption likely decided C2"
+   ],
+   "historical": {
+    "source": "results_json",
+    "results_file": "aether-research/sma_tbill/results/sma_tbill_20261025_063044.json",
+    "variant": "st_200"
+   },
+   "forward": null,
+   "paper": null,
+   "live": null,
+   "next_evaluation": null,
+   "registered": "2026-10-25"
+  },
+  {
+   "id": "st_150",
+   "name": "150-day filter, idle in T-bills (BIL) (neighbour)",
+   "family": "trend filter + cash management",
+   "version": "sma-tbill-v1",
+   "registration": {
+    "doc": "docs/PREREG_sma_tbill_v1.md",
+    "tag": "prereg-sma-tbill-v1"
+   },
+   "rules": "aether-research/sma_tbill/st_rules.py",
+   "params": {
+    "sma_n": 150,
+    "idle": "BIL",
+    "judged": false
+   },
+   "markets": [
+    "SPY",
+    "QQQ",
+    "IWM",
+    "GLD",
+    "TLT",
+    "BIL"
+   ],
+   "timeframe": "daily",
+   "data": {
+    "period": "2007-06-01..2026-10-06",
+    "source": "Yahoo daily, adjusted (ETFs registered file + one-time BIL download)",
+    "sha256": "ETF e9524a2a...71ed9b6; BIL 1bf45684...c292fd2"
+   },
+   "trials": {
+    "batch": "sma-tbill-v1",
+    "ids": [
+     23
+    ]
+   },
+   "status": "retired",
+   "stage": "historical",
+   "verdict": "not judged (neighbour)",
+   "reasons": [
+    "robustness neighbour of st_200; also no better than its idle-cash version"
+   ],
+   "historical": {
+    "source": "results_json",
+    "results_file": "aether-research/sma_tbill/results/sma_tbill_20261025_063044.json",
+    "variant": "st_150"
+   },
+   "forward": null,
+   "paper": null,
+   "live": null,
+   "next_evaluation": null,
+   "registered": "2026-10-25"
+  },
+  {
+   "id": "st_250",
+   "name": "250-day filter, idle in T-bills (BIL) (neighbour)",
+   "family": "trend filter + cash management",
+   "version": "sma-tbill-v1",
+   "registration": {
+    "doc": "docs/PREREG_sma_tbill_v1.md",
+    "tag": "prereg-sma-tbill-v1"
+   },
+   "rules": "aether-research/sma_tbill/st_rules.py",
+   "params": {
+    "sma_n": 250,
+    "idle": "BIL",
+    "judged": false
+   },
+   "markets": [
+    "SPY",
+    "QQQ",
+    "IWM",
+    "GLD",
+    "TLT",
+    "BIL"
+   ],
+   "timeframe": "daily",
+   "data": {
+    "period": "2007-06-01..2026-10-06",
+    "source": "Yahoo daily, adjusted (ETFs registered file + one-time BIL download)",
+    "sha256": "ETF e9524a2a...71ed9b6; BIL 1bf45684...c292fd2"
+   },
+   "trials": {
+    "batch": "sma-tbill-v1",
+    "ids": [
+     24
+    ]
+   },
+   "status": "retired",
+   "stage": "historical",
+   "verdict": "not judged (neighbour)",
+   "reasons": [
+    "robustness neighbour of st_200; also no better than its idle-cash version"
+   ],
+   "historical": {
+    "source": "results_json",
+    "results_file": "aether-research/sma_tbill/results/sma_tbill_20261025_063044.json",
+    "variant": "st_250"
+   },
+   "forward": null,
+   "paper": null,
+   "live": null,
+   "next_evaluation": null,
+   "registered": "2026-10-25"
   }
  ]
 }

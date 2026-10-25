@@ -23,12 +23,12 @@ def test_committed_registry_is_valid_and_complete():
     ids = {s["id"] for s in reg["strategies"]}
     for must in ("s2_us_etf_momentum_v1", "daily_v1_sa", "daily_v1_sb", "daily_v1_sc", "tactical_orb15",
                  "tactical_engulf15_v1.5", "tpb_hammer_1h", "tpb_engulf_1h", "imom_long", "imom_ls",
-                 "eb_55_20", "eb_20_10", "eb_100_50", "rb_63", "rb_21", "rb_126"):
+                 "eb_55_20", "eb_20_10", "eb_100_50", "rb_63", "rb_21", "rb_126", "st_200", "st_150", "st_250"):
         assert must in ids
     trial_ids = sorted(i for s in reg["strategies"] for i in s["trials"]["ids"])
-    assert trial_ids == list(range(1, 22))                    # every logged trial 1-21 claimed exactly once
+    assert trial_ids == list(range(1, 25))                    # every logged trial 1-24 claimed exactly once
     n = len(trial_ids) + reg["trial_accounting"]["backfilled"] + reg["trial_accounting"]["outside_db"]
-    assert n == 52
+    assert n == 55
     s2 = next(s for s in reg["strategies"] if s["id"] == "s2_us_etf_momentum_v1")
     assert s2["status"] == "frozen_no_go"
     for s in reg["strategies"]:
@@ -57,6 +57,8 @@ def test_historical_reads_results_files_not_copies():
     eb = rr.historical(next(s for s in reg["strategies"] if s["id"] == "eb_55_20"))
     assert eb["verdict"] == "mixed" and eb["trades"] == 268 and eb["criteria_passed"] == 8 and eb["criteria_total"] == 12
     assert eb["cagr_pct"] == pytest.approx(3.98, abs=0.01) and eb["buy_hold_sharpe"] == pytest.approx(0.85, abs=0.01)
+    st = rr.historical(next(s for s in reg["strategies"] if s["id"] == "st_200"))
+    assert st["verdict"] == "historically unsupported" and "idle-cash version" in st["benchmark"]
     nb = rr.historical(next(s for s in reg["strategies"] if s["id"] == "eb_100_50"))
     assert nb["verdict"] == "not judged (neighbour)" and nb["criteria_total"] is None
 
@@ -88,7 +90,7 @@ def test_build_ranks_by_evidence_and_separates_stages(tmp_path):
         assert set(("historical", "forward", "paper", "live")) <= set(it)
         assert it["live"] is None
     assert st["summary"]["live_usd_per_day"] is None
-    assert st["trials"]["n"] == 52 and st["trials"]["db"] is None
+    assert st["trials"]["n"] == 55 and st["trials"]["db"] is None
 
 
 # ------------------------------------------------------------------ schedule and DST
@@ -183,15 +185,15 @@ def test_trial_check_flags_drift(tmp_path):
     con = sqlite3.connect(db)
     con.execute("CREATE TABLE research_trials (id INTEGER PRIMARY KEY)")
     con.execute("CREATE TABLE untracked_trials (count INTEGER)")
-    con.executemany("INSERT INTO research_trials (id) VALUES (?)", [(i,) for i in range(1, 23)])
+    con.executemany("INSERT INTO research_trials (id) VALUES (?)", [(i,) for i in range(1, 26)])
     con.execute("INSERT INTO untracked_trials VALUES (28)")
     con.commit()
     con.close()
     reg = rr.load_registry()
     t = rr.trial_check(reg, db)
-    assert t["db"] == 22 and "[22]" in t["problem"]           # trial 22 logged but not in the registry
+    assert t["db"] == 25 and "[25]" in t["problem"]           # trial 25 logged but not in the registry
     con = sqlite3.connect(db)
-    con.execute("DELETE FROM research_trials WHERE id = 22")
+    con.execute("DELETE FROM research_trials WHERE id = 25")
     con.commit()
     con.close()
     assert rr.trial_check(reg, db)["problem"] is None
@@ -225,7 +227,7 @@ def test_api_and_page():
     app.include_router(research_view.build_router())
     c = TestClient(app)
     d = c.get("/api/research").json()
-    assert d["ok"] and len(d["strategies"]) == 22
+    assert d["ok"] and len(d["strategies"]) == 25
     page = c.get("/research").text
     assert "/api/research" in page and "Forward (shadow)" in page
     for f in ("board.html", "tactical.html", "trend.html", "autotest.html", "research.html"):

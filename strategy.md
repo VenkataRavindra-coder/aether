@@ -1030,4 +1030,17 @@ tag `prereg-sma-tbill-v1` (created after the BIL data and its manifest are commi
   test, match buy-and-hold's Sharpe with no more drawdown; DSR >= 0.95 at N = 55. Dollars at $100, $1,000, $5,000.
 - **Separation:** no verdict overrides S2 NO-GO, the test plan, the Risk Controller, Stage 6, the soak or the Oct 22
   decision; "historically supported" only allows a forward-journal PR.
-- **Result:** not yet run.
+- **Result 2026-10-25 (run once with --log-trials, server; ETF `e9524a2a...71ed9b6`, BIL `1bf45684...c292fd2`
+  (4,870 rows, committed in `fa6e130` before the tag); 4,868 days, N = 55; trials 22-24;
+  `aether-research/sma_tbill/results/sma_tbill_20261025_063044.json`, archived in `c436784`):**
+  **`st_200` HISTORICALLY UNSUPPORTED** (5 of 11). Retired; no re-tuning.
+  - T-bills added nothing: CAGR 7.4% vs 7.4% with idle cash, Sharpe 0.82 vs 0.83. Worse than cash before 2016
+    (-0.25% a year, near-zero rates), slightly better after (+0.11%). Neighbours the same (150: 7.6% vs 7.7%; 250:
+    7.2% vs 7.2%).
+  - Why: the filter switches often (112-216 times per ETF over 19 years) and each switch now pays 10 bp more for the
+    BIL leg, while BIL earned 1.4% a year over the window.
+  - Passed: Sharpe 95% low +0.39, max drawdown 15.6% (holding 28.5%), 13 of 18 years up, +6.6% at 10 bp/side.
+    Failed also: Sharpe below holding the five (0.82 vs 0.85), deflated Sharpe 0.758. PBO (reported only) 0.75.
+  - **Design note (recorded, not fixed):** BIL was charged 5 bp per side like the ETFs; its real spread is about
+    0.1 bp, so the cost assumption likely decided C2. A lower-cost version would be a new registration and trial.
+  - Dollars (historical averages): $0.03, $0.30, $1.49 per trading day at $100, $1,000, $5,000; about $6,700 for $2.
