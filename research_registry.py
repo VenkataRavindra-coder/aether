@@ -105,9 +105,11 @@ def historical(entry: dict, repo: Path = REPO) -> dict | None:
                     "dsr": (v.get("dsr") or {}).get("dsr"),
                     "buy_hold_sharpe": (comp.get("hold_same_etfs") or {}).get("sharpe"),
                     "vs_equal_weight_low": (v.get("sharpe_diff_vs_equal_weight_95") or [None])[0],
-                    "benchmark": "hold {:.2f} / 200-day filter {:.2f} Sharpe".format(
+                    "benchmark": ("hold {:.2f} / idle-cash version {:.2f} Sharpe".format(
+                        (comp.get("hold_same_etfs") or {}).get("sharpe", float("nan")), v["cash_version"].get("sharpe", float("nan")))
+                        if v.get("cash_version") else "hold {:.2f} / 200-day filter {:.2f} Sharpe".format(
                         (comp.get("hold_same_etfs") or {}).get("sharpe", float("nan")),
-                        (comp.get("sma200_same_etfs") or {}).get("sharpe", float("nan"))),
+                        (comp.get("sma200_same_etfs") or {}).get("sharpe", float("nan")))),
                     "criteria_passed": sum(bool(x) for x in crit.values()) if judged else None,
                     "criteria_total": len(crit) if judged else None,
                     "usd_per_day_5k": ((doc.get("dollars") or {}).get("5000") or {}).get("usd_per_trading_day") if judged else None,
