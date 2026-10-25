@@ -22,7 +22,7 @@ import sqlite3
 import statistics
 import subprocess
 import sys
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -59,6 +59,8 @@ RANDOM_SIMS, RANDOM_SEED = 1_000, 20261025
 OUTSIDE_DB = 3        # daily_edges_backtest.py attempts (docs/TRIAL_INVENTORY_daily_v1.md)
 N_FLOOR = 46          # 44 (trend-pullback-v1 registry, its 4 included) + these 2
 HIST_VAR_PER_PERIOD = th.HIST_VAR_PER_PERIOD
+SLEEVE_USD = 5_000.0                       # the main paper sleeve; used only to express results in dollars
+COST_CURVE_BP = (0.0, 0.5, 1.0, 2.0, 5.0, 10.0, 15.0)   # report-only execution sensitivity, per side
 
 
 class Refused(Exception):
@@ -189,6 +191,26 @@ def trial_n(db: Path = TRIAL_DB) -> dict:
             "n": max(N_FLOOR, total), "already_logged": mine}
 
 
+def execution_sensitivity(sessions, variant: str) -> dict:
+    """Report-only. Never changes a criterion or a verdict (prereg section 3a).
+
+    - cost curve: mean net bp at each per-side cost in COST_CURVE_BP, and the break-even per-side cost;
+    - late entry: entry at the 15:31 open instead of 15:30 (one minute late), costs 5 bp/side;
+    - earlier exit: exit at the open of the last minute (about 15:59:00) instead of its close."""
+    base = rules.run(sessions, variant, 0.0)
+    gross = [t["gross_bp"] for t in base]
+    out = {"cost_curve_mean_net_bp": {}, "breakeven_bp_per_side": None}
+    if gross:
+        g = statistics.fmean(gross)
+        out["cost_curve_mean_net_bp"] = {c: g - 2 * c for c in COST_CURVE_BP}
+        out["breakeven_bp_per_side"] = g / 2
+    for key, kw in (("late_entry_1min", {"entry_delay": timedelta(minutes=1)}),
+                    ("exit_last_minute_open", {"exit_at_last_open": True})):
+        tr = rules.run(sessions, variant, rules.COST_BP_PER_SIDE, **kw)
+        out[key] = {"trades": len(tr), "mean_net_bp": statistics.fmean(t["net_bp"] for t in tr) if tr else None}
+    return out
+
+
 # ------------------------------------------------------------------ evaluation
 def evaluate_all(sessions, n_info, bad_sessions=0) -> dict:
     import research_gate as rg
@@ -255,6 +277,10 @@ def evaluate_all(sessions, n_info, bad_sessions=0) -> dict:
             "allow_short": allow_short, "trades": n, "longs": sum(t["side"] == "long" for t in trades),
             "win_rate": (sum(x > 0 for x in nets) / n) if n else None,
             "mean_gross_bp": statistics.fmean(t["gross_bp"] for t in trades) if n else None,
+            "avg_win_bp": statistics.fmean([x for x in nets if x > 0]) if any(x > 0 for x in nets) else None,
+            "avg_loss_bp": statistics.fmean([x for x in nets if x <= 0]) if any(x <= 0 for x in nets) else None,
+            "usd_per_trading_day_on_sleeve": SLEEVE_USD * statistics.fmean(rets) if rets else None,
+            "execution_sensitivity": execution_sensitivity(sessions, name),
             "mean_net_bp": mean, "t_stat": (mean / (sd / math.sqrt(n))) if n > 1 and sd > 0 else None,
             "boot95": [lo, hi], "profit_factor": pf, "max_drawdown_pct": mdd, "sharpe": sr,
             "total_net_pct": (math.prod(1 + x for x in rets) - 1) * 100,
@@ -348,6 +374,13 @@ def render(res) -> str:
                  f"{_f(v['stress_mean_bp'], 2)} bp; random-day p {_f(v['random_entry'].get('p'), 3, False)} "
                  f"(null mean {_f(v['random_entry'].get('null_mean'), 2)} bp)")
         L.append(f"  deflated Sharpe {_f(v['dsr']['dsr'], 3, False)} (luck threshold {v['dsr']['sr0_annual']:.2f})")
+        L.append(f"  avg win {_f(v['avg_win_bp'], 2)} bp, avg loss {_f(v['avg_loss_bp'], 2)} bp; "
+                 f"${_f(v['usd_per_trading_day_on_sleeve'], 2)} per trading day on a ${SLEEVE_USD:,.0f} sleeve")
+        es = v["execution_sensitivity"]
+        L.append("  execution (report only): break-even " + _f(es["breakeven_bp_per_side"], 2, False)
+                 + " bp/side; mean net at " + ", ".join(f"{c:g}bp {_f(x, 2)}" for c, x in es["cost_curve_mean_net_bp"].items())
+                 + f"; 1-min late entry {_f(es['late_entry_1min']['mean_net_bp'], 2)}; "
+                 f"exit at last-minute open {_f(es['exit_last_minute_open']['mean_net_bp'], 2)}")
         L.append("  years: " + ", ".join(f"{y} {v['year_net_pct'].get(y, 0):+.1f}%" for y in v["full_years"]))
     p = res["pbo_reported_only"]
     L += ["", "PBO across the 2 variants (reported only; not meaningful with 2 variants): "

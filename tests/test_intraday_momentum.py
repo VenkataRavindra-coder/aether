@@ -2,8 +2,9 @@
 import math
 import random
 import sqlite3
+import statistics
 import sys
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -221,3 +222,79 @@ def test_research_modules_place_no_orders():
         for bad in ("submit_order", "MarketOrderRequest", "LimitOrderRequest", "cancel_order", "close_position",
                     "alpaca_executor", "APCA_LIVE", "TradingClient"):
             assert bad not in src, (f.name, bad)
+
+
+# ------------------------------------------------------------------ review additions (2026-10-25)
+def _write_hist_files(tmp, days_utc_open):
+    """calendar.csv + spy_1m_sip.csv.gz in the tactical-hist-v1 format, timestamps in UTC as Alpaca stores them."""
+    import csv
+    import gzip
+    import tactical_hist as th
+    with (tmp / th.CAL_FILE.name).open("w", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(["day", "open", "close"])
+        for d, _ in days_utc_open:
+            w.writerow([d.isoformat(), "09:30", "16:00"])
+    with gzip.open(tmp / th.BARS_FILE.name, "wt", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(["t", "o", "h", "l", "c", "v"])
+        for d, utc_open_h in days_utc_open:
+            t0 = datetime(d.year, d.month, d.day, utc_open_h, 30, tzinfo=timezone.utc)
+            for i in range(-60, 450):                   # includes pre-market and after-hours, which must be dropped
+                w.writerow([(t0 + timedelta(minutes=i)).isoformat(), 100, 100, 100, 100, 10])
+
+
+def test_dst_switch_keeps_new_york_wall_clock(tmp_path):
+    """2016-03-11 is EST (open 14:30 UTC), 2016-03-14 is EDT (open 13:30 UTC): both must give 09:30-15:59 NY bars,
+    a 09:59 signal bar and a 15:30 entry, with the UTC offset changing underneath."""
+    import tactical_hist as th
+    _write_hist_files(tmp_path, [(date(2016, 3, 11), 14), (date(2016, 3, 14), 13)])
+    sess = th.load(tmp_path)
+    assert [s.day for s, _ in sess] == ["2016-03-11", "2016-03-14"]
+    for s, bars in sess:
+        assert len(bars) == 390
+        assert (bars[0].t.hour, bars[0].t.minute) == (9, 30) and (bars[-1].t.hour, bars[-1].t.minute) == (15, 59)
+    assert sess[0][1][0].t.utcoffset() == timedelta(hours=-5) and sess[1][1][0].t.utcoffset() == timedelta(hours=-4)
+    x = rules.day_inputs(sess[0], sess[1])
+    assert x is not None and (x[3].hour, x[3].minute) == (15, 30)
+    assert x[3].utcoffset() == timedelta(hours=-4)
+
+
+def test_no_look_ahead_middle_of_day_cannot_change_the_trade():
+    """Changing every bar between 10:00 and 15:29 must not change r1, direction, fill or exit."""
+    d0, d1 = _days(2)
+    s0 = _session(d0)
+    prev = (s0, _flat(s0, 100.0))
+    s, bars = _day(d1, 100.0, 0.004, 0.001)
+    base = rules.day_inputs(prev, (s, bars))
+    noisy = list(bars)
+    for i in range(30, 360):                            # 10:00 .. 15:29 bars
+        b = noisy[i]
+        noisy[i] = Bar(b.t, b.o * 0.97, b.h * 1.05, b.l * 0.9, b.c * 0.97, b.v)
+    assert rules.day_inputs(prev, (s, noisy)) == base
+    # and the signal uses the 09:59 bar's CLOSE only: changing anything later in that hour leaves r1 alone
+    noisy2 = list(bars)
+    b = noisy2[30]
+    noisy2[30] = Bar(b.t, 50, 50, 50, 50, b.v)
+    assert rules.day_inputs(prev, (s, noisy2))[0] == base[0]
+
+
+def test_registered_rule_is_the_default_and_sensitivity_is_report_only():
+    sess = _random_sessions(40, seed=5)
+    assert rules.run(sess, "imom_long") == rules.run(sess, "imom_long", rules.COST_BP_PER_SIDE,
+                                                     entry_delay=timedelta(0), exit_at_last_open=False)
+    late = rules.run(sess, "imom_long", entry_delay=timedelta(minutes=1))
+    assert all(t["entry_t"].minute == 31 for t in late)
+    es = hist.execution_sensitivity(sess, "imom_long")
+    g = statistics.fmean([t["gross_bp"] for t in rules.run(sess, "imom_long", 0.0)])
+    assert es["breakeven_bp_per_side"] == pytest.approx(g / 2)
+    assert es["cost_curve_mean_net_bp"][5.0] == pytest.approx(g - 10)
+
+
+def test_report_has_win_loss_dollars_and_sensitivity(tmp_path):
+    sess, _ = hist.verified_sessions(_random_sessions(120, seed=13))
+    res = hist.evaluate_all(sess, hist.trial_n(_db(tmp_path)))
+    text = hist.render(res)
+    assert "avg win" in text and "per trading day" in text and "break-even" in text and "late entry" in text
+    for v in res["variants"].values():
+        assert set(v["criteria"]) == set(res["variants"]["imom_long"]["criteria"])   # criteria unchanged: 10

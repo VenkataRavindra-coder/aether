@@ -57,19 +57,22 @@ def _at(bars, t):
     return bars[lo] if lo < len(bars) and bars[lo].t == t else None
 
 
-def day_inputs(prev, cur):
-    """(r1, fill, exit_px, entry_t, exit_t) for session `cur` given the previous (Session, bars), or None."""
+def day_inputs(prev, cur, entry_delay=timedelta(0), exit_at_last_open=False):
+    """(r1, fill, exit_px, entry_t, exit_t) for session `cur` given the previous (Session, bars), or None.
+
+    The registered rule is entry_delay=0, exit_at_last_open=False. The two keyword arguments exist ONLY for the
+    report-only execution sensitivity in im_hist.py (late entry, earlier exit); they never decide a verdict."""
     (ps, pbars), (s, bars) = prev, cur
     if not pbars or not bars:
         return None
     if pbars[-1].t < ps.close - EDGE_WINDOW or bars[-1].t < s.close - EDGE_WINDOW:
         return None
     sig = _at(bars, s.open + SIGNAL_OFFSET)
-    ent = _at(bars, s.close - ENTRY_BEFORE_CLOSE)
+    ent = _at(bars, s.close - ENTRY_BEFORE_CLOSE + entry_delay)
     if sig is None or ent is None or ent.t <= sig.t:
         return None
     r1 = sig.c / pbars[-1].c - 1
-    return r1, ent.o, bars[-1].c, ent.t, bars[-1].t
+    return r1, ent.o, (bars[-1].o if exit_at_last_open else bars[-1].c), ent.t, bars[-1].t
 
 
 def direction(r1: float, allow_short: bool) -> int:
@@ -90,21 +93,21 @@ def trade(day: str, inputs, allow_short: bool, cost_bp_per_side: float = COST_BP
             "exit_t": exit_t, "exit_px": exit_px, "gross_bp": gross, "net_bp": gross - 2 * cost_bp_per_side}
 
 
-def eligible_days(sessions):
+def eligible_days(sessions, **exec_kw):
     """[(session index, day, inputs)] for every session that has all the bars a trade needs."""
     out = []
     for i in range(1, len(sessions)):
-        x = day_inputs(sessions[i - 1], sessions[i])
+        x = day_inputs(sessions[i - 1], sessions[i], **exec_kw)
         if x is not None:
             out.append((i, sessions[i][0].day, x))
     return out
 
 
-def run(sessions, variant: str, cost_bp_per_side: float = COST_BP_PER_SIDE) -> list[dict]:
-    """All trades of one variant, in day order."""
+def run(sessions, variant: str, cost_bp_per_side: float = COST_BP_PER_SIDE, **exec_kw) -> list[dict]:
+    """All trades of one variant, in day order. exec_kw: report-only sensitivity (see day_inputs)."""
     allow_short = VARIANTS[variant]
     trades = []
-    for _, day, x in eligible_days(sessions):
+    for _, day, x in eligible_days(sessions, **exec_kw):
         t = trade(day, x, allow_short, cost_bp_per_side)
         if t is not None:
             trades.append(t)

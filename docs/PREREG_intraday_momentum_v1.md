@@ -43,6 +43,29 @@ No thresholds, no neighbours, no other symbols. Each variant is judged on its ow
 - **Costs** 5 bp per side (10 bp round trip). Stress: 10 bp per side.
 - No look-ahead: the signal is final at 10:00 and the trade happens 5.5 hours later.
 
+## 3a. Execution realism (review 2026-10-25, before the tag)
+
+- **Time zone and DST.** Session times come from the Alpaca calendar as New York wall-clock times built with
+  `zoneinfo` (America/New_York); bar timestamps are stored in UTC and converted on load. The 09:59 signal bar and
+  15:30 entry bar are therefore the right New York minutes on both sides of every DST switch (tested on
+  2016-03-11 / 2016-03-14). DST switches happen on Sunday nights, never inside a session.
+- **Completed bars only.** Bars are labelled by START time; the signal uses the 09:59 bar's close (final at 10:00).
+  The trade uses the 15:30 bar's open, 5.5 hours later. Bars between 10:00 and 15:29 cannot change the trade
+  (tested).
+- **Resolution.** 1-minute SIP bars are sufficient: the rule needs one price at 10:00, one at 15:30 and one at the
+  close. No tick or quote data is needed.
+- **Fills and costs.** Entry at the 15:30 bar's open, exit at the last bar's close. SPY's quoted spread is
+  normally one cent (about 0.2 bp at recent prices), Alpaca charges no commission, and a $5,000 order is far too
+  small to move SPY, so market impact is taken as zero. The 5 bp per side therefore stands in for half-spread,
+  slippage, a late fill and closing-auction difference, with a wide margin. 10 bp per side is criterion C7.
+- **Report-only sensitivity (never a criterion, never changes a verdict):** mean net bp across 0 / 0.5 / 1 / 2 /
+  5 / 10 / 15 bp per side and the break-even cost; entry one minute late (15:31 open); exit at the open of the last
+  minute instead of its close. Also reported: average win and loss, and dollars per trading day on a $5,000 sleeve.
+- **Known limitations, disclosed now.** (1) Prices are raw: on SPY's ~4 ex-dividend days a year r1 includes the
+  dividend drop, which can flip the signal on those days (about 1.5% of days). (2) The exit uses the 15:59 bar's
+  close, not the official closing-auction price; a real market-on-close order fills at the auction. (3) History is
+  SIP; a live or paper run would see IEX or SIP depending on the feed, a known difference.
+
 ## 4. Data
 
 - The SPY SIP 1-minute file already fetched for `tactical-hist-v1` (2016-01-04 to 2026-10-20), raw prices, Alpaca
