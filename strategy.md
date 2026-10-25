@@ -21,8 +21,10 @@
   `signal` only while the breakout bar is the LAST bar in the data, and the executor polls once a minute at :05 s.
   If the bar that just closed has not reached the data feed by then, the next poll already holds the bar after it,
   the engine says `traded`, and the executor records a miss without applying its own 2-minute window
-  (`MAX_SIGNAL_AGE_MIN`). Whether this, or the executor simply not yet running at 09:48 on its first day, caused the
-  2026-10-23 miss is decided by that morning's server logs (recorded below once checked).
+  (`MAX_SIGNAL_AGE_MIN`). **Cause of the 2026-10-23 miss, confirmed from the server journal (2026-10-25):** the
+  executor's first ever run was at 14:40:05 UTC (10:40 New York), 53 minutes after the 09:47 breakout; there are no
+  runs before it. The first tick saw a finished breakout and correctly recorded `missed`. A one-off start-up gap on
+  its first day, not a recurring timing bias; the late-data weakness above was real but did not cause this miss.
   Fix: (1) each tick waits up to 3 x 6 s for the minute that just closed; (2) a `traded` result whose signal bar
   closed at most 2 minutes ago, and whose simulated trade is still open, is entered as the signal it was (same stop,
   market order, marked `late_data`). Older signals are still `missed` and never chased; a missed day is never
