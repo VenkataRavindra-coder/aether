@@ -1,0 +1,230 @@
+{
+  "variants": {
+    "imom_long": {
+      "allow_short": false,
+      "trades": 1504,
+      "longs": 1504,
+      "win_rate": 0.24534574468085107,
+      "mean_gross_bp": -0.6278405343009543,
+      "avg_win_bp": 16.957633299877735,
+      "avg_loss_bp": -19.596157578188123,
+      "usd_per_trading_day_on_sleeve": -2.9447811649942217,
+      "execution_sensitivity": {
+        "cost_curve_mean_net_bp": {
+          "0.0": -0.6278405343009543,
+          "0.5": -1.6278405343009543,
+          "1.0": -2.6278405343009545,
+          "2.0": -4.6278405343009545,
+          "5.0": -10.627840534300955,
+          "10.0": -20.627840534300955,
+          "15.0": -30.627840534300955
+        },
+        "breakeven_bp_per_side": -0.31392026715047716,
+        "late_entry_1min": {
+          "trades": 1504,
+          "mean_net_bp": -10.374836751248095
+        },
+        "exit_last_minute_open": {
+          "trades": 1504,
+          "mean_net_bp": -11.062288099327587
+        }
+      },
+      "mean_net_bp": -10.627840534300955,
+      "t_stat": -15.486687856323742,
+      "boot95": [
+        -11.887226278151696,
+        -9.236658625990755
+      ],
+      "profit_factor": 0.28133568436684864,
+      "max_drawdown_pct": 79.90599555805488,
+      "sharpe": -4.560311629175213,
+      "total_net_pct": -79.90254527327035,
+      "exposure_days": 1504,
+      "eval_days": 2714,
+      "half1_mean_bp": -9.9938655149486,
+      "half2_mean_bp": -11.1524298273495,
+      "year_net_pct": {
+        "2016": -11.729280021963007,
+        "2017": -14.694429502966756,
+        "2018": -17.033347590324187,
+        "2019": -12.263330916512583,
+        "2020": -7.949249789136104,
+        "2021": -21.197544622586907,
+        "2022": -14.838330181210324,
+        "2023": -10.988140538715596,
+        "2024": -15.104898842629865,
+        "2025": -12.599971498453765,
+        "2026": -10.131196356819405
+      },
+      "years_up": 0,
+      "full_years": [
+        2016,
+        2017,
+        2018,
+        2019,
+        2020,
+        2021,
+        2022,
+        2023,
+        2024,
+        2025
+      ],
+      "stress_mean_bp": -20.627840534300955,
+      "random_entry": {
+        "p": 0.5544455544455544,
+        "real_mean": -10.627840534300955,
+        "null_mean": -10.560082604028239,
+        "null_p95": -9.743332359439917,
+        "pool_size": 2712
+      },
+      "dsr": {
+        "dsr": 5.551115123125783e-17,
+        "psr": 1.546540673302843e-13,
+        "sr_annual": -4.560311629175214,
+        "sr0_annual": 0.6415254529179165,
+        "t": 2714
+      },
+      "buy_hold_sharpe": 0.7916014031287045,
+      "criteria": {
+        "C1 trades >= 100": true,
+        "C2 mean net > 0 at 5 bp/side and bootstrap 95% lower bound > 0": false,
+        "C3 profit factor >= 1.2": false,
+        "C4 max drawdown <= 20%": false,
+        "C5 mean net > 0 in both halves (split 2021-01-01)": false,
+        "C6 positive in >= 6 of 10 full years": false,
+        "C7 mean net > 0 at 10 bp/side": false,
+        "C8 beats matched random days (p <= 0.05)": false,
+        "C9 Sharpe >= buy-and-hold Sharpe (same window)": false,
+        "C10 deflated Sharpe >= 0.95 (necessary, not sufficient)": false
+      },
+      "verdict": "historically unsupported"
+    },
+    "imom_ls": {
+      "allow_short": true,
+      "trades": 2707,
+      "longs": 1504,
+      "win_rate": 0.2571111932028075,
+      "mean_gross_bp": -0.18325447352294955,
+      "avg_win_bp": 20.00682331908196,
+      "avg_loss_bp": -20.631933809004313,
+      "usd_per_trading_day_on_sleeve": -5.07849481573814,
+      "execution_sensitivity": {
+        "cost_curve_mean_net_bp": {
+          "0.0": -0.18325447352294955,
+          "0.5": -1.1832544735229495,
+          "1.0": -2.1832544735229495,
+          "2.0": -4.1832544735229495,
+          "5.0": -10.18325447352295,
+          "10.0": -20.18325447352295,
+          "15.0": -30.18325447352295
+        },
+        "breakeven_bp_per_side": -0.09162723676147477,
+        "late_entry_1min": {
+          "trades": 2707,
+          "mean_net_bp": -9.988225796924295
+        },
+        "exit_last_minute_open": {
+          "trades": 2707,
+          "mean_net_bp": -10.455821660040398
+        }
+      },
+      "mean_net_bp": -10.18325447352295,
+      "t_stat": -17.14518697150833,
+      "boot95": [
+        -11.365583412599543,
+        -9.034669647259454
+      ],
+      "profit_factor": 0.33561036881506656,
+      "max_drawdown_pct": 93.74070846162745,
+      "sharpe": -5.223684618106274,
+      "total_net_pct": -93.73963369634514,
+      "exposure_days": 2707,
+      "eval_days": 2714,
+      "half1_mean_bp": -9.688753070076544,
+      "half2_mean_bp": -10.609396329450284,
+      "year_net_pct": {
+        "2016": -23.131641803762104,
+        "2017": -23.931520590585787,
+        "2018": -22.813459865893904,
+        "2019": -21.733440344146672,
+        "2020": -16.662356386397736,
+        "2021": -28.63470355084534,
+        "2022": -26.051547252984953,
+        "2023": -18.168336903118842,
+        "2024": -22.869470232808297,
+        "2025": -22.36670484809109,
+        "2026": -17.761251546647138
+      },
+      "years_up": 0,
+      "full_years": [
+        2016,
+        2017,
+        2018,
+        2019,
+        2020,
+        2021,
+        2022,
+        2023,
+        2024,
+        2025
+      ],
+      "stress_mean_bp": -20.18325447352295,
+      "random_entry": {
+        "p": 0.6053946053946054,
+        "real_mean": -10.18325447352295,
+        "null_mean": -10.012002347509256,
+        "null_p95": -9.06537389403714,
+        "pool_size": 2712
+      },
+      "dsr": {
+        "dsr": 0.0,
+        "psr": 0.0,
+        "sr_annual": -5.223684618106276,
+        "sr0_annual": 0.6415254529179165,
+        "t": 2714
+      },
+      "buy_hold_sharpe": 0.7916014031287045,
+      "criteria": {
+        "C1 trades >= 100": true,
+        "C2 mean net > 0 at 5 bp/side and bootstrap 95% lower bound > 0": false,
+        "C3 profit factor >= 1.2": false,
+        "C4 max drawdown <= 20%": false,
+        "C5 mean net > 0 in both halves (split 2021-01-01)": false,
+        "C6 positive in >= 6 of 10 full years": false,
+        "C7 mean net > 0 at 10 bp/side": false,
+        "C8 beats matched random days (p <= 0.05)": false,
+        "C9 Sharpe >= buy-and-hold Sharpe (same window)": false,
+        "C10 deflated Sharpe >= 0.95 (necessary, not sufficient)": false
+      },
+      "verdict": "historically unsupported"
+    }
+  },
+  "n_info": {
+    "logged": 9,
+    "backfilled": 28,
+    "outside_db": 3,
+    "pending": 2,
+    "n": 46,
+    "already_logged": 0
+  },
+  "bad_sessions": 0,
+  "sessions": 2715,
+  "benchmarks": {
+    "from": "2016-01-05",
+    "buy_hold_sharpe": 0.7916014031287045,
+    "buy_hold_total_pct": 282.6110751778705,
+    "buy_hold_max_dd_pct": 34.228961603263244,
+    "eligible_days": 2712,
+    "every_day_last_half_hour_mean_gross_bp": -0.5094453739209178
+  },
+  "pbo_reported_only": {
+    "pbo": 0.0,
+    "mean_logit": 0.6931471805599453,
+    "n_splits": 12870,
+    "n_variants": 2,
+    "rows_used": 2704
+  },
+  "data_sha256": "1ca901b413f83667d29f7a50540735537de6586d21fb089edf89e4ef175ee745",
+  "tag": "prereg-intraday-momentum-v1",
+  "commit": "06215a80ad319cdb5023d66abb93f7a63922d84f"
+}
