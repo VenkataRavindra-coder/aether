@@ -973,3 +973,19 @@ any run). Rules: `aether-research/etf_breakout/eb_rules.py` (binding copy).
   - Dollars (historical averages, not forecasts): $0.02, $0.16 and $0.82 per trading day at $100, $1,000 and
     $5,000; about $12,200 would be needed for $2 per trading day at this average.
   - No parameter change follows: the neighbours are recorded, not promoted; a changed rule is a new registration.
+
+
+## Risk-balanced ETF holding registration (pre-registered 2026-10-25, before any result)
+
+Owner decision 2026-10-25: register this first, then the 200-day filter with T-bills separately; research only,
+NO-GO for paper or live under this registration. Registration `docs/PREREG_risk_balanced_v1.md`, tag
+`prereg-risk-balanced-v1`. Rules: `aether-research/risk_balanced/rb_rules.py` (binding copy).
+
+- **Rule:** SPY, QQQ, IWM, GLD, TLT always held, weighted by inverse 63-day volatility, rebalanced at the open of each
+  month's first trading day; 5 bp per side on traded notional. Neighbours 21 and 126 days (robustness only).
+- **Test:** same hash-pinned file and window as etf-breakout-v1. Must beat equal weight (same schedule and costs) by
+  more than noise (paired bootstrap), in both halves, and beat the 200-day filter's net return without more than
+  1.25x its drawdown; DSR >= 0.95 at N = 52. Dollars at $100, $1,000 and $5,000.
+- **Separation:** no verdict overrides S2 NO-GO, the test plan, the Risk Controller, Stage 6, the soak or the Oct 22
+  decision; "historically supported" only allows a forward-journal PR.
+- **Result:** not yet run.
