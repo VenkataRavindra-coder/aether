@@ -16,6 +16,18 @@
   (manual trades never count), "paper-confirmed" needs mean net bp > 0 AND t >= 2 AND no single trade > half of the
   gross profit. Only then is a small live test discussed, and it still needs a written risk acceptance, whole-share
   capital and a separate live build through the Risk Controller. Weekly scorecard on Telegram every Friday.
+  **Execution fix 2026-10-25 (owner request; rules, stops, sizing and scoring unchanged):** on 2026-10-23 orb15's
+  breakout bar (09:47) was recorded `missed` with no order. Weakness found in the code: the ORB engine reports
+  `signal` only while the breakout bar is the LAST bar in the data, and the executor polls once a minute at :05 s.
+  If the bar that just closed has not reached the data feed by then, the next poll already holds the bar after it,
+  the engine says `traded`, and the executor records a miss without applying its own 2-minute window
+  (`MAX_SIGNAL_AGE_MIN`). Whether this, or the executor simply not yet running at 09:48 on its first day, caused the
+  2026-10-23 miss is decided by that morning's server logs (recorded below once checked).
+  Fix: (1) each tick waits up to 3 x 6 s for the minute that just closed; (2) a `traded` result whose signal bar
+  closed at most 2 minutes ago, and whose simulated trade is still open, is entered as the signal it was (same stop,
+  market order, marked `late_data`). Older signals are still `missed` and never chased; a missed day is never
+  counted as a filled trade. Each decision now records the last bar seen, the decision time and the data wait. The
+  2026-10-23 ledger row stays as written.
 - **Off:** automatic canary (`CANARY_AUTO=0`, timers disabled). **Still on (lab):** paper engine, dashboard, backups, outside monitor, daily check, stress test (stress-test paper account), tactical paper scorer.
 - The live risk ledger (`risk_mark`, weekdays 15:50 ET) still marks the live account: a market drop can latch a breaker and send a Telegram alert. With no strategy trading live this is informational; clear with `risk_admin.py reset` after review.
 

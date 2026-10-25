@@ -37,6 +37,9 @@ RISK_USD = float(os.getenv("TACTICAL_PAPER_RISK_USD", "50"))
 PREFIX = "tpx-"
 STATE = Path(os.getenv("TACTICAL_EXEC_STATE", str(HERE / "tactical_exec_state.json")))
 MAX_SIGNAL_AGE_MIN = 2          # enter only if the signal bar closed within this many minutes
+# 2026-10-25 (execution fix, rules unchanged): the minute bar that just closed can arrive a few seconds late.
+# Wait briefly for it, and honour MAX_SIGNAL_AGE_MIN even when the bar after the signal is already in the data.
+LAG_RETRIES, LAG_WAIT_S = 3, 6.0
 LEDGER = Path(os.getenv("TACTICAL_EXEC_LEDGER", str(HERE / "tactical_exec_ledger.jsonl")))
 COST_BP_PER_SIDE = 2.0          # same cost model as every AETHER test, on top of the paper fill
 # Confidence bar, fixed 2026-10-23 before any auto-trade result: per strategy, after TARGET_TRADES trades,
@@ -79,6 +82,45 @@ def plan_entry(result: dict, last_bar_t, now, price: float, risk_usd: float = RI
     if name == "engulf15":
         order["target"] = round(price + 1.5 * risk, 2)
     return order, "enter"
+
+
+def recent_traded_as_signal(result: dict, session, now):
+    """Pure. The engine reports "traded" once the bar AFTER the signal bar is in the data. If that happened
+    because the data arrived late (the signal bar closed at most MAX_SIGNAL_AGE_MIN ago) and the simulated
+    trade is still open (no stop, target or flat yet), treat it as the signal it was: same stop, same rules,
+    entry at market now. Returns (signal_like_result, signal_close_time) or (None, reason)."""
+    t = result.get("trade") or {}
+    if result.get("state") != "traded" or not t.get("entry_time"):
+        return None, "not a traded result"
+    hh, mm = map(int, t["entry_time"].split(":"))
+    signal_close = session.open.replace(hour=hh, minute=mm, second=0, microsecond=0)   # = entry bar start
+    age = now - signal_close
+    if age > timedelta(minutes=MAX_SIGNAL_AGE_MIN):
+        return None, f"signal closed {age.total_seconds() / 60:.1f} min ago (> {MAX_SIGNAL_AGE_MIN}): not chasing"
+    if t.get("exit_reason") != "data_end":
+        return None, f"simulated trade already closed ({t.get('exit_reason')}): not entering"
+    sig = {**result, "state": "signal", "trade": None, "late_data": True}
+    if result.get("strategy") == "engulf15":
+        sig["stop"] = float(t["stop"])
+    return sig, signal_close
+
+
+def fetch_with_lag_retry(fetch, symbol, session, now, sleep=None, clock=None):
+    """Fetch bars; if the minute that just closed is missing, wait and refetch (at most LAG_RETRIES times).
+    Returns (bars, seconds waited, whether the last closed minute is present)."""
+    import time as _time
+    sleep = sleep or _time.sleep
+    want = now.replace(second=0, microsecond=0) - timedelta(minutes=1)     # start of the minute that just closed
+    waited = 0.0
+    bars = fetch(symbol, session, now)
+    for _ in range(LAG_RETRIES):
+        if bars and bars[-1].t >= want:
+            return bars, waited, True
+        sleep(LAG_WAIT_S)
+        waited += LAG_WAIT_S
+        now2 = clock() if clock else now + timedelta(seconds=waited)
+        bars = fetch(symbol, session, now2)
+    return bars, waited, bool(bars and bars[-1].t >= want)
 
 
 # ---------------------------------------------------------------- state
@@ -133,7 +175,7 @@ def submit(tc, order: dict, day: str):
 
 
 # ---------------------------------------------------------------- commands
-def tick(now=None, tc=None, fetch=None, session_lookup=None):
+def tick(now=None, tc=None, fetch=None, session_lookup=None, sleep=None):
     from aether_tactical import engulfing_engine, orb_engine
     from aether_tactical.bars import fetch_session
     from aether_tactical.market_time import now_ny, session_for
@@ -141,41 +183,52 @@ def tick(now=None, tc=None, fetch=None, session_lookup=None):
     s = (session_lookup or session_for)(now.date())
     if s is None or not (s.open <= now < s.close - timedelta(minutes=5)):
         return "outside session"
-    bars = (fetch or fetch_session)(SYMBOL, s, now)
+    bars, waited, fresh = fetch_with_lag_retry(fetch or fetch_session, SYMBOL, s, now, sleep=sleep)
     if not bars:
         return "no bars yet"
+    now = now + timedelta(seconds=waited)
     state = load_state()
     day = state.setdefault(s.day, {})
     out = []
+    if waited:
+        out.append(f"data lag: waited {waited:g}s" + ("" if fresh else ", latest minute still missing"))
     for eng in (orb_engine, engulfing_engine):
         name = eng.NAME
         if name in day:
             continue                                   # one trade (or one decision) per strategy per day
         r = eng.evaluate(bars, s)
-        if name == "engulf15" and r.get("state") == "signal":
+        signal_t = bars[-1].t
+        if r.get("state") == "traded":
+            late, info = recent_traded_as_signal(r, s, now)
+            if late is not None:
+                r, signal_t = late, info - timedelta(minutes=1)
+        if name == "engulf15" and r.get("state") == "signal" and "stop" not in r:
             r = {**r, "stop": _engulf_stop(bars, s)}
-        order, why = plan_entry(r, bars[-1].t, now, bars[-1].c)
+        order, why = plan_entry(r, signal_t, now, bars[-1].c)
+        diag = {"last_bar": bars[-1].t.strftime("%H:%M"), "decided_at": now.strftime("%H:%M:%S"), "data_wait_s": waited}
         if r.get("state") in ("traded", "no_trade") and order is None:
-            day[name] = {"status": "missed" if r.get("state") == "traded" else "no_trade", "reason": r.get("reason")}
-            _log("decide", day[name]["status"], r.get("reason", ""), strategy=name)
+            day[name] = {"status": "missed" if r.get("state") == "traded" else "no_trade", "reason": r.get("reason"), **diag}
+            _log("decide", day[name]["status"], r.get("reason", ""), strategy=name, **diag)
             continue
         if order is None:
             out.append(f"{name}: {why}")
             if why.startswith("signal is stale"):
-                day[name] = {"status": "missed", "reason": why}
-                _log("decide", "missed", why, strategy=name)
+                day[name] = {"status": "missed", "reason": why, **diag}
+                _log("decide", "missed", why, strategy=name, **diag)
             continue
         tc = tc or client()
         try:
             o = submit(tc, order, s.day)
-            day[name] = {"status": "entered", "order_id": str(o.id), **order}
+            day[name] = {"status": "entered", "order_id": str(o.id), **order, **diag,
+                         **({"late_data": True} if r.get("late_data") else {})}
             _log("order", "submitted", f"BUY {order['qty']} {SYMBOL} stop {order['stop']}"
-                 + (f" target {order['target']}" if "target" in order else ""), strategy=name, order_id=str(o.id))
+                 + (f" target {order['target']}" if "target" in order else ""), strategy=name, order_id=str(o.id), **diag)
             _tell(f"{name}: BUY {order['qty']} {SYMBOL} (~${order['est_price']:.2f}), stop {order['stop']}"
-                  + (f", target {order['target']}" if "target" in order else ", exit by 15:55 NY") + f". {r.get('reason', '')}")
-            out.append(f"{name}: entered {order['qty']}")
+                  + (f", target {order['target']}" if "target" in order else ", exit by 15:55 NY") + f". {r.get('reason', '')}"
+                  + (" (bar data arrived late; entered within the 2-minute window)" if r.get("late_data") else ""))
+            out.append(f"{name}: entered {order['qty']}" + (" (late data)" if r.get("late_data") else ""))
         except Exception as e:
-            day[name] = {"status": "error", "reason": f"{type(e).__name__}: {str(e)[:200]}"}
+            day[name] = {"status": "error", "reason": f"{type(e).__name__}: {str(e)[:200]}", **diag}
             _log("order", "error", day[name]["reason"], strategy=name)
             _tell(f"{name}: order FAILED: {day[name]['reason']}")
     save_state(state)
