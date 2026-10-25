@@ -94,6 +94,22 @@ h1 span { color: var(--orange); }
 .desk .v { font: 700 16px/1.1 var(--mono); margin-top: 6px; overflow-wrap: anywhere; }
 .desk i { display: block; font: 400 9.5px/1.25 var(--mono); font-style: normal; color: var(--muted); margin-top: 3px; overflow-wrap: anywhere; }
 .pos { color: var(--good); } .neg { color: var(--bad); }
+.acct { grid-column: 1 / -1; overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; padding: 9px; background: rgba(0,0,0,.2); min-width: 0; }
+.acct.realbox { border-color: var(--orange); }
+.acct .dh { display: flex; align-items: center; gap: 5px; font: 800 11px/1.1 var(--display); text-transform: uppercase; letter-spacing: .02em; }
+.acct .dh .k { width: 7px; height: 7px; border-radius: 50%; background: var(--idle); flex: none; }
+.acct.good .dh .k { background: var(--good); } .acct.bad .dh .k { background: var(--bad); }
+.acct .dh em { margin-left: auto; font: 700 8.5px/1 var(--mono); font-style: normal; letter-spacing: .1em; color: var(--muted); border: 1px solid var(--line); border-radius: 4px; padding: 3px 5px; }
+.acct .dh em.real { color: #1b0f05; background: var(--orange); border-color: var(--orange); }
+.acct .bal { display: flex; align-items: baseline; gap: 8px; margin-top: 6px; }
+.acct .bal b { font: 700 20px/1.1 var(--mono); } .acct .bal span { font: 400 10px/1 var(--mono); color: var(--muted); }
+.acct .kv { display: grid; gap: 2px; margin-top: 4px; font: 400 10.5px/1.35 var(--mono); color: var(--muted); }
+.acct .kv b { color: var(--ink); font-weight: 700; } .acct .kv b.pos { color: var(--good); } .acct .kv b.neg { color: var(--bad); }
+.acct .hold { width: 100%; border-collapse: collapse; margin-top: 7px; font: 400 10.5px/1.3 var(--mono); }
+.acct .hold th { text-align: left; font-weight: 700; font-size: 9px; letter-spacing: .08em; text-transform: uppercase; color: var(--dim); border-bottom: 1px solid var(--line); padding: 3px 4px 3px 0; }
+.acct .hold td { padding: 4px 4px 4px 0; border-bottom: 1px solid rgba(58,50,42,.5); white-space: nowrap; }
+.acct .hold td small { color: var(--muted); } .acct .hold td.none { color: var(--muted); font-style: italic; }
+.acct > i { display: block; font: 400 9.5px/1.25 var(--mono); font-style: normal; color: var(--muted); margin-top: 6px; }
 
 /* focus panel */
 .focus { background: linear-gradient(180deg, #24201c, #191613); border: 1px solid var(--line); border-radius: 16px; padding: 14px; gap: 10px; align-content: start; }
@@ -197,7 +213,7 @@ h1 span { color: var(--orange); }
   <div class="col c3">
     <section class="panel" id="p-desks" data-p="desks">
       <div class="ph"><span class="no">06</span><h2>Accounts &amp; desks</h2><span class="run idle" id="r-desks">no data</span></div>
-      <p class="sub">where the money sits and what each desk did</p>
+      <p class="sub">where each account is invested, its balance and its gain or loss</p>
       <div class="desks" id="t-desks"></div>
       <div class="pf"><span id="f-desks"></span></div>
     </section>
@@ -268,8 +284,8 @@ h1 span { color: var(--orange); }
   const C = { blue: "#2f6fe4", green: "#1f9d5a", orange: "#e0731f", red: "#d63c46", purple: "#6a4bd8", teal: "#13968f", yellow: "#c99410", pink: "#d43f7f", slate: "#4b5563", sky: "#0e86c7" };
 
   // ---------- data (same read-only endpoints the console uses)
-  const SRC = { status: "/api/map/status", overview: "/api/overview", us: "/api/us", summary: "/api/us/summary", extras: "/api/us/extras", safety: "/api/safety", conn: "/api/connectivity" };
-  const EVERY = { status: 5, safety: 10, summary: 15, us: 20, overview: 30, extras: 30, conn: 30 };
+  const SRC = { status: "/api/map/status", overview: "/api/overview", money: "/api/money", us: "/api/us", summary: "/api/us/summary", extras: "/api/us/extras", safety: "/api/safety", conn: "/api/connectivity" };
+  const EVERY = { status: 5, safety: 10, summary: 15, us: 20, overview: 30, money: 30, extras: 30, conn: 30 };
   const D = {}, ERR = {}, AT = {};
   let signedOut = false;
   async function load(k) {
@@ -392,24 +408,36 @@ h1 span { color: var(--orange); }
     runBadge("research", t, !!(rs || u));
   }
   function renderDesks() {
-    const o = D.overview, acc = (o && o.accounts) || {}, u = D.us, g = D.status && ok(D.status.gate), ex = D.extras && ok(D.extras.orders);
-    const live = acc.live, paper = acc.paper, pos = (o && o.positions) || [], s = (o && o.summary) || {};
-    const eh = (u && u.equity_history) || [];
-    let vsSpy = "";
-    if (eh.length > 1 && eh[0].spy) { const a = eh[0], b = eh[eh.length - 1]; vsSpy = "sleeve " + pct((b.v / a.v - 1) * 100) + " · SPY " + pct((b.spy / a.spy - 1) * 100); }
+    // Panel 06 answers: where is each account invested, its balance, and its gain or loss.
+    // Each account is read with its own keys from Alpaca (/api/money); real money is never added to practice money.
+    const m = D.money, g = D.status && ok(D.status.gate), ex = D.extras && ok(D.extras.orders);
+    const accts = (m && m.accounts) || [];
+    const gl = x => num(x) ? (x >= 0 ? "pos" : "neg") : "";
+    const cards = accts.map(a => {
+      const tag = a.real_money ? "REAL MONEY" : "PRACTICE · PAPER";
+      if (!a.configured) return { k: "idle", html: `<div class="acct idle"><div class="dh"><span class="k"></span>${esc(a.title)}<em class="${a.real_money ? "real" : ""}">${tag}</em></div><i>keys for this account are not on the server, so nothing is shown</i></div>` };
+      if (a.error) return { k: "bad", html: `<div class="acct bad"><div class="dh"><span class="k"></span>${esc(a.title)}<em class="${a.real_money ? "real" : ""}">${tag}</em></div><i>could not read from Alpaca: ${esc(a.error)}</i></div>` };
+      const rows = a.holdings.length
+        ? a.holdings.map(h => `<tr><td>${esc(h.symbol)}</td><td>${esc(+h.qty.toFixed(4))}</td><td>${money(h.cost)}</td><td>${money(h.value)}</td><td class="${gl(h.gain)}">${signed(h.gain)} <small>${pct(h.gain_pct)}</small></td></tr>`).join("")
+        : `<tr><td colspan="5" class="none">nothing invested · all cash</td></tr>`;
+      const start = num(a.since_start) ? `<span>Since start <b class="${gl(a.since_start)}">${signed(a.since_start)} (${pct(a.since_start_pct)})</b> <small>from ${money(a.start_balance)} on ${esc(a.start_date)}</small></span>` : `<span>Since start <b>—</b> <small>${esc(a.start_error || "no history yet")}</small></span>`;
+      return { k: "good", html: `<div class="acct good${a.real_money ? " realbox" : ""}">
+        <div class="dh"><span class="k"></span>${esc(a.title)}<em class="${a.real_money ? "real" : ""}">${tag}</em></div>
+        <div class="bal"><b>${money(a.balance)}</b><span>balance</span></div>
+        <div class="kv"><span>Today <b class="${gl(a.today)}">${signed(a.today)}</b></span>${start}<span>Invested <b>${money(a.invested)}</b> · cash <b>${money(a.cash)}</b></span></div>
+        <table class="hold"><thead><tr><th>Where</th><th>Shares</th><th>Cost</th><th>Now</th><th>Gain / loss</th></tr></thead><tbody>${rows}</tbody></table>
+        <i>${esc(a.what)}</i></div>` };
+    });
+    const cn = g && g.live_canary, auto = m ? m.canary_auto : null;
     const lastOrd = ex && ex.orders && ex.orders[0];
-    const cn = g && g.live_canary;
-    const d = [
-      { n: "Live account", k: !o ? "idle" : !live || !live.configured ? "idle" : "good", v: live && live.configured ? money(live.equity) : "—", i: !o ? "no data" : live && live.configured ? signed(live.today_pl) + " since last close" : "live keys not set", cls: live && num(live.today_pl) ? (live.today_pl >= 0 ? "pos" : "neg") : "" },
-      { n: "Paper account", k: !o ? "idle" : paper && paper.configured ? "good" : "idle", v: paper && paper.configured ? money(paper.equity) : "—", i: !o ? "no data" : paper && paper.configured ? signed(paper.today_pl) + " (" + pct(paper.today_pl_pct) + ")" : "not configured" },
-      { n: "US sleeve", k: !u ? "idle" : u.kill_switch ? "bad" : "good", v: u && num(u.equity) ? money(u.equity) : "—", i: !u ? "no data" : vsSpy || money(u.allocation_usd, 0) + " allocation" },
-      { n: "Canary", k: !cn ? "idle" : num(cn.spent) && cn.spent >= cn.cap_day ? "warn" : "good", v: cn ? money(cn.spent) : "—", i: cn ? "of " + money(cn.cap_day, 0) + " today · max " + money(cn.cap_order, 0) + "/order" : "no data" },
-      { n: "Positions", k: !o ? "idle" : pos.length ? "good" : "idle", v: o ? String(pos.length) : "—", i: o ? "unrealised " + signed(s.unrealized) : "no data", cls: num(s.unrealized) ? (s.unrealized >= 0 ? "pos" : "neg") : "" },
-      { n: "Last order", k: !ex ? "idle" : !lastOrd ? "idle" : /cancel|reject|expire/.test(lastOrd.status) ? "warn" : "good", v: lastOrd ? lastOrd.symbol : "—", i: !ex ? "no data" : lastOrd ? lastOrd.side + " · " + lastOrd.status + " · " + hm(lastOrd.submitted_at) : "no orders yet" }
+    const when = iso => { const t = Date.parse(iso); return isNaN(t) ? "—" : new Date(t).toLocaleString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }); };
+    const small = [
+      { n: "Live canary", k: auto === null ? "idle" : auto ? "good" : "idle", v: auto === null ? "—" : auto ? "ON" : "OFF", i: auto === null ? "no data" : auto ? (cn ? money(cn.spent) + " bought today" : "running") : "automatic canary switched off (CANARY_AUTO=0)" },
+      { n: "Last engine order · paper", k: !ex ? "idle" : !lastOrd ? "idle" : /cancel|reject|expire/.test(lastOrd.status) ? "warn" : "good", v: lastOrd ? lastOrd.symbol : "—", i: !ex ? "no data" : lastOrd ? lastOrd.side + " · " + lastOrd.status + " · " + when(lastOrd.submitted_at) : "no orders yet" }
     ];
-    $("t-desks").innerHTML = d.map(x => `<div class="desk ${x.k}"><div class="dh"><span class="k"></span>${esc(x.n)}</div><div class="v">${esc(x.v)}</div><i class="${x.cls || ""}">${esc(x.i)}</i></div>`).join("");
-    $("f-desks").textContent = num(s.total_pl) ? "since start " + signed(s.total_pl) : (ERR.overview || "");
-    runBadge("desks", d, !!(o || u));
+    $("t-desks").innerHTML = cards.map(c => c.html).join("") + small.map(x => `<div class="desk ${x.k}"><div class="dh"><span class="k"></span>${esc(x.n)}</div><div class="v">${esc(x.v)}</div><i>${esc(x.i)}</i></div>`).join("");
+    $("f-desks").textContent = m ? "read from Alpaca " + ago(since(m.generated_at)) + " ago · real and practice money are never added together" : (ERR.money || "");
+    runBadge("desks", cards.concat(small), !!m);
   }
   const JOBS = [["health", "Health", "pulse", C.green, "every minute"], ["watchdog", "Watchdog", "eye", C.purple, "every 5 min"], ["backup", "Backup", "box", C.blue, "03:15 UTC"], ["daily", "Daily checks", "check", C.teal, "04:30 UTC"], ["stress", "Stress test", "gauge", C.yellow, "weekdays 16:00 UTC"], ["riskmark", "Risk mark", "shield", C.red, "weekdays 15:50 NY"], ["canary-run", "Auto canary", "target", C.orange, "weekdays 10:05 NY (only if CANARY_AUTO=1)"], ["canary-close", "Canary close", "clock", C.sky, "weekdays 15:52 NY"]];
   function renderJobs() {
