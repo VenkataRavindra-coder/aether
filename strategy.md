@@ -1014,3 +1014,20 @@ NO-GO for paper or live under this registration. Registration `docs/PREREG_risk_
   - Caution: the edge over equal weight is thin (21-day neighbour's paired low -0.00) and PBO is 0.88 (reported only).
   - Reading: a better-balanced way to hold these ETFs, not a proven edge. Dollars (historical averages): $0.04,
     $0.43, $2.13 per trading day at $100, $1,000, $5,000; about $4,700 for $2 per day. No parameter change follows.
+
+
+## 200-day filter with T-bills registration (pre-registered 2026-10-25, before any result or BIL download)
+
+Owner decision 2026-10-25: register the 200-day filter with idle capital in short-term T-bills (BIL) as a separate
+strategy; research only, NO-GO for paper or live under this registration. Registration `docs/PREREG_sma_tbill_v1.md`,
+tag `prereg-sma-tbill-v1` (created after the BIL data and its manifest are committed). Rules:
+`aether-research/sma_tbill/st_rules.py` (binding copy).
+
+- **Rule:** SPY, QQQ, IWM, GLD, TLT in five sleeves; each holds its ETF above its 200-day average and BIL below it,
+  switching at the next open; 5 bp per side on every trade, BIL included. Neighbours 150 and 250 days.
+- **Test:** registered ETF file plus a one-time BIL download (hash in a committed manifest), 2007-06-01 to
+  2026-10-06. Must add net return over the same rule with cash (expected by construction, disclosed) and, the real
+  test, match buy-and-hold's Sharpe with no more drawdown; DSR >= 0.95 at N = 55. Dollars at $100, $1,000, $5,000.
+- **Separation:** no verdict overrides S2 NO-GO, the test plan, the Risk Controller, Stage 6, the soak or the Oct 22
+  decision; "historically supported" only allows a forward-journal PR.
+- **Result:** not yet run.
