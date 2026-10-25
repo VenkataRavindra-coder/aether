@@ -906,6 +906,165 @@
    "live": null,
    "next_evaluation": null,
    "registered": "2026-10-25"
+  },
+  {
+   "id": "eb_55_20",
+   "name": "ETF channel breakout 55/20",
+   "family": "trend breakout",
+   "version": "etf-breakout-v1",
+   "registration": {
+    "doc": "docs/PREREG_etf_breakout_v1.md",
+    "tag": "prereg-etf-breakout-v1"
+   },
+   "rules": "aether-research/etf_breakout/eb_rules.py",
+   "params": {
+    "entry_n": 55,
+    "exit_n": 20,
+    "judged": true,
+    "idle": "cash 0%"
+   },
+   "markets": [
+    "SPY",
+    "QQQ",
+    "IWM",
+    "GLD",
+    "TLT"
+   ],
+   "timeframe": "daily",
+   "data": {
+    "period": "2007-03-01..2026-10-06",
+    "source": "Yahoo daily, adjusted",
+    "sha256": "e9524a2a...71ed9b6"
+   },
+   "trials": {
+    "batch": "etf-breakout-v1",
+    "ids": [
+     16
+    ]
+   },
+   "status": "inconclusive",
+   "stage": "historical",
+   "verdict": "MIXED",
+   "reasons": [
+    "Sharpe 0.62 below the 200-day filter (0.85) and buy-and-hold (0.85) on the same ETFs",
+    "deflated Sharpe 0.444 < 0.95 (N = 49)",
+    "QQQ supplied 55% of the profit (> 50%)",
+    "a drawdown reducer, not an edge: CAGR 4.0% vs 11.3% holding, max drawdown 12.9% vs 29.4%"
+   ],
+   "historical": {
+    "source": "results_json",
+    "results_file": "aether-research/etf_breakout/results/etf_breakout_20261025_054553.json",
+    "variant": "eb_55_20"
+   },
+   "forward": null,
+   "paper": null,
+   "live": null,
+   "next_evaluation": null,
+   "registered": "2026-10-25"
+  },
+  {
+   "id": "eb_20_10",
+   "name": "ETF channel breakout 20/10 (neighbour)",
+   "family": "trend breakout",
+   "version": "etf-breakout-v1",
+   "registration": {
+    "doc": "docs/PREREG_etf_breakout_v1.md",
+    "tag": "prereg-etf-breakout-v1"
+   },
+   "rules": "aether-research/etf_breakout/eb_rules.py",
+   "params": {
+    "entry_n": 20,
+    "exit_n": 10,
+    "judged": false,
+    "idle": "cash 0%"
+   },
+   "markets": [
+    "SPY",
+    "QQQ",
+    "IWM",
+    "GLD",
+    "TLT"
+   ],
+   "timeframe": "daily",
+   "data": {
+    "period": "2007-03-01..2026-10-06",
+    "source": "Yahoo daily, adjusted",
+    "sha256": "e9524a2a...71ed9b6"
+   },
+   "trials": {
+    "batch": "etf-breakout-v1",
+    "ids": [
+     17
+    ]
+   },
+   "status": "inconclusive",
+   "stage": "historical",
+   "verdict": "not judged (neighbour)",
+   "reasons": [
+    "robustness neighbour of eb_55_20; positive, but the judged base is MIXED"
+   ],
+   "historical": {
+    "source": "results_json",
+    "results_file": "aether-research/etf_breakout/results/etf_breakout_20261025_054553.json",
+    "variant": "eb_20_10"
+   },
+   "forward": null,
+   "paper": null,
+   "live": null,
+   "next_evaluation": null,
+   "registered": "2026-10-25"
+  },
+  {
+   "id": "eb_100_50",
+   "name": "ETF channel breakout 100/50 (neighbour)",
+   "family": "trend breakout",
+   "version": "etf-breakout-v1",
+   "registration": {
+    "doc": "docs/PREREG_etf_breakout_v1.md",
+    "tag": "prereg-etf-breakout-v1"
+   },
+   "rules": "aether-research/etf_breakout/eb_rules.py",
+   "params": {
+    "entry_n": 100,
+    "exit_n": 50,
+    "judged": false,
+    "idle": "cash 0%"
+   },
+   "markets": [
+    "SPY",
+    "QQQ",
+    "IWM",
+    "GLD",
+    "TLT"
+   ],
+   "timeframe": "daily",
+   "data": {
+    "period": "2007-03-01..2026-10-06",
+    "source": "Yahoo daily, adjusted",
+    "sha256": "e9524a2a...71ed9b6"
+   },
+   "trials": {
+    "batch": "etf-breakout-v1",
+    "ids": [
+     18
+    ]
+   },
+   "status": "inconclusive",
+   "stage": "historical",
+   "verdict": "not judged (neighbour)",
+   "reasons": [
+    "robustness neighbour of eb_55_20; positive, but the judged base is MIXED"
+   ],
+   "historical": {
+    "source": "results_json",
+    "results_file": "aether-research/etf_breakout/results/etf_breakout_20261025_054553.json",
+    "variant": "eb_100_50"
+   },
+   "forward": null,
+   "paper": null,
+   "live": null,
+   "next_evaluation": null,
+   "registered": "2026-10-25"
   }
  ]
 }
