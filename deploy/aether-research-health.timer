@@ -1,0 +1,9 @@
+[Unit]
+Description=Research health check on weekdays at 16:45 New York (20 minutes after the forward journals)
+
+[Timer]
+OnCalendar=Mon..Fri *-*-* 16:45:00 America/New_York
+Persistent=true
+
+[Install]
+WantedBy=timers.target

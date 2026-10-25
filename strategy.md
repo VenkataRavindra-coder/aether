@@ -912,3 +912,32 @@ run). Rules: `aether-research/intraday_momentum/im_rules.py` (binding copy).
     last half hour itself averaged -0.51 bp gross on all 2,712 days, so there is no gross edge to pay even 0.5 bp
     per side (break-even cost is below zero). The 2018 paper's effect (sample 1993-2013) is not present in SPY
     2016-2026. Late entry and earlier exit change nothing (-10.37 / -11.06 bp).
+
+
+## Strategy registry and promotion ladder (2026-10-25)
+
+Owner request 2026-10-25: one registry of every strategy (retired and inconclusive included), one research page,
+automatic health checks. Nothing here changes S2, the test plan, the Risk Controller, the halt file or `LIVE_TRADING`.
+
+- **Registry:** `aether-research/registry/strategies.json` lists every registered strategy with version, rules
+  file, parameters, markets, data period and hash, trial ids, status, verdict and reasons. Retired entries are
+  never deleted. Numbers are read from committed results files where they exist; older verdicts are headlines
+  copied from this file. Trial accounting: N = registry trial ids (must equal the trial database) + 28 backfilled
+  + 3 outside the database (46 on 2026-10-25).
+- **Research page:** `/research` (`research_view.py`, `research.html`) shows each strategy's historical, forward,
+  paper and live evidence in separate columns, ranks by evidence grade (strong, promising, weak lead,
+  inconclusive, rejected), never by return, and shows forward-journal health, problems and the trial count.
+- **Health check:** `research_health.py`, timer `aether-research-health` (weekdays 16:45 New York). Alerts by
+  Telegram on a skipped or failed forward run, missing data, duplicate journal rows, replay mismatches, trial-count
+  drift or registry errors; weekly summary on Fridays. Each check is isolated; one failure never stops the others.
+  It reads files only and places no orders.
+- **Promotion ladder (each step needs the one before it; none is automatic):**
+  1. *Registered:* rules, data, costs, benchmarks and criteria frozen and tagged before any result.
+  2. *Historical:* all registered criteria pass ("historically supported"). This permits forward observation only.
+  3. *Forward (shadow):* frozen rules replayed on new data, no orders, until the registered trade count or end
+     date; must stay consistent (mean net > 0) with no mismatches.
+  4. *Paper:* a separate PR and an explicit owner approval; orders on the second paper account only.
+  5. *Live:* the test plan's go/no-go, the Risk Controller and canary path, Stage 6 and the S2 soak rules as
+     already written, and an explicit owner decision. `LIVE_TRADING` stays false until then.
+- **Financial target:** an average of $2 per trading day, measured on paper and live results only. It never
+  justifies forcing a trade, relaxing a criterion or skipping a step.

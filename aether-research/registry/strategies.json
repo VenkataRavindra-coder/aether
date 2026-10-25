@@ -1,0 +1,911 @@
+{
+ "schema": 1,
+ "updated": "2026-10-25",
+ "about": "AETHER strategy registry. Every strategy ever registered or tested, including retired ones. Nothing is deleted: a retired entry keeps its reasons and result pointers. Numbers come from results files where they exist; 'strategy.md' headlines are copied from the recorded verdicts.",
+ "trial_accounting": {
+  "backfilled": 28,
+  "outside_db": 3,
+  "note": "28 stage-1 estimates (S2 and earlier crypto/US attempts) in untracked_trials, 3 daily_edges_backtest.py attempts outside the database; N = logged + 28 + 3"
+ },
+ "stages": [
+  "historical",
+  "forward",
+  "paper",
+  "live"
+ ],
+ "strategies": [
+  {
+   "id": "s2_us_etf_momentum_v1",
+   "name": "S2 US ETF momentum",
+   "family": "cross-sectional momentum",
+   "version": "v1",
+   "registration": {
+    "doc": "docs/PREREG_us_momentum.md",
+    "tag": "prereg-us-momentum"
+   },
+   "rules": "us_strategy.py",
+   "params": {
+    "rank": "mean of 63/126/252-day returns",
+    "hold": "top 3 equal weight",
+    "filter": "score <= 0 -> SHY",
+    "rebalance": "monthly"
+   },
+   "markets": [
+    "SPY",
+    "QQQ",
+    "IWM",
+    "EFA",
+    "EEM",
+    "IEF",
+    "TLT",
+    "GLD",
+    "DBC",
+    "VNQ",
+    "SHY"
+   ],
+   "timeframe": "monthly",
+   "data": {
+    "period": "2007-03-01..2026-10-06",
+    "source": "Yahoo daily, adjusted",
+    "sha256": "e9524a2a...71ed9b6"
+   },
+   "trials": {
+    "batch": null,
+    "ids": [],
+    "note": "inside the 28 backfilled stage-1 trials"
+   },
+   "status": "frozen_no_go",
+   "stage": "paper",
+   "verdict": "NO-GO (frozen)",
+   "reasons": [
+    "deflated Sharpe 0.802 < 0.95 (N = 28)",
+    "Monte Carlo max drawdown 30.7% > 27% limit",
+    "Sharpe equals 60/40 (0.78 vs 0.78)"
+   ],
+   "historical": {
+    "source": "strategy.md",
+    "results_file": "aether-research/us_momentum/results/strategy_truth_yf_20261007_074638.json",
+    "headline": {
+     "sharpe": 0.779,
+     "cagr_pct": 10.8,
+     "max_drawdown_pct": 20.7,
+     "dsr": 0.802,
+     "benchmark": "60/40 Sharpe 0.779; SPY 0.639"
+    }
+   },
+   "forward": null,
+   "paper": {
+    "source": "engine",
+    "note": "runs on the main paper account ($5,000 sleeve); see the board and /us"
+   },
+   "live": null,
+   "next_evaluation": "single-use holdout at the end of the paper soak; rule stays frozen",
+   "registered": "2026-10-07"
+  },
+  {
+   "id": "daily_v1_sa",
+   "name": "S-A 200-day trend filter, six ETFs",
+   "family": "trend filter",
+   "version": "daily-v1",
+   "registration": {
+    "doc": "docs/PREREG_daily_v1.md",
+    "tag": "prereg-daily-v1.3"
+   },
+   "rules": "aether-research/us_momentum/daily_candidates.py",
+   "params": {},
+   "markets": [
+    "SPY",
+    "QQQ",
+    "IWM",
+    "EFA",
+    "TLT",
+    "GLD",
+    "SHY"
+   ],
+   "timeframe": "daily",
+   "data": {
+    "period": "2007-03-01..2026-10-06",
+    "source": "Yahoo daily, adjusted; SIP 09:45 check 2016+",
+    "sha256": null
+   },
+   "trials": {
+    "batch": "daily-v1",
+    "ids": [
+     7
+    ]
+   },
+   "status": "retired",
+   "stage": "historical",
+   "verdict": "UNSUPPORTED",
+   "reasons": [
+    "deflated Sharpe 0.121 < 0.95",
+    "PBO 0.562 > 0.05",
+    "fails 09:45 execution criterion",
+    "a drawdown reducer, not an edge"
+   ],
+   "historical": {
+    "source": "strategy.md",
+    "results_file": null,
+    "headline": {
+     "sharpe": 0.82,
+     "cagr_pct": 6.8,
+     "max_drawdown_pct": 16.1,
+     "dsr": 0.121,
+     "pbo": 0.562,
+     "benchmark": "CAGR below SPY (6.8% vs 11.2%); 09:45 Sharpe 0.93 vs 60/40 0.96"
+    }
+   },
+   "forward": null,
+   "paper": null,
+   "live": null,
+   "next_evaluation": null,
+   "registered": "2026-10-19"
+  },
+  {
+   "id": "daily_v1_sb",
+   "name": "S-B SPY RSI(2) mean reversion",
+   "family": "mean reversion",
+   "version": "daily-v1",
+   "registration": {
+    "doc": "docs/PREREG_daily_v1.md",
+    "tag": "prereg-daily-v1.3"
+   },
+   "rules": "aether-research/us_momentum/daily_candidates.py",
+   "params": {},
+   "markets": [
+    "SPY",
+    "SHY"
+   ],
+   "timeframe": "daily",
+   "data": {
+    "period": "2007-03-01..2026-10-06",
+    "source": "Yahoo daily, adjusted; SIP 09:45 check 2016+",
+    "sha256": null
+   },
+   "trials": {
+    "batch": "daily-v1",
+    "ids": [
+     8
+    ]
+   },
+   "status": "retired",
+   "stage": "historical",
+   "verdict": "UNSUPPORTED",
+   "reasons": [
+    "deflated Sharpe 0.009",
+    "PBO 0.584",
+    "fails benchmarks and 09:45 criterion"
+   ],
+   "historical": {
+    "source": "strategy.md",
+    "results_file": null,
+    "headline": {
+     "sharpe": 0.54,
+     "cagr_pct": 3.2,
+     "trades": 159,
+     "mean_trade_pct": 0.21,
+     "dsr": 0.009,
+     "pbo": 0.584
+    }
+   },
+   "forward": null,
+   "paper": null,
+   "live": null,
+   "next_evaluation": null,
+   "registered": "2026-10-19"
+  },
+  {
+   "id": "daily_v1_sc",
+   "name": "S-C TLT turn-of-month",
+   "family": "seasonal",
+   "version": "daily-v1",
+   "registration": {
+    "doc": "docs/PREREG_daily_v1.md",
+    "tag": "prereg-daily-v1.3"
+   },
+   "rules": "aether-research/us_momentum/daily_candidates.py",
+   "params": {},
+   "markets": [
+    "TLT",
+    "SHY"
+   ],
+   "timeframe": "daily",
+   "data": {
+    "period": "2007-03-01..2026-10-06",
+    "source": "Yahoo daily, adjusted; SIP 09:45 check 2016+",
+    "sha256": null
+   },
+   "trials": {
+    "batch": "daily-v1",
+    "ids": [
+     9
+    ]
+   },
+   "status": "retired",
+   "stage": "historical",
+   "verdict": "UNSUPPORTED",
+   "reasons": [
+    "negative return",
+    "no effect vs random days (p 0.99)"
+   ],
+   "historical": {
+    "source": "strategy.md",
+    "results_file": null,
+    "headline": {
+     "sharpe": -0.45,
+     "cagr_pct": -3.2,
+     "max_drawdown_pct": 56.0,
+     "random_day_p": 0.99
+    }
+   },
+   "forward": null,
+   "paper": null,
+   "live": null,
+   "next_evaluation": null,
+   "registered": "2026-10-19"
+  },
+  {
+   "id": "tactical_orb15",
+   "name": "Tactical A opening-range breakout (orb15)",
+   "family": "intraday breakout",
+   "version": "tactical-hist-v1",
+   "registration": {
+    "doc": "docs/PREREG_tactical_hist_v1.md",
+    "tag": "prereg-tactical-hist-v1"
+   },
+   "rules": "aether_tactical/",
+   "params": {
+    "variant": "orb15",
+    "baseline": true
+   },
+   "markets": [
+    "SPY"
+   ],
+   "timeframe": "1-minute / 15-minute",
+   "data": {
+    "period": "2016-01-04..2026-10-20",
+    "source": "Alpaca SIP 1-minute",
+    "sha256": "1ca901b4...5ee745"
+   },
+   "trials": {
+    "batch": "tactical-hist-v1",
+    "ids": [
+     1
+    ]
+   },
+   "status": "retired",
+   "stage": "paper",
+   "verdict": "HISTORICALLY UNSUPPORTED",
+   "reasons": [
+    "negative after costs",
+    "up in 3 of 10 years",
+    "DSR 0.001"
+   ],
+   "historical": {
+    "source": "strategy.md",
+    "results_file": null,
+    "headline": {
+     "trades": 1792,
+     "mean_net_bp": -1.53,
+     "t_stat": -1.22,
+     "profit_factor": 0.92,
+     "total_net_pct": -25.9,
+     "max_drawdown_pct": 29.7,
+     "dsr": 0.001
+    }
+   },
+   "forward": null,
+   "paper": {
+    "source": "tactical_exec_ledger",
+    "strategy": "orb15",
+    "symbol": "QQQ",
+    "account": "second paper (stress-test)",
+    "target_trades": 40
+   },
+   "live": null,
+   "next_evaluation": "40 paper trades on QQQ (historical verdict already bars live)",
+   "registered": "2026-10-22"
+  },
+  {
+   "id": "tactical_orb10",
+   "name": "Tactical A opening-range breakout (orb10)",
+   "family": "intraday breakout",
+   "version": "tactical-hist-v1",
+   "registration": {
+    "doc": "docs/PREREG_tactical_hist_v1.md",
+    "tag": "prereg-tactical-hist-v1"
+   },
+   "rules": "aether_tactical/",
+   "params": {
+    "variant": "orb10",
+    "baseline": false
+   },
+   "markets": [
+    "SPY"
+   ],
+   "timeframe": "1-minute / 15-minute",
+   "data": {
+    "period": "2016-01-04..2026-10-20",
+    "source": "Alpaca SIP 1-minute",
+    "sha256": "1ca901b4...5ee745"
+   },
+   "trials": {
+    "batch": "tactical-hist-v1",
+    "ids": [
+     2
+    ]
+   },
+   "status": "retired",
+   "stage": "historical",
+   "verdict": "HISTORICALLY UNSUPPORTED",
+   "reasons": [
+    "neighbour of the baseline; also negative"
+   ],
+   "historical": {
+    "source": "strategy.md",
+    "results_file": null,
+    "headline": {
+     "note": "neighbour also negative (strategy.md)"
+    }
+   },
+   "forward": null,
+   "paper": null,
+   "live": null,
+   "next_evaluation": null,
+   "registered": "2026-10-22"
+  },
+  {
+   "id": "tactical_orb30",
+   "name": "Tactical A opening-range breakout (orb30)",
+   "family": "intraday breakout",
+   "version": "tactical-hist-v1",
+   "registration": {
+    "doc": "docs/PREREG_tactical_hist_v1.md",
+    "tag": "prereg-tactical-hist-v1"
+   },
+   "rules": "aether_tactical/",
+   "params": {
+    "variant": "orb30",
+    "baseline": false
+   },
+   "markets": [
+    "SPY"
+   ],
+   "timeframe": "1-minute / 15-minute",
+   "data": {
+    "period": "2016-01-04..2026-10-20",
+    "source": "Alpaca SIP 1-minute",
+    "sha256": "1ca901b4...5ee745"
+   },
+   "trials": {
+    "batch": "tactical-hist-v1",
+    "ids": [
+     3
+    ]
+   },
+   "status": "retired",
+   "stage": "historical",
+   "verdict": "HISTORICALLY UNSUPPORTED",
+   "reasons": [
+    "neighbour of the baseline; also negative"
+   ],
+   "historical": {
+    "source": "strategy.md",
+    "results_file": null,
+    "headline": {
+     "note": "neighbour also negative (strategy.md)"
+    }
+   },
+   "forward": null,
+   "paper": null,
+   "live": null,
+   "next_evaluation": null,
+   "registered": "2026-10-22"
+  },
+  {
+   "id": "tactical_engulf15_v1.5",
+   "name": "Tactical B 15-min bullish engulfing (engulf15_v1.5)",
+   "family": "intraday candlestick",
+   "version": "tactical-hist-v1",
+   "registration": {
+    "doc": "docs/PREREG_tactical_hist_v1.md",
+    "tag": "prereg-tactical-hist-v1"
+   },
+   "rules": "aether_tactical/",
+   "params": {
+    "variant": "engulf15_v1.5",
+    "baseline": true
+   },
+   "markets": [
+    "SPY"
+   ],
+   "timeframe": "1-minute / 15-minute",
+   "data": {
+    "period": "2016-01-04..2026-10-20",
+    "source": "Alpaca SIP 1-minute",
+    "sha256": "1ca901b4...5ee745"
+   },
+   "trials": {
+    "batch": "tactical-hist-v1",
+    "ids": [
+     4
+    ]
+   },
+   "status": "retired",
+   "stage": "paper",
+   "verdict": "HISTORICALLY UNSUPPORTED",
+   "reasons": [
+    "negative after costs",
+    "up in 2 of 10 years",
+    "DSR 0.001"
+   ],
+   "historical": {
+    "source": "strategy.md",
+    "results_file": null,
+    "headline": {
+     "trades": 338,
+     "mean_net_bp": -1.81,
+     "t_stat": -0.97,
+     "profit_factor": 0.84,
+     "total_net_pct": -6.1,
+     "max_drawdown_pct": 12.4,
+     "dsr": 0.001
+    }
+   },
+   "forward": null,
+   "paper": {
+    "source": "tactical_exec_ledger",
+    "strategy": "engulf15",
+    "symbol": "QQQ",
+    "account": "second paper (stress-test)",
+    "target_trades": 40
+   },
+   "live": null,
+   "next_evaluation": "40 paper trades on QQQ (historical verdict already bars live)",
+   "registered": "2026-10-22"
+  },
+  {
+   "id": "tactical_engulf15_v1.3",
+   "name": "Tactical B 15-min bullish engulfing (engulf15_v1.3)",
+   "family": "intraday candlestick",
+   "version": "tactical-hist-v1",
+   "registration": {
+    "doc": "docs/PREREG_tactical_hist_v1.md",
+    "tag": "prereg-tactical-hist-v1"
+   },
+   "rules": "aether_tactical/",
+   "params": {
+    "variant": "engulf15_v1.3",
+    "baseline": false
+   },
+   "markets": [
+    "SPY"
+   ],
+   "timeframe": "1-minute / 15-minute",
+   "data": {
+    "period": "2016-01-04..2026-10-20",
+    "source": "Alpaca SIP 1-minute",
+    "sha256": "1ca901b4...5ee745"
+   },
+   "trials": {
+    "batch": "tactical-hist-v1",
+    "ids": [
+     5
+    ]
+   },
+   "status": "retired",
+   "stage": "historical",
+   "verdict": "HISTORICALLY UNSUPPORTED",
+   "reasons": [
+    "neighbour of the baseline; also negative"
+   ],
+   "historical": {
+    "source": "strategy.md",
+    "results_file": null,
+    "headline": {
+     "note": "neighbour also negative (strategy.md)"
+    }
+   },
+   "forward": null,
+   "paper": null,
+   "live": null,
+   "next_evaluation": null,
+   "registered": "2026-10-22"
+  },
+  {
+   "id": "tactical_engulf15_v2.0",
+   "name": "Tactical B 15-min bullish engulfing (engulf15_v2.0)",
+   "family": "intraday candlestick",
+   "version": "tactical-hist-v1",
+   "registration": {
+    "doc": "docs/PREREG_tactical_hist_v1.md",
+    "tag": "prereg-tactical-hist-v1"
+   },
+   "rules": "aether_tactical/",
+   "params": {
+    "variant": "engulf15_v2.0",
+    "baseline": false
+   },
+   "markets": [
+    "SPY"
+   ],
+   "timeframe": "1-minute / 15-minute",
+   "data": {
+    "period": "2016-01-04..2026-10-20",
+    "source": "Alpaca SIP 1-minute",
+    "sha256": "1ca901b4...5ee745"
+   },
+   "trials": {
+    "batch": "tactical-hist-v1",
+    "ids": [
+     6
+    ]
+   },
+   "status": "retired",
+   "stage": "historical",
+   "verdict": "HISTORICALLY UNSUPPORTED",
+   "reasons": [
+    "neighbour of the baseline; also negative"
+   ],
+   "historical": {
+    "source": "strategy.md",
+    "results_file": null,
+    "headline": {
+     "note": "neighbour also negative (strategy.md)"
+    }
+   },
+   "forward": null,
+   "paper": null,
+   "live": null,
+   "next_evaluation": null,
+   "registered": "2026-10-22"
+  },
+  {
+   "id": "tpb_engulf_1h",
+   "name": "Trend pullback engulfing (1-hour)",
+   "family": "trend pullback candlestick",
+   "version": "trend-pullback-v1",
+   "registration": {
+    "doc": "docs/PREREG_trend_pullback_v1.md",
+    "tag": "prereg-trend-pullback-v1"
+   },
+   "rules": "aether-research/trend_pullback/rules.py",
+   "params": {
+    "trend": "close > EMA50",
+    "pullback": "low <= EMA20",
+    "target_r": 2.0
+   },
+   "markets": [
+    "SPY"
+   ],
+   "timeframe": "1-hour",
+   "data": {
+    "period": "2016-01-04..2026-10-20",
+    "source": "Alpaca SIP 1-minute",
+    "sha256": "1ca901b4...5ee745"
+   },
+   "trials": {
+    "batch": "trend-pullback-v1",
+    "ids": [
+     12
+    ]
+   },
+   "status": "collecting",
+   "stage": "forward",
+   "verdict": "MIXED",
+   "reasons": [
+    "second half negative (-3.14 bp)",
+    "negative at 10 bp/side",
+    "DSR 0.035"
+   ],
+   "historical": {
+    "source": "results_json",
+    "results_file": "aether-research/trend_pullback/results/trend_pullback_20261025_051509.json",
+    "variant": "tpb_engulf_1h"
+   },
+   "forward": {
+    "source": "forward_journal",
+    "journal": "aether-research/trend_pullback/forward_data/journal.jsonl",
+    "status_file": "aether-research/trend_pullback/forward_data/last_run.json",
+    "variant": "tpb_engulf_1h",
+    "schedule": {
+     "days": "Mon..Fri",
+     "time": "16:25",
+     "tz": "America/New_York"
+    },
+    "unit": "aether-trendpb-forward",
+    "started": "2026-10-26",
+    "target_trades": 30,
+    "ends": "2027-10-26"
+   },
+   "paper": null,
+   "live": null,
+   "next_evaluation": "30 forward trades or 2027-10-26",
+   "registered": "2026-10-23"
+  },
+  {
+   "id": "tpb_hammer_1h",
+   "name": "Trend pullback hammer (1-hour)",
+   "family": "trend pullback candlestick",
+   "version": "trend-pullback-v1",
+   "registration": {
+    "doc": "docs/PREREG_trend_pullback_v1.md",
+    "tag": "prereg-trend-pullback-v1"
+   },
+   "rules": "aether-research/trend_pullback/rules.py",
+   "params": {
+    "trend": "close > EMA50",
+    "pullback": "low <= EMA20",
+    "target_r": 2.0
+   },
+   "markets": [
+    "SPY"
+   ],
+   "timeframe": "1-hour",
+   "data": {
+    "period": "2016-01-04..2026-10-20",
+    "source": "Alpaca SIP 1-minute",
+    "sha256": "1ca901b4...5ee745"
+   },
+   "trials": {
+    "batch": "trend-pullback-v1",
+    "ids": [
+     13
+    ]
+   },
+   "status": "collecting",
+   "stage": "forward",
+   "verdict": "INSUFFICIENT EVIDENCE",
+   "reasons": [
+    "81 trades < 100",
+    "bootstrap 95% low below 0",
+    "negative at 10 bp/side",
+    "DSR 0.132"
+   ],
+   "historical": {
+    "source": "results_json",
+    "results_file": "aether-research/trend_pullback/results/trend_pullback_20261025_051509.json",
+    "variant": "tpb_hammer_1h"
+   },
+   "forward": {
+    "source": "forward_journal",
+    "journal": "aether-research/trend_pullback/forward_data/journal.jsonl",
+    "status_file": "aether-research/trend_pullback/forward_data/last_run.json",
+    "variant": "tpb_hammer_1h",
+    "schedule": {
+     "days": "Mon..Fri",
+     "time": "16:25",
+     "tz": "America/New_York"
+    },
+    "unit": "aether-trendpb-forward",
+    "started": "2026-10-26",
+    "target_trades": 30,
+    "ends": "2027-10-26"
+   },
+   "paper": null,
+   "live": null,
+   "next_evaluation": "30 forward trades or 2027-10-26",
+   "registered": "2026-10-23"
+  },
+  {
+   "id": "tpb_engulf_1d",
+   "name": "Trend pullback engulfing (daily)",
+   "family": "trend pullback candlestick",
+   "version": "trend-pullback-v1",
+   "registration": {
+    "doc": "docs/PREREG_trend_pullback_v1.md",
+    "tag": "prereg-trend-pullback-v1"
+   },
+   "rules": "aether-research/trend_pullback/rules.py",
+   "params": {
+    "trend": "close > EMA50",
+    "pullback": "low <= EMA20",
+    "target_r": 2.0
+   },
+   "markets": [
+    "SPY"
+   ],
+   "timeframe": "daily",
+   "data": {
+    "period": "2016-01-04..2026-10-20",
+    "source": "Alpaca SIP 1-minute",
+    "sha256": "1ca901b4...5ee745"
+   },
+   "trials": {
+    "batch": "trend-pullback-v1",
+    "ids": [
+     14
+    ]
+   },
+   "status": "collecting",
+   "stage": "forward",
+   "verdict": "INSUFFICIENT EVIDENCE",
+   "reasons": [
+    "5 trades: not interpretable"
+   ],
+   "historical": {
+    "source": "results_json",
+    "results_file": "aether-research/trend_pullback/results/trend_pullback_20261025_051509.json",
+    "variant": "tpb_engulf_1d"
+   },
+   "forward": {
+    "source": "forward_journal",
+    "journal": "aether-research/trend_pullback/forward_data/journal.jsonl",
+    "status_file": "aether-research/trend_pullback/forward_data/last_run.json",
+    "variant": "tpb_engulf_1d",
+    "schedule": {
+     "days": "Mon..Fri",
+     "time": "16:25",
+     "tz": "America/New_York"
+    },
+    "unit": "aether-trendpb-forward",
+    "started": "2026-10-26",
+    "target_trades": 30,
+    "ends": "2027-10-26"
+   },
+   "paper": null,
+   "live": null,
+   "next_evaluation": "30 forward trades or 2027-10-26",
+   "registered": "2026-10-23"
+  },
+  {
+   "id": "tpb_hammer_1d",
+   "name": "Trend pullback hammer (daily)",
+   "family": "trend pullback candlestick",
+   "version": "trend-pullback-v1",
+   "registration": {
+    "doc": "docs/PREREG_trend_pullback_v1.md",
+    "tag": "prereg-trend-pullback-v1"
+   },
+   "rules": "aether-research/trend_pullback/rules.py",
+   "params": {
+    "trend": "close > EMA50",
+    "pullback": "low <= EMA20",
+    "target_r": 2.0
+   },
+   "markets": [
+    "SPY"
+   ],
+   "timeframe": "daily",
+   "data": {
+    "period": "2016-01-04..2026-10-20",
+    "source": "Alpaca SIP 1-minute",
+    "sha256": "1ca901b4...5ee745"
+   },
+   "trials": {
+    "batch": "trend-pullback-v1",
+    "ids": [
+     15
+    ]
+   },
+   "status": "collecting",
+   "stage": "forward",
+   "verdict": "INSUFFICIENT EVIDENCE",
+   "reasons": [
+    "10 trades: not interpretable"
+   ],
+   "historical": {
+    "source": "results_json",
+    "results_file": "aether-research/trend_pullback/results/trend_pullback_20261025_051509.json",
+    "variant": "tpb_hammer_1d"
+   },
+   "forward": {
+    "source": "forward_journal",
+    "journal": "aether-research/trend_pullback/forward_data/journal.jsonl",
+    "status_file": "aether-research/trend_pullback/forward_data/last_run.json",
+    "variant": "tpb_hammer_1d",
+    "schedule": {
+     "days": "Mon..Fri",
+     "time": "16:25",
+     "tz": "America/New_York"
+    },
+    "unit": "aether-trendpb-forward",
+    "started": "2026-10-26",
+    "target_trades": 30,
+    "ends": "2027-10-26"
+   },
+   "paper": null,
+   "live": null,
+   "next_evaluation": "30 forward trades or 2027-10-26",
+   "registered": "2026-10-23"
+  },
+  {
+   "id": "imom_long",
+   "name": "Intraday momentum long only",
+   "family": "intraday momentum",
+   "version": "intraday-momentum-v1",
+   "registration": {
+    "doc": "docs/PREREG_intraday_momentum_v1.md",
+    "tag": "prereg-intraday-momentum-v1"
+   },
+   "rules": "aether-research/intraday_momentum/im_rules.py",
+   "params": {
+    "signal": "previous close to 10:00 return",
+    "trade": "15:30 open to close",
+    "allow_short": false
+   },
+   "markets": [
+    "SPY"
+   ],
+   "timeframe": "1-minute",
+   "data": {
+    "period": "2016-01-04..2026-10-20",
+    "source": "Alpaca SIP 1-minute",
+    "sha256": "1ca901b4...5ee745"
+   },
+   "trials": {
+    "batch": "intraday-momentum-v1",
+    "ids": [
+     10
+    ]
+   },
+   "status": "retired",
+   "stage": "historical",
+   "verdict": "HISTORICALLY UNSUPPORTED",
+   "reasons": [
+    "no gross edge: last half hour -0.51 bp on all days",
+    "signal no better than random days (p 0.55-0.61)",
+    "negative in every year 2016-2025"
+   ],
+   "historical": {
+    "source": "results_json",
+    "results_file": "aether-research/intraday_momentum/results/intraday_momentum_20261025_051452.json",
+    "variant": "imom_long"
+   },
+   "forward": null,
+   "paper": null,
+   "live": null,
+   "next_evaluation": null,
+   "registered": "2026-10-25"
+  },
+  {
+   "id": "imom_ls",
+   "name": "Intraday momentum long/short",
+   "family": "intraday momentum",
+   "version": "intraday-momentum-v1",
+   "registration": {
+    "doc": "docs/PREREG_intraday_momentum_v1.md",
+    "tag": "prereg-intraday-momentum-v1"
+   },
+   "rules": "aether-research/intraday_momentum/im_rules.py",
+   "params": {
+    "signal": "previous close to 10:00 return",
+    "trade": "15:30 open to close",
+    "allow_short": true
+   },
+   "markets": [
+    "SPY"
+   ],
+   "timeframe": "1-minute",
+   "data": {
+    "period": "2016-01-04..2026-10-20",
+    "source": "Alpaca SIP 1-minute",
+    "sha256": "1ca901b4...5ee745"
+   },
+   "trials": {
+    "batch": "intraday-momentum-v1",
+    "ids": [
+     11
+    ]
+   },
+   "status": "retired",
+   "stage": "historical",
+   "verdict": "HISTORICALLY UNSUPPORTED",
+   "reasons": [
+    "no gross edge: last half hour -0.51 bp on all days",
+    "signal no better than random days (p 0.55-0.61)",
+    "negative in every year 2016-2025"
+   ],
+   "historical": {
+    "source": "results_json",
+    "results_file": "aether-research/intraday_momentum/results/intraday_momentum_20261025_051452.json",
+    "variant": "imom_ls"
+   },
+   "forward": null,
+   "paper": null,
+   "live": null,
+   "next_evaluation": null,
+   "registered": "2026-10-25"
+  }
+ ]
+}

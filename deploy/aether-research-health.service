@@ -1,0 +1,11 @@
+[Unit]
+Description=AETHER research health check and report (files only, no orders): alerts on problems, weekly summary on Fridays
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=ratelark
+WorkingDirectory=/home/ratelark/ratelark
+EnvironmentFile=/home/ratelark/ratelark/.env
+ExecStart=/home/ratelark/ratelark/.venv/bin/python3 research_health.py run
+TimeoutStartSec=120

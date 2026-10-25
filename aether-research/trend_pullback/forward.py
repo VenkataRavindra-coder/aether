@@ -195,25 +195,83 @@ def summary() -> dict:
     return out
 
 
+def status_path() -> Path:
+    return DATA / "last_run.json"
+
+
+def failed_forward_sessions() -> list[str]:
+    """Forward-period sessions in the cache that failed verification (missing data for the replay)."""
+    out = []
+    for p in sorted((DATA / "sessions").glob("*.csv.gz")):
+        if p.name[:10] < FORWARD_START.date().isoformat():
+            continue
+        with gzip.open(p, "rt") as f:
+            if next(csv.reader(f))[3] != "ok":
+                out.append(p.name[:10])
+    return out
+
+
+def duplicate_rows() -> int:
+    """Trade rows that share (variant, signal_start) with an earlier row: must always be 0."""
+    seen, dup = set(), 0
+    for r in journal():
+        if r.get("kind", "trade") != "trade":
+            continue
+        k = (r["variant"], r["signal_start"])
+        dup += k in seen
+        seen.add(k)
+    return dup
+
+
+def write_status(st: dict):
+    """Operational record of the last run, read by research_health.py and the /research page.
+    Bookkeeping only: it does not change what the rules or the journal say."""
+    p = status_path()
+    p.parent.mkdir(parents=True, exist_ok=True)
+    tmp = p.with_suffix(".part")
+    tmp.write_text(json.dumps(st, indent=1, default=str))
+    tmp.rename(p)
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("cmd", choices=["run", "report"])
     a = ap.parse_args(argv)
+    st = {"started_at": datetime.now(NY).isoformat(timespec="seconds"), "ok": False}
     try:
         if a.cmd == "run":
             dc, tc = clients()
             added, failed = update_cache(dc, tc, datetime.now(NY))
             res = append_new(replay(load_sessions()))
+            cached = sorted(p.name[:10] for p in (DATA / "sessions").glob("*.csv.gz"))
+            st.update(added_sessions=added, failed_sessions=failed, latest_session=cached[-1] if cached else None,
+                      failed_forward_sessions=failed_forward_sessions(), new_trades=res["new"],
+                      mismatches_new=res["mismatches"], duplicates=duplicate_rows())
             print(f"cache +{added} sessions ({failed} failed verification); journal +{res['new']} trades, "
                   f"{res['mismatches']} mismatches")
             if res["mismatches"]:
+                st.update(error="replay disagrees with the journal (determinism check)",
+                          finished_at=datetime.now(NY).isoformat(timespec="seconds"))
+                write_status(st)
                 print("REFUSED: replay disagrees with the journal (determinism check)", file=sys.stderr)
                 return 3
-        print(json.dumps(summary(), indent=2))
+        summ = summary()
+        print(json.dumps(summ, indent=2))
+        if a.cmd == "run":
+            st.update(ok=True, summary=summ, finished_at=datetime.now(NY).isoformat(timespec="seconds"))
+            write_status(st)
         return 0
     except Refused as e:
+        if a.cmd == "run":
+            st.update(error=f"refused: {e}", finished_at=datetime.now(NY).isoformat(timespec="seconds"))
+            write_status(st)
         print(f"REFUSED: {e}", file=sys.stderr)
         return 2
+    except Exception as e:
+        if a.cmd == "run":
+            st.update(error=f"{type(e).__name__}: {str(e)[:300]}", finished_at=datetime.now(NY).isoformat(timespec="seconds"))
+            write_status(st)
+        raise
 
 
 if __name__ == "__main__":
