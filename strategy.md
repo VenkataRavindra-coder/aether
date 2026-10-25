@@ -945,3 +945,19 @@ automatic health checks. Nothing here changes S2, the test plan, the Risk Contro
      already written, and an explicit owner decision. `LIVE_TRADING` stays false until then.
 - **Financial target:** an average of $2 per trading day, measured on paper and live results only. It never
   justifies forcing a trade, relaxing a criterion or skipping a step.
+## Multi-ETF channel breakout registration (pre-registered 2026-10-25, before any result)
+
+Owner decision 2026-10-25: approved, research only; NO-GO for paper or live under this registration.
+Registration `docs/PREREG_etf_breakout_v1.md`, tag `prereg-etf-breakout-v1` (created on the merged commit, before
+any run). Rules: `aether-research/etf_breakout/eb_rules.py` (binding copy).
+
+- **Rule:** SPY, QQQ, IWM, GLD, TLT in five unrebalanced sleeves; buy a new 55-day closing high, sell a new 20-day
+  closing low, at the next open; idle sleeves in cash; 5 bp per side. Neighbours 20/10 and 100/50 for robustness.
+  Distinct from S2 (cross-sectional, monthly) and S-A (200-day filter), which is a comparator it must beat (C8).
+- **Historical test:** the S2 Yahoo adjusted file (SHA-256 `e9524a2a...71ed9b6`), 2007-03-01 to 2026-10-06,
+  criteria C1-C12 (block-bootstrap Sharpe bound, drawdown <= 20%, both halves, 11 of 18 years, 10 bp/side,
+  beats the 200-day filter and buy-and-hold, DSR >= 0.95 with N = 49, no ETF > 50% of profit, neighbours
+  positive). Dollars reported at $100, $1,000 and $5,000.
+- **Separation:** no verdict overrides S2 NO-GO, the test plan, the Risk Controller, the soak or the Oct 22
+  decision. "Historically supported" only allows a forward-journal PR (no orders).
+- **Result:** not yet run.
