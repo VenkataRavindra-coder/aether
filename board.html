@@ -439,18 +439,25 @@ h1 span { color: var(--orange); }
     $("f-desks").textContent = m ? "read from Alpaca " + ago(since(m.generated_at)) + " ago · real and practice money are never added together" : (ERR.money || "");
     runBadge("desks", cards.concat(small), !!m);
   }
-  const JOBS = [["health", "Health", "pulse", C.green, "every minute"], ["watchdog", "Watchdog", "eye", C.purple, "every 5 min"], ["backup", "Backup", "box", C.blue, "03:15 UTC"], ["daily", "Daily checks", "check", C.teal, "04:30 UTC"], ["stress", "Stress test", "gauge", C.yellow, "weekdays 16:00 UTC"], ["riskmark", "Risk mark", "shield", C.red, "weekdays 15:50 NY"], ["canary-run", "Auto canary", "target", C.orange, "weekdays 10:05 NY (only if CANARY_AUTO=1)"], ["canary-close", "Canary close", "clock", C.sky, "weekdays 15:52 NY"]];
+  const JOBS = [["health", "Health", "pulse", C.green, "every minute"], ["watchdog", "Watchdog", "eye", C.purple, "every 5 min"], ["backup", "Backup", "box", C.blue, "03:15 UTC"], ["daily", "Daily checks", "check", C.teal, "04:30 UTC"], ["stress", "Stress test", "gauge", C.yellow, "weekdays 16:00 UTC"], ["riskmark", "Risk mark", "shield", C.red, "weekdays 15:50 NY"], ["canary-run", "Auto canary", "target", C.orange, "weekdays 10:05 NY (only if CANARY_AUTO=1)"], ["canary-close", "Canary close", "clock", C.sky, "weekdays 15:52 NY"], ["tactical-exec", "Tactical trades", "chart", C.pink, "QQQ paper auto-trades, market hours"], ["tactical-close", "Tactical close", "clock", C.purple, "flat by 15:55 NY"], ["tactical-score", "Tactical score", "list", C.slate, "nightly scoring"]];
+  // Jobs that may be switched off on purpose: a disabled timer is "off", not "failing".
+  const OPTIONAL = new Set(["canary-run", "canary-close", "tactical-exec", "tactical-close", "tactical-score"]);
+  // One rule for the tiles and the "Needs you" line: failing = the last run failed, or an essential job's timer is off.
+  const jobState = (id, j, st) => !j || !j.timer_loaded ? "missing" : j.running ? "running" : (!j.timer_active && OPTIONAL.has(id)) ? "off"
+    : (!j.timer_active || (j.result && j.result !== "success") || (id === "stress" && st && st.rc !== 0)) ? "failing" : "ok";
   function renderJobs() {
     const s = D.status, units = s && ok(s.units), jobs = units ? units.jobs : null, st = s && ok(s.stress);
     const t = JOBS.map(([id, n, i, c, when]) => {
       const j = jobs && jobs[id];
       if (!jobs) return { n, i, c, k: "idle", d: s ? "systemd unreadable" : "…" };
-      if (!j || !j.timer_loaded) return { n, i, c, k: "idle", d: "not installed" };
-      const bad = !j.timer_active || (j.result && j.result !== "success") || (id === "stress" && st && st.rc !== 0);
-      return { n, i, c, k: j.running ? "warn" : bad ? "bad" : "good", d: j.running ? "running now" : (bad ? "failing" : "ok") + (j.last_run ? " · " + ago(since(j.last_run)) + " ago" : ""), title: when };
+      const js = jobState(id, j, st);
+      if (js === "missing") return { n, i, c, k: "idle", d: "not installed" };
+      if (js === "off") return { n, i, c, k: "idle", d: "switched off", title: when };
+      return { n, i, c, k: js === "running" ? "warn" : js === "failing" ? "bad" : "good", d: js === "running" ? "running now" : js + (j.last_run ? " · " + ago(since(j.last_run)) + " ago" : ""), title: when };
     });
     $("t-jobs").innerHTML = t.map(tile).join("");
-    const good = t.filter(x => x.k === "good").length; $("f-jobs").textContent = jobs ? good + " of " + t.length + " healthy" : "";
+    const good = t.filter(x => x.k === "good").length, off = t.filter(x => x.d === "switched off").length;
+    $("f-jobs").textContent = jobs ? good + " of " + (t.length - off) + " healthy" + (off ? " · " + off + " switched off" : "") : "";
     runBadge("jobs", t, !!jobs);
     return { good, total: t.length, have: !!jobs };
   }
@@ -471,14 +478,15 @@ h1 span { color: var(--orange); }
   function needs() {
     const out = []; const sf = D.safety, s = D.status, g = s && ok(s.gate), units = s && ok(s.units), bk = s && ok(s.backups);
     let level = "green";
-    if (g && g.halt) { level = "red"; out.push("Entries are PAUSED by the halt file. Resume on the server: rm ~/AETHER_HALT"); }
+    // The halt file is a lock the owner sets on purpose (it also guards the live account), so it is shown as a state, not a task.
+    const info = g && g.halt ? "New entries are paused by the halt file (the live account stays locked)." : "";
     if (g && g.ledger && g.ledger.latched) { level = "red"; out.push("A live breaker is latched"); }
     const pr = sf && sf.proposal;
     if (pr && String(pr.status || "").toUpperCase() === "PENDING" && pr.date === etToday()) { if (level === "green") level = "orange"; out.push("Approve proposal " + pr.id + " on Telegram today (/approve_" + pr.id + ")"); }
-    if (units) { const f = Object.entries(units.jobs).filter(([k, j]) => j.timer_loaded && (!j.timer_active || (j.result && j.result !== "success"))).map(([k]) => k); if (f.length) { if (level === "green") level = "orange"; out.push("Failing job: " + f.join(", ")); } }
+    if (units) { const st = s && ok(s.stress); const f = Object.entries(units.jobs).filter(([k, j]) => jobState(k, j, st) === "failing").map(([k]) => k); if (f.length) { if (level === "green") level = "orange"; out.push("Failing job: " + f.join(", ")); } }
     if (bk && (bk.age_h == null || bk.age_h > 26)) { if (level === "green") level = "orange"; out.push("Nightly backup is late"); }
     if (D.conn && (D.conn.down || []).length) { if (level === "green") level = "orange"; out.push("Disconnected: " + D.conn.down.join(", ")); }
-    return { level, out };
+    return { level, out, info };
   }
   function renderFocus() {
     const s = D.status, fl = s && s.engine && s.engine.flags;
@@ -491,7 +499,7 @@ h1 span { color: var(--orange); }
     const v = $("voice");
     if (!s && !D.safety) { v.className = "voice"; v.textContent = signedOut ? "Signed out." : ERR.status ? "Can't read today's status: " + ERR.status : "Reading today's status…"; }
     else { const n = needs(); v.className = "voice" + (n.level === "red" ? " red" : n.level === "orange" ? " orange" : "");
-      v.textContent = n.out.length ? "Needs you: " + n.out.join(" · ") + "." : (fl && fl.US_LIVE ? "Live money mode. " : "Practice mode, no real money at risk. ") + "Nothing needs you right now."; }
+      v.textContent = (n.info ? n.info + " " : "") + (n.out.length ? "Needs you: " + n.out.join(" · ") + "." : (fl && fl.US_LIVE ? "Live money mode. " : "Practice mode, no real money at risk. ") + "Nothing needs you right now."); }
     const act = s && ok(s.activity);
     $("feed").innerHTML = !act ? `<div class="empty">${s ? "Decision log unreadable." : "Waiting for the engine…"}</div>`
       : !act.rows.length ? '<div class="empty">No decisions logged yet.</div>'
