@@ -1,0 +1,10 @@
+{
+ "file": "bil_daily_yf.csv.gz",
+ "sha256": "1bf456846e7ed119fa9e43943245acd022d86a105f499e93c3b5a3f49c292fd2",
+ "rows": 4870,
+ "first": "2007-05-30",
+ "last": "2026-10-06",
+ "fetched_at": "2026-10-25T06:30:18+00:00",
+ "source": "Yahoo via yfinance, auto_adjust=True",
+ "yfinance": "1.7.0"
+}
